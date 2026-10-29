@@ -20,6 +20,7 @@ except ImportError:
     DatabaseIntegrityError = (IntegrityError,)
 
 logger = logging.getLogger(__name__)
+_MISSING_LOCK_ID = object()
 
 
 def _close_lock_connection(db_connection):
@@ -302,20 +303,19 @@ def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_
 
 
 @contextmanager
-def advisory_lock(*args, lock_session_timeout_milliseconds=0, **kwargs):
+def advisory_lock(lock_id=_MISSING_LOCK_ID, shared=False, wait=True, using=None, *, lock_session_timeout_milliseconds=0):
     """
     Context manager for database advisory locks.
 
     Supports PostgreSQL, MS SQL Server, and SQLite (no-op).
-    Obtains a named lock identified by the args passed in.
+    Obtains a named lock identified by lock_id.
 
     Args:
-        *args: Lock identifier (usually a string, int, or tuple)
+        lock_id: Lock identifier (usually a string, int, or tuple)
         lock_session_timeout_milliseconds: Database-level timeout in milliseconds
-        **kwargs: Additional arguments
-            - wait (bool): If True, block until lock is obtained
-            - shared (bool): If True, allow shared locks
-            - using (str): Django database alias
+        shared: If True, allow shared locks
+        wait: If True, block until lock is obtained
+        using: Django database alias
 
     Yields:
         bool: True if lock acquired, False if not (when wait=False)
@@ -341,7 +341,7 @@ def advisory_lock(*args, lock_session_timeout_milliseconds=0, **kwargs):
                 # Got the lock
                 pass
     """
-    using = kwargs.get('using') or DEFAULT_DB_ALIAS
+    using = using or DEFAULT_DB_ALIAS
     db_connection = connections[using]
     internal_error = False
 
@@ -358,7 +358,8 @@ def advisory_lock(*args, lock_session_timeout_milliseconds=0, **kwargs):
                 cur.execute("SET idle_session_timeout = %s", (lock_session_timeout_milliseconds,))
 
         try:
-            with django_pglocks_advisory_lock(*args, **kwargs) as internal_lock:
+            lock_args = () if lock_id is _MISSING_LOCK_ID else (lock_id,)
+            with django_pglocks_advisory_lock(*lock_args, shared=shared, wait=wait, using=using) as internal_lock:
                 yield internal_lock
         except OperationalError:
             # Suspected case is that timeout happened due to the given timeout
@@ -380,16 +381,14 @@ def advisory_lock(*args, lock_session_timeout_milliseconds=0, **kwargs):
 
     elif db_connection.vendor == "microsoft":
         # MS SQL Server implementation using sp_getapplock
-        # Extract lock_id from args (first positional argument)
-        if not args:
-            raise ValueError("advisory_lock requires a lock identifier as first argument")
-        lock_id = args[0]
+        if lock_id is _MISSING_LOCK_ID:
+            raise ValueError("advisory_lock requires a lock identifier")
 
         try:
             with _mssql_advisory_lock(
                 lock_id,
-                shared=kwargs.get('shared', False),
-                wait=kwargs.get('wait', True),
+                shared=shared,
+                wait=wait,
                 lock_session_timeout_milliseconds=lock_session_timeout_milliseconds,
                 using=using,
             ) as internal_lock:
