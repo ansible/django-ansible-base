@@ -5,6 +5,7 @@ from uuid import UUID
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
+from ansible_base.authentication.challenge import ChallengeAwareAuthenticationMixin
 from ansible_base.lib.utils.auth import (
     get_authentication_challenge,
     get_model_from_settings,
@@ -86,3 +87,17 @@ def test_authentication_challenge_keeps_the_first_authenticator_to_claim_the_req
 
 def test_authentication_challenge_uses_the_provided_default_when_no_authenticator_claims_the_request():
     assert get_authentication_challenge(SimpleNamespace(), default="Session") == "Session"
+
+
+def test_challenge_aware_authenticator_returns_the_first_recorded_challenge():
+    class TestAuthentication(ChallengeAwareAuthenticationMixin):
+        def get_default_authentication_challenge(self, request):
+            return "Session"
+
+    request = SimpleNamespace()
+    authenticator = TestAuthentication()
+    authenticator.record_authentication_challenge(request, "ServiceToken")
+    authenticator.record_authentication_challenge(request, 'Bearer realm="api"')
+
+    assert authenticator.authenticate_header(request) == "ServiceToken"
+    assert authenticator.authenticate_header(SimpleNamespace()) == "Session"
