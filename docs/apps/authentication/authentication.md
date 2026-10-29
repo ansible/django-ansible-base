@@ -75,6 +75,19 @@ REST_FRAMEWORK = {
 }
 ```
 
+### OAuth bearer-token authentication
+
+django-ansible-base can validate JWT access tokens issued by an external OAuth
+or OpenID Connect provider. The `oauth_bearer` authenticator is an API
+authenticator: it has no browser login flow and accepts requests with an
+`Authorization: Bearer <token>` header. When dynamic settings are enabled,
+`BearerAuthentication` is registered automatically. For manual configuration,
+add `ansible_base.authentication.bearer_authentication.BearerAuthentication`
+to `DEFAULT_AUTHENTICATION_CLASSES`.
+
+See [OAuth bearer-token authentication](oauth_bearer.md) for configuration,
+identity mapping, scope enforcement, and JWKS operational behavior.
+
 
 #### Social Auth Settings
 django-ansible-base will add the following social auth settings:
