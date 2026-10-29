@@ -8,7 +8,6 @@ fields that have indexes or unique constraints.
 from mssql.base import DatabaseWrapper as MSSQLDatabaseWrapper
 
 from .cursor_override import CursorWrapper
-from .operations import DatabaseOperations
 from .schema import DatabaseSchemaEditor
 
 
@@ -18,7 +17,6 @@ class DatabaseWrapper(MSSQLDatabaseWrapper):
 
     This wrapper extends mssql-django's DatabaseWrapper to:
     - Use custom SchemaEditor for TextField-to-CharField conversion
-    - Use custom DatabaseOperations for proper UUID handling
     - Use custom CursorWrapper to convert UUID parameters to strings
     - Remove ISJSON CHECK constraint from JSONFields
 
@@ -38,7 +36,6 @@ class DatabaseWrapper(MSSQLDatabaseWrapper):
     """
 
     SchemaEditorClass = DatabaseSchemaEditor
-    ops_class = DatabaseOperations
 
     # Override to remove ISJSON constraint from JSONField
     # This allows storing encrypted data in JSONField columns

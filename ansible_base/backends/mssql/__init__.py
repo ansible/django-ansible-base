@@ -9,13 +9,7 @@ The backend adds compatibility behavior around the upstream connection layer:
   bounded ``CharField`` columns so SQL Server can create the corresponding
   indexes and unique constraints, without changing migration files.
 * Its cursor converts Python UUID parameters to 32-character hexadecimal
-  strings for pyodbc. A ``connection_created`` receiver also converts SQL
-  Server ``uniqueidentifier`` results back to ``uuid.UUID`` objects.
+  strings for pyodbc.
 * It omits SQL Server's ``ISJSON`` check constraint on ``JSONField`` columns,
   allowing encrypted JSON field values to be stored as ciphertext.
-
-Importing this package registers the connection-created signal receiver.
 """
-
-# Register signal handlers for connection setup
-from . import signals  # noqa: F401
