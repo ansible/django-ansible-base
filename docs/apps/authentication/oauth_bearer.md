@@ -18,15 +18,26 @@ handler when `ansible_base.oauth2_provider` is installed.
 ## Configure an authenticator
 
 Create an enabled authenticator of type
-`ansible_base.authentication.authenticator_plugins.oauth_bearer`. Its
-configuration requires the following values:
+`ansible_base.authentication.authenticator_plugins.oauth_bearer`. Configure
+the following settings:
 
-| Setting | Purpose |
-| --- | --- |
-| `ISSUER_URL` | Exact issuer expected in the JWT `iss` claim. |
-| `AUDIENCE` | Exact audience expected in the JWT `aud` claim. |
-| `ID_KEY` | JWT claim containing the stable external identity, such as `sub` for users or `azp` for service principals. |
-| `JWKS_URI` or `OIDC_ENDPOINT` | HTTPS endpoint for verification keys, supplied directly or discovered from the provider. |
+| Setting | Required | Purpose |
+| --- | --- | --- |
+| `ISSUER_URL` | Yes | Exact issuer expected in the JWT `iss` claim. |
+| `AUDIENCE` | Yes | Configured audience that must appear in the JWT `aud` claim, whether the claim is a string or list. |
+| `ID_KEY` | Yes | JWT claim containing the stable external identity, such as `sub` for users or `azp` for service principals. |
+| `JWKS_URI` | One key source required | HTTPS endpoint for verification keys when discovery is not used. |
+| `OIDC_ENDPOINT` | One key source required | Issuer base URL used for OIDC discovery. |
+| `JWKS_URL_TIMEOUT` | No | JWKS request timeout in seconds; defaults to 30. |
+| `USERINFO_URL_TIMEOUT` | No | UserInfo request timeout in seconds; defaults to 30. |
+| `JWT_CLOCK_SKEW_TOLERANCE_SECONDS` | No | Expiration, not-before, and issued-at tolerance in seconds; defaults to 0 and permits 0 through 300. |
+| `ALLOWED_ALGORITHMS` | No | Accepted asymmetric signing algorithms; defaults to `RS256`. |
+| `JWKS_CACHE_TIMEOUT` | No | JWKS cache lifetime in seconds; defaults to 3600 and has a minimum of 60. |
+| `GROUPS_CLAIM` | No | Group-membership claim used by authenticator maps; defaults to `groups`. |
+| `USERINFO_URL` | No | Supplemental profile and group-claim endpoint. |
+| `EMAIL_KEY`, `FIRST_NAME_KEY`, `LAST_NAME_KEY`, `USERNAME_KEY` | No | Optional mappings from validated claims to local user fields. |
+| `SCOPE_KEY`, `READ_SCOPE_NAME`, `WRITE_SCOPE_NAME` | No | Token-scope mapping; defaults are `scope`, `read`, and `write`. |
+| `VERIFY_SSL` | No | Verifies TLS certificates for JWKS, OIDC discovery, and UserInfo requests; defaults to `true`. |
 
 `OIDC_ENDPOINT` uses `/.well-known/openid-configuration` when the
 authenticator is created or updated. Discovery supplies `JWKS_URI` and, when
@@ -76,9 +87,9 @@ A UserInfo response must identify the same subject as the validated access
 token. UserInfo is supplementary: an unavailable or unusable response does not
 invalidate an otherwise valid access token.
 
-The Gateway system user and inactive users cannot authenticate through this
-authenticator. Treat `ID_KEY` as immutable for an external identity; changing
-it can create a different local association.
+The system user, when `SYSTEM_USERNAME` is configured, and inactive users
+cannot authenticate through this authenticator. Treat `ID_KEY` as immutable for
+an external identity; changing it can create a different local association.
 
 ## JWKS and availability
 
