@@ -3,12 +3,14 @@ import logging
 from django.apps import AppConfig
 from django.apps import apps as django_apps
 from django.conf import settings
+from django.db import connection
 from django.db.models import Case, Exists, OuterRef, TextField, UUIDField, Value, When, signals
 from django.db.models.functions import Cast
 from django.db.utils import IntegrityError
 
 import ansible_base.lib.checks  # noqa: F401 - register checks
 from ansible_base.lib.utils.db import bulk_create_db_safe, ensure_transaction, migrations_are_complete
+from ansible_base.lib.utils.mssql import SQL_SERVER_MAX_QUERY_PARAMETERS, SQL_SERVER_QUERY_PARAMETER_HEADROOM
 from ansible_base.resource_registry.utils.settings import resource_server_defined
 
 logger = logging.getLogger("ansible_base.resource_registry.apps")
@@ -37,12 +39,20 @@ def _update_assignment_resource_ids(content_type, resource_ids):
         app_label=content_type.app_label,
         model=content_type.model,
     )
-    object_id_case = Case(
-        *(When(object_id=object_id, then=Value(ansible_id)) for object_id, ansible_id in resource_ids.items()),
-        output_field=UUIDField(),
-    )
-    for assignment_model in (RoleUserAssignment, RoleTeamAssignment):
-        assignment_model.objects.filter(content_type__in=content_types, object_id__in=resource_ids).update(object_ansible_id=object_id_case)
+    # Each resource contributes two CASE parameters and one object_id__in parameter.
+    resource_id_batch_size = len(resource_ids)
+    if connection.vendor == 'microsoft':
+        resource_id_batch_size = (SQL_SERVER_MAX_QUERY_PARAMETERS - SQL_SERVER_QUERY_PARAMETER_HEADROOM) // 3
+
+    resource_id_items = list(resource_ids.items())
+    for batch_start in range(0, len(resource_id_items), resource_id_batch_size):
+        resource_id_batch = dict(resource_id_items[batch_start : batch_start + resource_id_batch_size])
+        object_id_case = Case(
+            *(When(object_id=object_id, then=Value(ansible_id)) for object_id, ansible_id in resource_id_batch.items()),
+            output_field=UUIDField(),
+        )
+        for assignment_model in (RoleUserAssignment, RoleTeamAssignment):
+            assignment_model.objects.filter(content_type__in=content_types, object_id__in=resource_id_batch).update(object_ansible_id=object_id_case)
 
 
 def _sync_backfilled_resource_ids(resource_cls, content_type, object_ids):
