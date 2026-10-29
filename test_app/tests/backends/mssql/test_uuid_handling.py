@@ -1,13 +1,20 @@
 import uuid
 from unittest.mock import Mock, patch
 
+import pytest
 from django.utils.encoding import smart_str
-from mssql.base import CursorWrapper as MSSQLCursorWrapper
-from mssql.operations import DatabaseOperations as MSSQLDatabaseOperations
 
-from ansible_base.backends.mssql.base import DatabaseWrapper
-from ansible_base.backends.mssql.cursor_override import CursorWrapper
-from ansible_base.backends.mssql.schema import DatabaseSchemaEditor
+try:
+    from mssql.base import CursorWrapper as MSSQLCursorWrapper
+    from mssql.operations import DatabaseOperations as MSSQLDatabaseOperations
+
+    from ansible_base.backends.mssql.base import DatabaseWrapper
+    from ansible_base.backends.mssql.cursor_override import CursorWrapper
+    from ansible_base.backends.mssql.schema import DatabaseSchemaEditor
+except ModuleNotFoundError as exc:
+    if exc.name != 'mssql':
+        raise
+    pytest.skip('mssql-django is required for SQL Server backend tests', allow_module_level=True)
 
 
 def make_cursor_wrapper(driver_charset=None):
@@ -54,7 +61,8 @@ def test_format_params_converts_uuids_before_delegating_to_parent():
 
 def test_database_wrapper_uses_mssql_operations_and_custom_schema_editor():
     assert DatabaseWrapper.SchemaEditorClass is DatabaseSchemaEditor
-    assert DatabaseWrapper.ops_class is MSSQLDatabaseOperations
+    assert issubclass(DatabaseWrapper.ops_class, MSSQLDatabaseOperations)
+    assert DatabaseWrapper.ops_class.compiler_module == 'ansible_base.backends.mssql.compiler'
     assert 'JSONField' not in DatabaseWrapper.data_type_check_constraints
     assert DatabaseWrapper.data_type_check_constraints['PositiveIntegerField'] == '[%(column)s] >= 0'
 
