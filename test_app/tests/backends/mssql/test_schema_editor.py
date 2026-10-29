@@ -7,11 +7,18 @@ Tests the TextField-to-CharField conversion logic.
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
+import pytest
 from django.db import models
 from django.test import TestCase
-from mssql.schema import DatabaseSchemaEditor as MSSQLSchemaEditor
 
-from ansible_base.backends.mssql.schema import DatabaseSchemaEditor
+try:
+    from mssql.schema import DatabaseSchemaEditor as MSSQLSchemaEditor
+
+    from ansible_base.backends.mssql.schema import DatabaseSchemaEditor
+except ModuleNotFoundError as exc:
+    if exc.name != 'mssql':
+        raise
+    pytest.skip('mssql-django is required for SQL Server backend tests', allow_module_level=True)
 
 
 def make_schema_editor():
