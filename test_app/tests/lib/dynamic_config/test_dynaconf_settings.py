@@ -1,3 +1,5 @@
+from dynaconf import ValidationError, Validator
+
 from ansible_base.lib.dynamic_config import (
     export,
     factory,
@@ -8,7 +10,6 @@ from ansible_base.lib.dynamic_config import (
     validate,
 )
 from ansible_base.lib.dynamic_config.dynaconf_helpers import _dynaconf_loaded_files
-from dynaconf import ValidationError, Validator
 
 
 def test_swagger_disabled():
