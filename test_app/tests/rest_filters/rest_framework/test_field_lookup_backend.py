@@ -78,9 +78,13 @@ def test_regex_lookups_rejected_on_sql_server(lookup, monkeypatch):
     monkeypatch.setattr(field_lookup_backend, 'connection', SimpleNamespace(vendor='microsoft'), raising=False)
     query_params = QueryDict('', mutable=True)
     query_params[lookup] = '^acme$'
+    backend = FieldLookupBackend()
+    request = SimpleNamespace(query_params=query_params)
+    queryset = Authenticator.objects.all()
+    view = SimpleNamespace()
 
     with pytest.raises(ParseError, match='Regular expression lookups are not supported on SQL Server'):
-        FieldLookupBackend().filter_queryset(SimpleNamespace(query_params=query_params), Authenticator.objects.all(), SimpleNamespace())
+        backend.filter_queryset(request, queryset, view)
 
 
 @pytest.mark.parametrize('lookup', ['name__regex', 'name__iregex'])
