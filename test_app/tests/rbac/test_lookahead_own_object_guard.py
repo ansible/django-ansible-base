@@ -5,16 +5,13 @@ import pytest
 from ansible_base.rbac.caching import recompute_all_role_evaluations
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.prefetch import TypesPrefetch
 from ansible_base.rbac.remote import GenericObject
-from test_app.models import Inventory, Organization
+from test_app.models import Inventory
 
 
 def _inv_ct_id():
     return permission_registry.content_type_model.objects.get_for_model(Inventory).id
-
-
-def _org_ct_id():
-    return permission_registry.content_type_model.objects.get_for_model(Organization).id
 
 
 def _evaluation_rows():
@@ -22,22 +19,15 @@ def _evaluation_rows():
 
 
 @pytest.mark.django_db
-def test_team_object_roles_on_other_objects_are_not_proposed(rando, organization, team, org_inv_rd, inv_rd, member_rd):
+def test_role_on_another_object_proposes_nothing_for_the_look_ahead_object(rando, organization, team, inv_rd):
     """A team's role on inventory A must not produce evaluations while looking ahead to inventory B."""
     inv_a = Inventory.objects.create(name='inv-a', organization=organization)
-    org_inv_rd.give_permission(team, organization)
     inv_rd.give_permission(team, inv_a)
-    member_rd.give_permission(rando, team)
-    member_role = ObjectRole.objects.get(role_definition=member_rd, object_id=team.pk)
-
+    inv_a_role = ObjectRole.objects.get(role_definition=inv_rd, object_id=inv_a.pk)
     inv_b = Inventory.objects.create(name='inv-b', organization=organization)
-    # simulate the state during the post_save signal: nothing cached yet for inv_b
-    RoleEvaluation.objects.filter(role=member_role, object_id=inv_b.pk, content_type_id=_inv_ct_id()).delete()
 
-    to_delete, to_add = member_role.needed_cache_updates(look_ahead=GenericObject(_inv_ct_id(), inv_b.pk))
-    assert not to_delete
-    assert to_add
-    assert {(e.content_type_id, e.object_id) for e in to_add} == {(_inv_ct_id(), inv_b.pk)}
+    assert inv_a_role.expected_direct_permissions(TypesPrefetch.from_db(), look_ahead=GenericObject(_inv_ct_id(), inv_b.pk)) == set()
+    assert inv_a_role.expected_direct_permissions(TypesPrefetch.from_db(), look_ahead=GenericObject(_inv_ct_id(), inv_a.pk))
 
 
 @pytest.mark.django_db

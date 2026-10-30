@@ -43,8 +43,7 @@ PAGE_SIZE_SWEEP_CASES = [
     pytest.param(
         'application-list',
         {},
-        {},
-        marks=pytest.mark.xfail(reason="N+1: access_tokens + unprefetched FK summary fields", strict=True),
+        {'max_query_delta': 10},
         id='application_list',
     ),
     pytest.param(

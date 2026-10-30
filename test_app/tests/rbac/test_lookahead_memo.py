@@ -1,4 +1,4 @@
-"""team-held role results are memoised across one look-ahead recompute."""
+"""Team-held role results are memoised across one object-centric recompute."""
 
 from unittest.mock import patch
 
@@ -14,7 +14,7 @@ def _evaluation_rows():
 
 
 @pytest.mark.django_db
-def test_lookahead_cache_is_shared_across_roles(rando, organization, org_inv_rd, member_rd):
+def test_team_held_role_evaluated_once_per_recompute(rando, organization, org_inv_rd, member_rd):
     """The same org role reached through several teams is evaluated once per recompute."""
     teams = [Team.objects.create(name=f'team-{i}', organization=organization) for i in range(4)]
     for team in teams:
@@ -32,7 +32,7 @@ def test_lookahead_cache_is_shared_across_roles(rando, organization, org_inv_rd,
         Inventory.objects.create(name='inv-new', organization=organization)
 
     org_role = ObjectRole.objects.get(role_definition=org_inv_rd, object_id=organization.pk)
-    # the created-object path computes each relevant role's expected evaluations exactly once
+    # the object-centric recompute computes each relevant role's expected evaluations exactly once
     assert calls.count(org_role.pk) == 1
 
     after_create = _evaluation_rows()
