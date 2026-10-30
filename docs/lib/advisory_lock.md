@@ -46,7 +46,7 @@ advisory_lock(
 
 ### Parameters
 
-- **`lock_id`**: Lock identifier
+- **`lock_id`**: Lock identifier; optional on PostgreSQL and required on SQL Server
   - **PostgreSQL**: One 64-bit integer, a pair of 32-bit integers, or a string (hashed to a 32-bit integer)
   - **MS SQL Server**: Converted to string resource name (max 255 chars)
     - Integer → `"dab_lock_{n}"`
