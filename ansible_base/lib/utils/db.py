@@ -303,6 +303,55 @@ def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_
 
 
 @contextmanager
+def _postgres_advisory_lock(db_connection, lock_id, shared, wait, using, lock_session_timeout_milliseconds):
+    """Acquire a PostgreSQL advisory lock and restore the caller's idle timeouts."""
+    idle_in_transaction_session_timeout = None
+    idle_session_timeout = None
+    if lock_session_timeout_milliseconds > 0:
+        with db_connection.cursor() as cursor:
+            idle_in_transaction_session_timeout = cursor.execute("SHOW idle_in_transaction_session_timeout").fetchone()[0]
+            idle_session_timeout = cursor.execute("SHOW idle_session_timeout").fetchone()[0]
+            cursor.execute("SET idle_in_transaction_session_timeout = %s", (lock_session_timeout_milliseconds,))
+            cursor.execute("SET idle_session_timeout = %s", (lock_session_timeout_milliseconds,))
+
+    internal_error = False
+    try:
+        lock_args = () if lock_id is _MISSING_LOCK_ID else (lock_id,)
+        with django_pglocks_advisory_lock(*lock_args, shared=shared, wait=wait, using=using) as acquired:
+            yield acquired
+    except OperationalError:
+        # Suspected case is that timeout happened due to the given timeout
+        # this is _expected_ to leave the connection in an unusable state, so dropping it is better
+        logger.info('Dropping connection due to suspected timeout inside advisory_lock')
+        db_connection.close_if_unusable_or_obsolete()
+        internal_error = True
+        raise
+    finally:
+        if not internal_error and lock_session_timeout_milliseconds > 0 and db_connection.connection is not None and not db_connection.closed_in_transaction:
+            with db_connection.cursor() as cursor:
+                cursor.execute("SET idle_in_transaction_session_timeout = %s", (idle_in_transaction_session_timeout,))
+                cursor.execute("SET idle_session_timeout = %s", (idle_session_timeout,))
+
+
+@contextmanager
+def _mssql_advisory_lock_with_cleanup(db_connection, lock_id, shared, wait, using, lock_session_timeout_milliseconds):
+    """Acquire a SQL Server application lock and close unusable connections on errors."""
+    try:
+        with _mssql_advisory_lock(
+            lock_id,
+            shared=shared,
+            wait=wait,
+            lock_session_timeout_milliseconds=lock_session_timeout_milliseconds,
+            using=using,
+        ) as acquired:
+            yield acquired
+    except OperationalError:
+        logger.info('Dropping connection due to error inside MS SQL advisory_lock')
+        db_connection.close_if_unusable_or_obsolete()
+        raise
+
+
+@contextmanager
 def advisory_lock(lock_id=_MISSING_LOCK_ID, shared=False, wait=True, using=None, *, lock_session_timeout_milliseconds=0):
     """
     Context manager for database advisory locks.
@@ -343,61 +392,25 @@ def advisory_lock(lock_id=_MISSING_LOCK_ID, shared=False, wait=True, using=None,
     """
     using = using or DEFAULT_DB_ALIAS
     db_connection = connections[using]
-    internal_error = False
 
     if db_connection.vendor == "postgresql":
-        # PostgreSQL implementation using pg_advisory_lock
-        cur = None
-        idle_in_transaction_session_timeout = None
-        idle_session_timeout = None
-        if lock_session_timeout_milliseconds > 0:
-            with db_connection.cursor() as cur:
-                idle_in_transaction_session_timeout = cur.execute("SHOW idle_in_transaction_session_timeout").fetchone()[0]
-                idle_session_timeout = cur.execute("SHOW idle_session_timeout").fetchone()[0]
-                cur.execute("SET idle_in_transaction_session_timeout = %s", (lock_session_timeout_milliseconds,))
-                cur.execute("SET idle_session_timeout = %s", (lock_session_timeout_milliseconds,))
-
-        try:
-            lock_args = () if lock_id is _MISSING_LOCK_ID else (lock_id,)
-            with django_pglocks_advisory_lock(*lock_args, shared=shared, wait=wait, using=using) as internal_lock:
-                yield internal_lock
-        except OperationalError:
-            # Suspected case is that timeout happened due to the given timeout
-            # this is _expected_ to leave the connection in an unusable state, so dropping it is better
-            logger.info('Dropping connection due to suspected timeout inside advisory_lock')
-            db_connection.close_if_unusable_or_obsolete()
-            internal_error = True
-            raise
-        finally:
-            if (
-                not internal_error
-                and lock_session_timeout_milliseconds > 0
-                and db_connection.connection is not None
-                and not db_connection.closed_in_transaction
-            ):
-                with db_connection.cursor() as cur:
-                    cur.execute("SET idle_in_transaction_session_timeout = %s", (idle_in_transaction_session_timeout,))
-                    cur.execute("SET idle_session_timeout = %s", (idle_session_timeout,))
+        with _postgres_advisory_lock(db_connection, lock_id, shared, wait, using, lock_session_timeout_milliseconds) as acquired:
+            yield acquired
 
     elif db_connection.vendor == "microsoft":
         # MS SQL Server implementation using sp_getapplock
         if lock_id is _MISSING_LOCK_ID:
             raise ValueError("advisory_lock requires a lock identifier")
 
-        try:
-            with _mssql_advisory_lock(
-                lock_id,
-                shared=shared,
-                wait=wait,
-                lock_session_timeout_milliseconds=lock_session_timeout_milliseconds,
-                using=using,
-            ) as internal_lock:
-                yield internal_lock
-        except OperationalError:
-            logger.info('Dropping connection due to error inside MS SQL advisory_lock')
-            db_connection.close_if_unusable_or_obsolete()
-            internal_error = True
-            raise
+        with _mssql_advisory_lock_with_cleanup(
+            db_connection,
+            lock_id,
+            shared,
+            wait,
+            using,
+            lock_session_timeout_milliseconds,
+        ) as acquired:
+            yield acquired
 
     elif db_connection.vendor == "sqlite":
         # SQLite no-op - no distributed locking needed

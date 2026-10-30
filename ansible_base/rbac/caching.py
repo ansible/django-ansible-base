@@ -423,16 +423,23 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
     except DatabaseIntegrityError as exc:
         if not _is_stale_objectrole_fk(exc):
             raise
-        existing_role_ids = set(ObjectRole.objects.filter(id__in={e.role_id for e in evaluations}).values_list('id', flat=True))
-        evaluations = [e for e in evaluations if e.role_id in existing_role_ids]
-        if evaluations:
-            try:
-                with transaction.atomic(using=using):
-                    bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, using=using, return_ids=False)
-            except DatabaseIntegrityError as exc:
-                if not _is_stale_objectrole_fk(exc):
-                    raise
-                logger.warning('Persistent IntegrityError in bulk_create for %s, will be corrected on next recompute', model.__name__)
+        _retry_safe_bulk_create_evaluations(model, evaluations, ignore_conflicts, using)
+
+
+def _retry_safe_bulk_create_evaluations(model, evaluations, ignore_conflicts, using):
+    """Retry a failed insert after dropping evaluations for deleted roles."""
+    existing_role_ids = set(ObjectRole.objects.filter(id__in={e.role_id for e in evaluations}).values_list('id', flat=True))
+    evaluations = [evaluation for evaluation in evaluations if evaluation.role_id in existing_role_ids]
+    if not evaluations:
+        return
+
+    try:
+        with transaction.atomic(using=using):
+            bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, using=using, return_ids=False)
+    except DatabaseIntegrityError as exc:
+        if not _is_stale_objectrole_fk(exc):
+            raise
+        logger.warning('Persistent IntegrityError in bulk_create for %s, will be corrected on next recompute', model.__name__)
 
 
 def _filter_existing_evaluation_keys(model, evaluations, using):
