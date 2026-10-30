@@ -1,6 +1,8 @@
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.sessions.backends.db import SessionStore
@@ -782,3 +784,66 @@ def test_social_auth_mixin_start_no_redirect_disabled_authenticator(mock_logger)
 
     # Verify that a 404 response was returned (not HTML)
     assert isinstance(result, HttpResponseNotFound)
+
+
+@mock.patch("ansible_base.authentication.social_auth.log_auth_error")
+def test_social_auth_mixin_request_logs_http_status(mock_log_error):
+    """A failed provider call logs its HTTP status and re-raises.
+
+    social-auth-core 4.5.4 turns a 401 into AuthForbidden with no response
+    attached, so the status has to be captured here or it is lost.
+    """
+    http_error = requests.HTTPError("401 Client Error")
+    http_error.response = mock.Mock(status_code=401)
+
+    class RaisingParent:
+        def request(self, *args, **kwargs):
+            raise http_error
+
+    class TestBackend(SocialAuthMixin, RaisingParent):
+        def __init__(self):
+            self.database_instance = SimpleNamespace(name="Test Azure AD")
+
+    backend = TestBackend()
+    with pytest.raises(requests.HTTPError):
+        backend.request("https://example.invalid/oauth2/token")
+
+    mock_log_error.assert_called_once()
+    message = mock_log_error.call_args[0][0]
+    assert "Test Azure AD" in message
+    assert "status=401" in message
+
+
+@mock.patch("ansible_base.authentication.social_auth.log_auth_error")
+def test_social_auth_mixin_request_does_not_log_on_success(mock_log_error):
+    """Successful provider calls are untouched."""
+
+    class SucceedingParent:
+        def request(self, *args, **kwargs):
+            return "ok"
+
+    class TestBackend(SocialAuthMixin, SucceedingParent):
+        def __init__(self):
+            self.database_instance = SimpleNamespace(name="Test Azure AD")
+
+    assert TestBackend().request("https://example.invalid/oauth2/token") == "ok"
+    mock_log_error.assert_not_called()
+
+
+@mock.patch("ansible_base.authentication.social_auth.log_auth_error")
+def test_social_auth_mixin_request_logs_without_a_response(mock_log_error):
+    """An HTTPError carrying no response still logs, with status=None."""
+
+    class RaisingParent:
+        def request(self, *args, **kwargs):
+            raise requests.HTTPError("boom")
+
+    class TestBackend(SocialAuthMixin, RaisingParent):
+        def __init__(self):
+            self.database_instance = SimpleNamespace(name="Test Azure AD")
+
+    backend = TestBackend()
+    with pytest.raises(requests.HTTPError):
+        backend.request("https://example.invalid/oauth2/token")
+
+    assert "status=None" in mock_log_error.call_args[0][0]
