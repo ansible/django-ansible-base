@@ -316,6 +316,16 @@ def get_orphan_resources(
     return queryset
 
 
+def _would_cascade_delete_related(content_object) -> bool:
+    """Check if deleting content_object would cascade-delete related objects."""
+    from django.db.models.deletion import Collector
+
+    collector = Collector(using=content_object._state.db)
+    collector.collect([content_object])
+    cascade_total = sum(len(objs) for objs in collector.data.values())
+    return cascade_total > 1
+
+
 def delete_resource(resource: Resource):
     """Wrapper to delete content_object and its related Resource.
     It is up to the caller to wrap it on a database transaction.
@@ -613,11 +623,26 @@ class SyncExecutor:
             self.write(f"Deleting {orphan_count} orphaned resources")
             for orphan in resources_to_cleanup:
                 try:
-                    _sc = orphan.content_type.resource_type.serializer_class
-                    data = _sc(orphan.content_object).data
-                    data.update(orphan.summary_fields())
-                    with transaction.atomic():
-                        delete_resource(orphan)
+                    content_object = orphan.content_object
+                    if content_object is None:
+                        data = orphan.summary_fields()
+                        with transaction.atomic():
+                            orphan.delete()
+                    elif _would_cascade_delete_related(content_object):
+                        data = orphan.summary_fields()
+                        logger.warning(
+                            "Orphaned resource %s has a content object with dependent relations. "
+                            "Deleting only the Resource entry to prevent cascade data loss.",
+                            orphan.ansible_id,
+                        )
+                        with transaction.atomic():
+                            orphan.delete()
+                    else:
+                        _sc = orphan.content_type.resource_type.serializer_class
+                        data = _sc(content_object).data
+                        data.update(orphan.summary_fields())
+                        with transaction.atomic():
+                            delete_resource(orphan)
                 except Exception as exc:  # noqa: BLE001 - continue cleaning remaining orphans
                     self.write(f"Error deleting orphaned resource {orphan.ansible_id}: {type(exc).__name__}: {exc}")
                 else:  # persist in the report
