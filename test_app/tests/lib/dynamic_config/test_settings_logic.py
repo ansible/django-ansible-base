@@ -57,3 +57,36 @@ def test_api_documentation_does_not_duplicate_clean_text_postprocessing_hook():
 
     hooks = settings["SPECTACULAR_SETTINGS"]["POSTPROCESSING_HOOKS"]
     assert hooks.count(CLEAN_TEXT_POSTPROCESSING_HOOK) == 1
+
+
+def test_oauth2_access_token_expire_defaults_to_one_year():
+    settings = get_dab_settings(installed_apps=["ansible_base.oauth2_provider"], oauth2_provider={})
+
+    assert settings["OAUTH2_PROVIDER"]["ACCESS_TOKEN_EXPIRE_SECONDS"] == 31536000
+
+
+def test_oauth2_access_token_expire_coerces_legacy_thousand_year_default():
+    """AWX historically shipped ACCESS_TOKEN_EXPIRE_SECONDS=31536000000 (1000 years).
+
+    DAB setdefault cannot replace an existing key, so the known legacy default must
+    be coerced to the current 1-year default (AAP-66565).
+    """
+    settings = get_dab_settings(
+        installed_apps=["ansible_base.oauth2_provider"],
+        oauth2_provider={
+            "ACCESS_TOKEN_EXPIRE_SECONDS": 31536000000,
+            "AUTHORIZATION_CODE_EXPIRE_SECONDS": 600,
+            "REFRESH_TOKEN_EXPIRE_SECONDS": 2628000,
+        },
+    )
+
+    assert settings["OAUTH2_PROVIDER"]["ACCESS_TOKEN_EXPIRE_SECONDS"] == 31536000
+
+
+def test_oauth2_access_token_expire_preserves_custom_non_legacy_value():
+    settings = get_dab_settings(
+        installed_apps=["ansible_base.oauth2_provider"],
+        oauth2_provider={"ACCESS_TOKEN_EXPIRE_SECONDS": 3600},
+    )
+
+    assert settings["OAUTH2_PROVIDER"]["ACCESS_TOKEN_EXPIRE_SECONDS"] == 3600

@@ -56,11 +56,11 @@ This will happen automatically if using [dynamic_settings](../Installation.md)
 To manually configure the settings in your application 
 ```
 OAUTH2_PROVIDER = {
-    'ACCESS_TOKEN_EXPIRE_SECONDS': 31536000000
-    'AUTHORIZATION_CODE_EXPIRE_SECONDS': 600
-    'REFRESH_TOKEN_EXPIRE_SECONDS': 2628000
-    'APPLICATION_MODEL': 'dab_oauth2_provider.OAuth2Application'
-    'ACCESS_TOKEN_MODEL': 'dab_oauth2_provider.OAuth2AccessToken'
+    'ACCESS_TOKEN_EXPIRE_SECONDS': 31536000,  # 1 year
+    'AUTHORIZATION_CODE_EXPIRE_SECONDS': 600,
+    'REFRESH_TOKEN_EXPIRE_SECONDS': 2628000,
+    'APPLICATION_MODEL': 'dab_oauth2_provider.OAuth2Application',
+    'ACCESS_TOKEN_MODEL': 'dab_oauth2_provider.OAuth2AccessToken',
 }
 
 REST_FRAMEWORK = [
@@ -489,7 +489,7 @@ Pragma: no-cache
 Cache-Control: no-store
 Strict-Transport-Security: max-age=15768000
 
-{"access_token": "9epHOqHhnXUcgYK8QanOmUQPSgX92g", "token_type": "Bearer", "expires_in": 315360000000, "refresh_token": "jMRX6QvzOTf046KHee3TU5mT3nyXsz", "scope": "read"}
+{"access_token": "9epHOqHhnXUcgYK8QanOmUQPSgX92g", "token_type": "Bearer", "expires_in": 31536000, "refresh_token": "jMRX6QvzOTf046KHee3TU5mT3nyXsz", "scope": "read"}
 ```
 
 
@@ -537,7 +537,7 @@ Pragma: no-cache
 Cache-Control: no-store
 Strict-Transport-Security: max-age=15768000
 
-{"access_token": "NDInWxGJI4iZgqpsreujjbvzCfJqgR", "token_type": "Bearer", "expires_in": 315360000000, "refresh_token": "DqOrmz8bx3srlHkZNKmDpqA86bnQkT", "scope": "read write"}
+{"access_token": "NDInWxGJI4iZgqpsreujjbvzCfJqgR", "token_type": "Bearer", "expires_in": 31536000, "refresh_token": "DqOrmz8bx3srlHkZNKmDpqA86bnQkT", "scope": "read write"}
 ```
 Internally, the refresh operation deletes the existing token and a new token is created immediately
 after, with information like scope and related application identical to the original one. We can
