@@ -27,6 +27,7 @@ from ansible_base.resource_registry.serializers import (
     ResourceListSerializer,
     ResourceSerializer,
     ResourceTypeSerializer,
+    ServiceIndexMetadataSerializer,
 )
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
@@ -395,6 +396,7 @@ class ServiceMetadataView(
     # Corresponds to viewset action but given a different name so schema generators are not messed up
     custom_action_label = "service-metadata"
 
+    @extend_schema_if_available(responses={status.HTTP_200_OK: ServiceIndexMetadataSerializer})
     def get(self, request, **kwargs):
         registry = get_registry()
         return Response({"service_id": service_id(), "service_type": registry.api_config.service_type})
