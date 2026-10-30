@@ -6,9 +6,10 @@ from zlib import crc32
 
 import psycopg
 from django.conf import settings
-from django.db import DEFAULT_DB_ALIAS, OperationalError, connection, connections, transaction
+from django.db import DEFAULT_DB_ALIAS, OperationalError, connection, transaction
 from django.db.backends.postgresql.base import DatabaseWrapper as PsycopgDatabaseWrapper
 from django.db.migrations.executor import MigrationExecutor
+from django.db.transaction import get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,97 @@ def migrations_are_complete() -> bool:
 
 # NOTE: the django_pglocks_advisory_lock context manager was forked from the django-pglocks v1.0.4
 # that was licensed under the MIT license
+
+
+def string_to_advisory_lock_id(lock_string: str) -> int:
+    """Convert a string to a PostgreSQL advisory lock ID integer.
+
+    Generates an id within postgres integer range (-2^31 to 2^31 - 1).
+    crc32 generates an unsigned integer in Py3, we convert it into
+    a signed integer using 2's complement (this is a noop in Py2).
+
+    Args:
+        lock_string: The string to convert to a lock ID
+
+    Returns:
+        Integer lock ID suitable for PostgreSQL advisory locks
+    """
+    pos = crc32(lock_string.encode("utf-8"))
+    lock_id = (2**31 - 1) & pos
+    if pos & 2**31:
+        lock_id -= 2**31
+    return lock_id
+
+
+def advisory_lock_id_to_debug_info(lock_id: int) -> dict:
+    """Convert an advisory lock ID back to debug information.
+
+    Note: This cannot reverse the string due to CRC32 hash collisions,
+    but provides debugging information about the lock ID.
+
+    Args:
+        lock_id: The integer lock ID
+
+    Returns:
+        Dictionary with debug information about the lock ID
+    """
+    # Convert back to unsigned for analysis
+    if lock_id < 0:
+        unsigned_value = lock_id + 2**31
+        had_high_bit = True
+    else:
+        unsigned_value = lock_id
+        had_high_bit = False
+
+    return {
+        'lock_id': lock_id,
+        'unsigned_crc32': unsigned_value,
+        'had_high_bit_set': had_high_bit,
+        'hex_representation': hex(lock_id),
+    }
+
+
+def get_active_advisory_locks(using=None) -> list:
+    """Get a list of all currently held advisory locks.
+
+    Args:
+        using: Database alias to use (defaults to DEFAULT_DB_ALIAS)
+
+    Returns:
+        List of dictionaries containing lock information
+    """
+    if using is None:
+        using = DEFAULT_DB_ALIAS
+
+    conn = get_connection(using)
+    if conn.vendor != "postgresql":
+        return []
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT locktype, classid, objid, objsubid, pid, mode, granted
+            FROM pg_locks
+            WHERE locktype = 'advisory'
+        """
+        )
+
+        locks = []
+        for row in cursor.fetchall():
+            locktype, classid, objid, objsubid, pid, mode, granted = row
+            locks.append(
+                {
+                    'locktype': locktype,
+                    'classid': classid,
+                    'objid': objid,
+                    'objsubid': objsubid,
+                    'pid': pid,
+                    'mode': mode,
+                    'granted': granted,
+                }
+            )
+
+        return locks
 
 
 @contextmanager
@@ -81,13 +173,7 @@ def django_pglocks_advisory_lock(lock_id, shared=False, wait=True, using=None):
 
         tuple_format = True
     elif isinstance(lock_id, str):
-        # Generates an id within postgres integer range (-2^31 to 2^31 - 1).
-        # crc32 generates an unsigned integer in Py3, we convert it into
-        # a signed integer using 2's complement (this is a noop in Py2)
-        pos = crc32(lock_id.encode("utf-8"))
-        lock_id = (2**31 - 1) & pos
-        if pos & 2**31:
-            lock_id -= 2**31
+        lock_id = string_to_advisory_lock_id(lock_id)
     elif not isinstance(lock_id, int):
         raise ValueError("Cannot use %s as a lock id" % lock_id)
 
@@ -104,7 +190,7 @@ def django_pglocks_advisory_lock(lock_id, shared=False, wait=True, using=None):
     acquire_params = (function_name,) + params
 
     command = base % acquire_params
-    cursor = connections[using].cursor()
+    cursor = get_connection(using).cursor()
 
     cursor.execute(command)
 
