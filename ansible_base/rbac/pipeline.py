@@ -19,7 +19,6 @@ from ansible_base.rbac.caching import (
     defer_rbac_state,
     delete_object_roles,
     recompute_role_evaluations,
-    team_ids_from_role_target,
 )
 from ansible_base.rbac.models.content_type import DABContentType
 from ansible_base.rbac.models.role import AssignmentBase, ObjectRole, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
@@ -292,14 +291,28 @@ def _create_assignments(
 def _collect_recompute_team_ids(object_roles: Iterable[ObjectRole]) -> set[int]:
     """Identify team IDs that need member-role recomputation."""
     rd_has_team_perm: dict[int, bool] = {}
-    recompute_team_ids: set[int] = set()
+    organization_ids = set()
+    team_ids = set()
     for obj_role in object_roles:
         rd_id = obj_role.role_definition_id
         if rd_id not in rd_has_team_perm:
-            rd_has_team_perm[rd_id] = RoleDefinition.objects.filter(pk=rd_id, permissions__codename=permission_registry.team_permission).exists()
-        if rd_has_team_perm[rd_id]:
-            recompute_team_ids.update(team_ids_from_role_target(obj_role))
-    return recompute_team_ids
+            rd_has_team_perm[rd_id] = RoleDefinition.objects.filter(
+                pk=rd_id,
+                permissions__codename=permission_registry.team_permission,
+            ).exists()
+
+        if not rd_has_team_perm[rd_id]:
+            continue
+
+        if obj_role.content_type_id == permission_registry.org_ct_id:
+            organization_ids.add(obj_role.object_id)
+        if obj_role.content_type_id == permission_registry.team_ct_id:
+            team_ids.add(int(obj_role.object_id))
+    parent_field = permission_registry.get_parent_fd_name(permission_registry.team_model)
+    if organization_ids and parent_field:
+        team_ids.update(permission_registry.team_model.objects.filter(**{f"{parent_field}_id__in": organization_ids}).values_list("id", flat=True))
+
+    return team_ids
 
 
 def _check_defer_guard() -> None:
@@ -313,6 +326,7 @@ def _check_defer_guard() -> None:
 def _recompute_after_give(
     lookup: ObjectRoleLookup,
     assignments: list[AssignmentBase],
+    prefetch_evaluations: bool = False,
 ) -> None:
     """Run recomputation pass after bulk permission assignment."""
     _check_defer_guard()
@@ -332,7 +346,7 @@ def _recompute_after_give(
         roles_to_recompute = ObjectRole.objects.filter(pk__in=[obj_role.pk for obj_role in object_roles_to_update]).prefetch_related(
             'provides_teams__has_roles'
         )
-        recompute_role_evaluations(roles_to_recompute)
+        recompute_role_evaluations(roles_to_recompute, prefetch_evaluations=prefetch_evaluations)
 
 
 def _find_assignments(
@@ -416,6 +430,7 @@ def give_assignments(
     team_resolved: Sequence[ResolvedAssignment] = (),
     fire_signals_on_create: bool = True,
     ignore_conflicts: bool = True,
+    prefetch_evaluations: bool = False,
 ) -> list[AssignmentBase]:
     """Assign already-resolved roles and return the persisted assignments.
 
@@ -437,7 +452,7 @@ def give_assignments(
         fire_signals_on_create=fire_signals_on_create,
         ignore_conflicts=ignore_conflicts,
     )
-    _recompute_after_give(lookup, assignments)
+    _recompute_after_give(lookup, assignments, prefetch_evaluations=prefetch_evaluations)
     return assignments
 
 
@@ -446,6 +461,7 @@ def bulk_give_permissions(
     team_permissions: Sequence[PermissionTriple] = (),
     fire_signals_on_create: bool = True,
     ignore_conflicts: bool = True,
+    prefetch_evaluations: bool = False,
 ) -> list[AssignmentBase]:
     """Validate permission triples, create their assignments, and return persisted rows.
 
@@ -454,13 +470,13 @@ def bulk_give_permissions(
     """
     if not user_permissions and not team_permissions:
         return []
-
     user_resolved, team_resolved = _resolve_assignments(user_permissions, team_permissions)
     return give_assignments(
         user_resolved,
         team_resolved,
         fire_signals_on_create=fire_signals_on_create,
         ignore_conflicts=ignore_conflicts,
+        prefetch_evaluations=prefetch_evaluations,
     )
 
 

@@ -5,7 +5,7 @@ import threading
 from collections import defaultdict
 from collections.abc import Iterable
 from itertools import islice
-from typing import Optional, Union
+from typing import Any, Optional, Union
 from uuid import UUID
 
 from django.conf import settings
@@ -471,8 +471,18 @@ class EvaluationUpdates:
         self.to_delete: set[tuple[int, type]] = set()
         self.to_add: list = []
 
-    def collect(self, object_role, types_prefetch, evaluations_prefetch=None):
-        role_to_delete, role_to_add = object_role.needed_cache_updates(types_prefetch=types_prefetch, evaluations_prefetch=evaluations_prefetch)
+    def collect(
+        self,
+        object_role,
+        types_prefetch,
+        evaluations_prefetch=None,
+        child_ids_cache=None,
+    ):
+        role_to_delete, role_to_add = object_role.needed_cache_updates(
+            types_prefetch=types_prefetch,
+            child_ids_cache=child_ids_cache,
+            evaluations_prefetch=evaluations_prefetch,
+        )
         if role_to_delete:
             logger.debug('Removing %d object-permissions from ObjectRole(pk=%s)', len(role_to_delete), object_role.pk)
             self.to_delete.update(role_to_delete)
@@ -522,6 +532,7 @@ class EvaluationUpdates:
 def recompute_role_evaluations(
     object_roles: Iterable[ObjectRole],
     types_prefetch: Optional[TypesPrefetch] = None,
+    prefetch_evaluations: bool = False,
 ) -> None:
     """Recompute RoleEvaluation entries for a specific set of ObjectRoles.
 
@@ -537,13 +548,62 @@ def recompute_role_evaluations(
     if types_prefetch is None:
         types_prefetch = TypesPrefetch.from_db()
 
+    child_ids_cache = None
+    evaluations_prefetch = None
+    if prefetch_evaluations:
+        object_roles = list(object_roles)
+
+        roles_for_child_cache, evaluations_prefetch = _parse_roles_for_child_cache(object_roles)
+        child_ids_cache = _build_child_ids_cache(roles_for_child_cache, types_prefetch)
+
     updates = EvaluationUpdates()
     roles = iter(object_roles)
     while chunk := list(islice(roles, RECOMPUTE_CHUNK_SIZE)):
-        evaluations_prefetch = EvaluationsPrefetch.from_roles(chunk)
+        chunk_prefetch = evaluations_prefetch or EvaluationsPrefetch.from_roles(chunk)
         for object_role in chunk:
-            updates.collect(object_role, types_prefetch, evaluations_prefetch)
+            updates.collect(
+                object_role,
+                types_prefetch,
+                evaluations_prefetch=chunk_prefetch,
+                child_ids_cache=child_ids_cache,
+            )
     updates.apply()
+
+
+def _parse_roles_for_child_cache(object_roles: list[ObjectRole]) -> tuple[dict[int, ObjectRole], EvaluationsPrefetch]:
+    """Parse roles for child cache."""
+    roles_for_child_cache = {role.pk: role for role in object_roles}
+    evaluations_prefetch = EvaluationsPrefetch.from_roles(object_roles)
+
+    for role in object_roles:
+        for team_role in evaluations_prefetch.get_team_roles(role.pk):
+            roles_for_child_cache[team_role.pk] = team_role
+    return roles_for_child_cache, evaluations_prefetch
+
+
+def _build_child_ids_cache(roles_for_child_cache, types_prefetch: TypesPrefetch) -> dict[tuple[Any, Any], dict[str, set[Any]]]:
+    """Build query groups for child objects."""
+    child_query_groups = {}
+    child_ids_cache = {}
+    for object_role in roles_for_child_cache.values():
+        for permission in types_prefetch.permissions_for_object_role(object_role):
+            eval_ct_id, child_model, filter_path = object_role.get_child_filters(
+                permission, types_prefetch.get_content_type(object_role.content_type_id), types_prefetch
+            )
+            if not eval_ct_id or child_model is None or filter_path is None:
+                continue
+            cache_key = (child_model, filter_path)
+            child_query_groups.setdefault(cache_key, set()).add(object_role.object_id)
+
+    for (child_model, filter_path), parent_ids in child_query_groups.items():
+        parent_field = filter_path if filter_path.endswith("_id") else f"{filter_path}_id"
+
+        children_by_parent = {str(parent_id): set() for parent_id in parent_ids}
+        for child_id, parent_id in child_model.objects.filter(**{f"{filter_path}__in": parent_ids}).values_list('pk', parent_field):
+            children_by_parent[str(parent_id)].add(child_id)
+
+        child_ids_cache[(child_model, filter_path)] = children_by_parent
+    return child_ids_cache
 
 
 def _created_role_teams(role_pks: list[int]) -> tuple[dict[int, set[int]], set[int]]:
@@ -741,7 +801,7 @@ def recompute_all_role_evaluations() -> None:
         last_pk = chunk[-1].pk
         evaluations_prefetch = EvaluationsPrefetch.from_roles(chunk)
         for object_role in chunk:
-            updates.collect(object_role, types_prefetch, evaluations_prefetch)
+            updates.collect(object_role, types_prefetch, evaluations_prefetch=evaluations_prefetch)
         del chunk, evaluations_prefetch
         gc.collect()
 
