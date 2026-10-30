@@ -195,6 +195,12 @@ class TestOptimizedDeleteCleanup:
             object_id__in=int_pks + [str(uuid_obj.pk)],
         ).exists(), "Orphaned RoleUserAssignments"
 
+        assert not RoleUserAssignment.objects.filter(
+            user__in=[user_member, user_admin],
+            role_definition__in=[member_rd, org_admin_rd, inv_rd, uuid_rd],
+            object_role__isnull=True,
+        ).exists(), "Object-scoped assignments must not become global assignments"
+
         assert not RoleTeamAssignment.objects.filter(content_type_id__in=int_cts, object_id__in=int_pks).exists(), "Orphaned RoleTeamAssignments"
 
         assert not provides_teams_through.objects.filter(team_id__in=[team_a.pk, team_b.pk, team_c.pk]).exists(), "Orphaned provides_teams"

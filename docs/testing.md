@@ -20,9 +20,38 @@ tox -e 311
 
 ### Test database
 
-Tests require PostgreSQL running in order to pass.
+Tests require PostgreSQL running in order to pass (or MS SQL Server, see below).
 
 tox will automatically create/start and stop/destroy the postgres container.  If you want the container to remain after test execution, add **--docker-dont-stop=db**.
+
+### Running tests with MS SQL Server
+
+To run tests against MS SQL Server instead of PostgreSQL, use the dedicated MS SQL tox environments. Tox-docker starts and removes the SQL Server test container automatically.
+
+For consumer setup, database collation, ODBC installation, and `TextField` migration requirements, see the [SQL Server compatibility and migration guide](mssql-compatibility-guide.md).
+
+```bash
+# Run all MS SQL tests
+tox -m mssql
+
+# Or run specific MS SQL environments
+tox -e py312-mssql           # Full test suite
+tox -e py312-mssql-check     # Django checks and migration validation
+```
+
+**Available MS SQL environments:**
+- `py312-mssql` - Full test suite with MS SQL Server
+- `py312-mssql-check` - Django system checks and migration validation
+
+For manual use or to run `test_app/scripts/bootstrap.sh` outside tox, start and stop the compose-based SQL Server with:
+
+```bash
+make mssql
+DB_BACKEND=mssql ./test_app/scripts/bootstrap.sh
+make stop-mssql
+```
+
+**Note:** The regular environments (`py312`, `py312-check`, etc.) use PostgreSQL and should not be run with `DB_BACKEND=mssql`.
 
 ## Checking code coverage locally
 

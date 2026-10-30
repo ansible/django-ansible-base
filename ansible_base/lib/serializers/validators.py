@@ -1,0 +1,66 @@
+"""
+Serializer validators for database-specific constraints.
+
+Provides clean API validation errors for database-specific limitations
+without requiring model-level validators or migrations.
+"""
+
+from django.core.exceptions import ValidationError
+from django.db import connection
+
+
+def validate_mssql_text_length(value, max_length, field_name='This field'):
+    """
+    Validate TextField length for MS SQL Server compatibility.
+
+    SQL Server converts indexed/unique TextFields to CharField with a max_length
+    during schema creation. This validator provides clean API errors before
+    data hits the database.
+
+    Args:
+        value: The field value to validate
+        max_length: Maximum number of UTF-16 code units allowed on SQL Server
+        field_name: Human-readable field name for error messages
+
+    Raises:
+        ValidationError: When value exceeds max_length on SQL Server
+
+    Usage in serializers:
+        from ansible_base.lib.serializers.validators import validate_mssql_text_length
+
+        def validate_description(self, value):
+            validate_mssql_text_length(value, max_length=4000, field_name='Description')
+            return value
+    """
+    if not value:
+        return
+
+    # Only enforce on SQL Server
+    if connection.vendor != 'microsoft':
+        return
+
+    sql_server_length = len(value.encode('utf-16-le', errors='surrogatepass')) // 2
+    if sql_server_length > max_length:
+        message = f"{field_name} is limited to {max_length} UTF-16 code units on MS SQL Server; current length: {sql_server_length}."
+        raise ValidationError(message)
+
+
+# Convenience validators for common field types
+def validate_mssql_description(value):
+    """Validate description field (4000 char limit on SQL Server)."""
+    validate_mssql_text_length(value, max_length=4000, field_name='Description')
+
+
+def validate_mssql_object_id(value):
+    """Validate object_id field (450 char limit on SQL Server)."""
+    validate_mssql_text_length(value, max_length=450, field_name='Object ID')
+
+
+def validate_mssql_codename(value):
+    """Validate codename field (100 char limit on SQL Server)."""
+    validate_mssql_text_length(value, max_length=100, field_name='Codename')
+
+
+def validate_mssql_parent_reference(value):
+    """Validate indexed parent_reference fields (450 char limit on SQL Server)."""
+    validate_mssql_text_length(value, max_length=450, field_name='Parent reference')

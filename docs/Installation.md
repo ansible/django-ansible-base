@@ -10,6 +10,8 @@ pip install git+https://github.com/ansible/django-ansible-base.git[all]
 This will install django-ansible-base as well as all its optional dependencies.
 A resolved version of these (with dependencies) can be found in `requirements/requirements_all.txt`
 
+SQL Server deployments can install the `mssql` extra with `pip install 'django-ansible-base[mssql]'`; the `all` extra includes it. SQL Server also requires the Microsoft ODBC Driver at the operating-system level. See the [SQL Server compatibility and migration guide](mssql-compatibility-guide.md) for driver setup, collation, and schema migration details.
+
 If there are features you are not going to use you can tell pip to only install required packages for the features you will use.
 
 So if you only wanted api_docs and filtering you could install the library like:

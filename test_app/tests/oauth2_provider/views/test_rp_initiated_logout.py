@@ -547,6 +547,32 @@ def test_revoke_openid_tokens_handles_access_token_without_refresh_and_id_tokens
 
 
 @pytest.mark.django_db
+def test_revoke_openid_tokens_preserves_whitespace_and_case_boundaries(user, oidc_app_factory):
+    app, _secret = oidc_app_factory("Whitespace Scope App")
+    scopes = {
+        'tab_before': ('read\topenid', True),
+        'newline_after': ('openid\nread', True),
+        'uppercase': ('read OPENID', False),
+        'embedded': ('read_notopenid', False),
+    }
+    tokens = {
+        name: OAuth2AccessToken.objects.create(
+            user=user,
+            application=app,
+            token=generate_token(),
+            scope=scope,
+            expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+        )
+        for name, (scope, _should_revoke) in scopes.items()
+    }
+
+    RPInitiatedLogoutView()._revoke_openid_tokens(user, application=app)
+
+    for name, (_scope, should_revoke) in scopes.items():
+        assert OAuth2AccessToken.objects.filter(pk=tokens[name].pk).exists() == (not should_revoke)
+
+
+@pytest.mark.django_db
 def test_logout_configuration_defaults():
     """
     Test that the default configuration includes the expected RP-initiated logout settings.

@@ -4,7 +4,7 @@ from functools import reduce
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.core.exceptions import FieldDoesNotExist, FieldError, ValidationError
-from django.db import models
+from django.db import connection, models
 from django.db.models import BooleanField, CharField, IntegerField, JSONField, Q, TextField
 from django.db.models.fields.related import ForeignKey, ForeignObjectRel, ManyToManyField
 from django.db.models.functions import Cast
@@ -46,13 +46,21 @@ class FieldLookupBackend(BaseFilterBackend):
     # of introducing duplicates
     NO_DUPLICATES_ALLOW_LIST = (CharField, IntegerField, BooleanField, TextField)
 
+    def get_supported_lookups(self):
+        if connection.vendor == 'microsoft':
+            return tuple(lookup for lookup in self.SUPPORTED_LOOKUPS if lookup not in ('regex', 'iregex'))
+        return self.SUPPORTED_LOOKUPS
+
     # If True, JSONField will be treated as a text field for filtering purposes
     # True by default to maintain backwards compatibility
     TREAT_JSONFIELD_AS_TEXT = True
 
     def get_fields_from_lookup(self, model, lookup):
+        supported_lookups = self.get_supported_lookups()
         if '__' in lookup and lookup.rsplit('__', 1)[-1] in self.SUPPORTED_LOOKUPS:
             path, suffix = lookup.rsplit('__', 1)
+            if suffix not in supported_lookups:
+                raise ParseError(_('Regular expression lookups are not supported on SQL Server.'))
         else:
             path = lookup
             suffix = 'exact'

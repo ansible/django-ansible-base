@@ -5,6 +5,7 @@ from collections import defaultdict
 from django.apps import apps as global_apps
 from django.db import DEFAULT_DB_ALIAS, connection, router
 
+from ansible_base.lib.utils.db import bulk_create_db_safe
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.remote import get_resource_prefix
 
@@ -127,7 +128,7 @@ def sync_dab_permissions(verbosity=2, using=DEFAULT_DB_ALIAS, apps=global_apps):
             permission.api_slug = f'{ct.service}.{codename}'
             perms.append(permission)
 
-    Permission.objects.using(using).bulk_create(perms)
+    bulk_create_db_safe(Permission, perms, ignore_conflicts=False, using=using, return_ids=False)
 
     # This is all just for nice logging
     perms_by_model_name = defaultdict(list)
@@ -138,5 +139,9 @@ def sync_dab_permissions(verbosity=2, using=DEFAULT_DB_ALIAS, apps=global_apps):
         logger.debug(f"Added DAB permissions for model {model_name}: {codename_prnt}")
 
     # Reset the sequence to avoid PK collision later
+    # On SQL Server, mssql-django wraps inserts with explicit AutoField values in
+    # IDENTITY_INSERT ON/OFF, and SQL Server advances a positive identity when
+    # the inserted value exceeds the current identity. No explicit reseed is
+    # needed for the DABContentType IDs created above.
     if connection.vendor == 'postgresql' and new_cts:
         reset_ct_sequence(dab_ct_cls)

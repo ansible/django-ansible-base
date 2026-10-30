@@ -1,17 +1,20 @@
-## Database Named Locks
+# Advisory Locks
 
-Django-ansible-base hosts its own specialized utility for obtaining named locks.
-This follows the same contract as documented in the django-pglocks library
+## Overview
 
-https://pypi.org/project/django-pglocks/
+Django-ansible-base provides `advisory_lock()`, a database-agnostic context manager for application-level locking coordination. Advisory locks allow processes to synchronize access to shared resources without requiring actual table rows.
 
-Due to a multitude of needs relevant to production use, discovered through its
-use in AWX, a number of points of divergence have emerged such as:
+This utility supports:
+- **PostgreSQL** (via `pg_advisory_lock`)
+- **MS SQL Server** (via `sp_getapplock`)
+- **SQLite** (no-op, always returns `True`)
 
- - the need to have it not error when running sqlite3 tests
- - stuck processes holding the lock forever (adding pg-level idle timeout)
+The PostgreSQL implementation follows the same lock conventions as [django-pglocks](https://pypi.org/project/django-pglocks/), with extensions for production use discovered through deployment in AWX:
+- SQLite compatibility for testing
+- Database-level idle timeouts to prevent stuck processes
+- MS SQL Server support
 
-The use for the purpose of a task would typically look like this
+## Basic Usage
 
 ```python
 from ansible_base.lib.utils.db import advisory_lock
@@ -24,12 +27,255 @@ def my_task():
         # continue to run logic in my_task
 ```
 
-This is very useful to assure that no other process _in the cluster_ connected
-to the same postgres instance runs `my_task` at the same time as the process
-calling it here.
+This ensures that no other process *in the cluster* connected to the same database instance runs `my_task` at the same time.
 
-The specific choice of `wait=False` and what to do when another task holds the lock,
-is the choice of the programmer in the specific case.
-In this case, the `return` would be okay in the situation where `my_task` is idempotent,
-and there is a "fallback" schedule in case a call was missed.
-The blocking/non-blocking choices are very dependent on the specific design and situation.
+The specific choice of `wait=False` and what to do when another task holds the lock is the choice of the programmer in the specific case. In this example, the `return` would be okay in the situation where `my_task` is idempotent, and there is a "fallback" schedule in case a call was missed.
+
+## API
+
+```python
+advisory_lock(
+    lock_id,
+    shared=False,
+    wait=True,
+    using=None,
+    *,
+    lock_session_timeout_milliseconds=0,
+)
+```
+
+### Parameters
+
+- **`lock_id`**: Lock identifier; optional on PostgreSQL and required on SQL Server
+  - **PostgreSQL**: One 64-bit integer, a pair of 32-bit integers, or a string (hashed to a 32-bit integer)
+  - **MS SQL Server**: Converted to string resource name (max 255 chars)
+    - Integer → `"dab_lock_{n}"`
+    - Tuple `(a, b)` → `"dab_lock_{a}_{b}"`
+    - String → Truncated to 255 chars if needed
+    - Other types → CRC32 hash → `"dab_lock_{hash}"`
+
+- **`shared`** (bool, default: `False`): Lock mode
+  - `False`: Exclusive lock (no other locks allowed)
+  - `True`: Shared lock (other shared locks allowed)
+
+- **`wait`** (bool, default: `True`): Block until lock acquired?
+  - `True`: Wait for the lock. PostgreSQL's `pg_advisory_lock()` returns only after acquiring it. On SQL Server, an acquisition timeout raises `OperationalError`.
+  - `False`: Try once and return immediately if the lock is unavailable
+
+- **`using`** (str, optional): Django database alias (default: `'default'`)
+
+- **`lock_session_timeout_milliseconds`** (int, default: `0`, keyword-only): Database-level timeout
+  - `0` = no DAB timeout override; PostgreSQL leaves its session settings unchanged, while SQL Server waits indefinitely when `wait=True`
+  - `>0` = apply a backend-specific timeout
+  - **PostgreSQL**: Sets `idle_in_transaction_session_timeout` and `idle_session_timeout`; this does not limit how long lock acquisition waits
+  - **MS SQL Server**: Passed to `sp_getapplock @LockTimeout` and limits lock acquisition
+
+### Returns
+
+Context manager that yields:
+- **`True`**: Lock acquired
+- **`False`**: Lock not acquired (only when `wait=False`)
+
+With `wait=True`, PostgreSQL yields `True` after the lock is acquired. Its `lock_session_timeout_milliseconds` setting controls idle-session timeouts, not acquisition time; the fallback branch in the example below is therefore only used with `wait=False`.
+
+### Raises
+
+- **`RuntimeError`**: Unsupported database vendor
+- **`OperationalError`**: Lock operation failed (timeout, deadlock, etc.)
+
+## Implementation Details
+
+### PostgreSQL
+
+- Uses `pg_advisory_lock()` and `pg_try_advisory_lock()` from django-pglocks
+- A single integer uses PostgreSQL's 64-bit lock form; a two-integer tuple uses two 32-bit `int4` values
+- **Session-scoped by default** - locks remain held until explicitly released or the database session ends; they are not released at transaction end
+- Supports both exclusive and shared lock modes
+- `lock_session_timeout_milliseconds` sets `idle_in_transaction_session_timeout` and `idle_session_timeout`; it does not set a lock-acquisition timeout
+- With `wait=True`, `pg_advisory_lock()` waits until the lock is acquired and then yields `True`; with `wait=False`, `pg_try_advisory_lock()` can yield `False`
+- **Connection recovery**: After `OperationalError`, calls `close_if_unusable_or_obsolete()` because a server timeout can leave the connection unusable
+
+### MS SQL Server
+
+- Uses `sp_getapplock` stored procedure
+- **Lock IDs must be strings** (resource names, max 255 chars) - automatic conversion applied
+- Uses `LockOwner='Session'` explicitly (not `Transaction`, which requires an active transaction)
+- Return codes:
+  - `0` = Lock granted immediately
+  - `1` = Lock granted after waiting
+  - `-1` = Timeout
+  - `-2` = Canceled
+  - `-3` = Deadlock victim
+  - `-999` = Parameter validation or other error
+- `wait=True` with a positive `lock_session_timeout_milliseconds` raises `OperationalError` if lock acquisition times out; `wait=False` yields `False` when the lock is unavailable
+- **Must explicitly release** with `sp_releaseapplock` (handled in `finally` block)
+- **Connection recovery**: After `OperationalError`, calls `close_if_unusable_or_obsolete()`
+
+### SQLite
+
+- No-op implementation (no distributed locking needed for single-process database)
+- Always yields `True`
+
+## Key Behavioral Differences
+
+| Aspect | PostgreSQL | MS SQL Server |
+|--------|-----------|---------------|
+| **Lock ID format** | One 64-bit integer or two 32-bit integers | Strings (auto-converted from int/tuple) |
+| **Max lock ID size** | 64-bit integer or two 32-bit integers | 255 characters |
+| **Release mechanism** | Explicit unlock; also released when the session ends | Explicit `sp_releaseapplock`; also released when the session ends |
+| **Scope** | Session | Session (explicit `LockOwner='Session'`) |
+| **Error codes** | Generic `OperationalError` | Distinct codes for timeout/deadlock/cancel |
+| **Timeout handling** | Idle-session timeouts; lock acquisition itself waits | `@LockTimeout` bounds lock acquisition |
+| **Connection recovery** | Checks and closes an unusable connection after `OperationalError` | Checks for an unusable connection after `OperationalError` |
+
+## Examples
+
+### Non-blocking lock with status check
+
+```python
+with advisory_lock('import_task', wait=False) as acquired:
+    if not acquired:
+        logger.info('Import task already running, skipping')
+        return
+    
+    # Run import
+    run_import()
+```
+
+### Shared lock with a non-blocking fallback
+
+```python
+with advisory_lock(
+    'read_config',
+    shared=True,
+    wait=False
+) as acquired:
+    if acquired:
+        # Read configuration
+        config = load_config()
+    else:
+        # Timeout - use cached config
+        config = get_cached_config()
+```
+
+### Tuple lock ID for namespacing
+
+```python
+# Lock specific to organization and resource type
+org_id = 42
+resource_type = 1
+
+with advisory_lock((org_id, resource_type)):
+    # Critical section for this org/resource combination
+    process_organization_resource(org_id, resource_type)
+```
+
+### Different databases
+
+```python
+# Use specific database connection
+with advisory_lock('replica_sync', using='replica_db') as acquired:
+    if acquired:
+        sync_replica()
+```
+
+## Production Considerations
+
+### Lock Identifier Design
+
+- Use descriptive names that indicate the protected resource
+- For PostgreSQL, prefer integers or tuples for efficiency
+- For cross-database compatibility, use integers or 2-integer tuples (not strings)
+- Namespace locks by resource type to avoid collisions: `(resource_type_id, object_id)`
+
+### Timeout Configuration
+
+- **Default behavior** (`lock_session_timeout_milliseconds=0`): Wait indefinitely
+- **For interactive operations**: Set reasonable timeout (5-30 seconds)
+- **For background jobs**: Use `wait=False` or longer timeouts
+- **Critical sections**: Keep locks held for minimal duration
+
+### Error Handling
+
+Both PostgreSQL and MS SQL Server will close the database connection on lock operation errors. This is intentional to prevent connection pool pollution with unusable connections.
+
+```python
+try:
+    with advisory_lock('critical_task', lock_session_timeout_milliseconds=30000) as acquired:
+        if acquired:
+            perform_critical_task()
+except OperationalError as e:
+    # Connection was closed - this is expected on timeout/deadlock
+    logger.error(f'Lock operation failed: {e}')
+    # Django will create a new connection on next database access
+```
+
+### Deadlock Prevention
+
+- Acquire locks in consistent order across processes
+- Keep critical sections short
+- Use timeouts to detect and recover from deadlocks
+- Monitor for `-3` (deadlock victim) errors on MS SQL Server
+
+### Testing
+
+Advisory locks are no-ops on SQLite, so:
+- Unit tests using SQLite will not exercise lock contention
+- For testing lock behavior, use PostgreSQL or MS SQL Server test database
+- Mock `advisory_lock` in tests where lock behavior is not the focus
+
+## Common Patterns
+
+### Idempotent Task Execution
+
+```python
+def periodic_cleanup():
+    """Run cleanup, but skip if already running."""
+    with advisory_lock('periodic_cleanup', wait=False) as held:
+        if not held:
+            return  # Another process is running cleanup
+        
+        # Perform cleanup
+        delete_old_records()
+```
+
+### Exclusive Resource Modification
+
+```python
+def update_shared_config(new_config):
+    """Ensure only one process updates config at a time."""
+    with advisory_lock('shared_config'):
+        # Exclusive lock - all other processes wait
+        current = load_config()
+        merged = merge_config(current, new_config)
+        save_config(merged)
+```
+
+### Read-Write Coordination
+
+```python
+# Writer (exclusive)
+def write_data(data):
+    with advisory_lock('data_lock', shared=False):
+        save_data(data)
+
+# Readers (shared)
+def read_data():
+    with advisory_lock('data_lock', shared=True):
+        return load_data()
+```
+
+## Migration Notes
+
+If migrating from django-pglocks:
+
+1. Replace `from django_pglocks import advisory_lock` with `from ansible_base.lib.utils.db import advisory_lock`
+2. Positional arguments use the order `lock_id`, `shared`, `wait`, `using`; `lock_session_timeout_milliseconds` is keyword-only.
+3. Code now works on MS SQL Server and SQLite in addition to PostgreSQL
+4. SQL Server requires a lock ID, converts it to a resource name, truncates string IDs to 255 characters, and uses the timeout to limit lock acquisition. PostgreSQL uses the timeout for idle-session settings instead.
+
+## See Also
+
+- [django-pglocks documentation](https://pypi.org/project/django-pglocks/)
+- [PostgreSQL Advisory Locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)
+- [MS SQL Server sp_getapplock](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-getapplock-transact-sql)

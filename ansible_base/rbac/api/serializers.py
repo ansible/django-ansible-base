@@ -2,6 +2,7 @@ import logging
 
 from django.apps import apps
 from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.utils import IntegrityError
 from django.utils.translation import gettext_lazy as _
@@ -12,6 +13,7 @@ from rest_framework.serializers import ValidationError
 from ansible_base.lib.abstract_models.common import get_url_for_object
 from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer
 from ansible_base.lib.serializers.mixins import CleanTextMixin
+from ansible_base.lib.serializers.validators import validate_mssql_description, validate_mssql_object_id
 from ansible_base.lib.utils.auth import get_team_model
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
@@ -52,6 +54,11 @@ class RoleDefinitionSerializer(CleanTextMixin, CommonModelSerializer):
         model = RoleDefinition
         read_only_fields = ('id', 'summary_fields')
         fields = '__all__'
+
+    def validate_description(self, value):
+        """Validate description field length for SQL Server compatibility."""
+        validate_mssql_description(value)
+        return value
 
     def validate(self, validated_data):
         # Obtain the resultant new values
@@ -171,6 +178,11 @@ class BaseAssignmentSerializer(CommonModelSerializer):
 
         # Resolve object
         obj = self.get_object_from_data(validated_data, rd, requesting_user)
+        if obj is not None:
+            try:
+                validate_mssql_object_id(str(obj.pk))
+            except DjangoValidationError as exc:
+                raise ValidationError({'object_id': exc.messages}) from exc
 
         # model-level callback to further validate the assignment
         # can be optionally implemented by the model

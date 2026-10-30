@@ -1,5 +1,6 @@
 import gc
 import logging
+import re
 import threading
 from collections import defaultdict
 from collections.abc import Iterable
@@ -8,11 +9,12 @@ from typing import Any, Optional, Union
 from uuid import UUID
 
 from django.conf import settings
-from django.db import transaction
+from django.db import DEFAULT_DB_ALIAS, connections, transaction
 from django.db.models import Q
-from django.db.utils import IntegrityError
 
-from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID, get_evaluation_model
+from ansible_base.lib.utils.db import DatabaseIntegrityError, bulk_create_db_safe
+from ansible_base.lib.utils.mssql import SQL_SERVER_MAX_QUERY_PARAMETERS, SQL_SERVER_QUERY_PARAMETER_HEADROOM
+from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID, RoleTeamAssignment, RoleUserAssignment, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import EvaluationsPrefetch, TypesPrefetch
 from ansible_base.rbac.remote import GenericObject
@@ -20,6 +22,8 @@ from ansible_base.rbac.remote import GenericObject
 logger = logging.getLogger('ansible_base.rbac.caching')
 
 RECOMPUTE_CHUNK_SIZE = 1000
+EVALUATION_UNIQUE_KEY_FIELDS = ('object_id', 'content_type_id', 'codename', 'role_id')
+MSSQL_EVALUATION_KEY_FILTER_BATCH_SIZE = (SQL_SERVER_MAX_QUERY_PARAMETERS - SQL_SERVER_QUERY_PARAMETER_HEADROOM) // len(EVALUATION_UNIQUE_KEY_FIELDS)
 
 
 """
@@ -76,13 +80,53 @@ def bulk_ancestor_roles(team_pks: Iterable[int]) -> set['ObjectRole']:
     return set(ObjectRole.objects.filter(permission_partials__in=ancestor_evals))
 
 
+def delete_object_roles(queryset) -> tuple[int, dict[str, int]]:
+    """Delete ObjectRoles and their assignments safely on SQL Server.
+
+    Django temporarily sets nullable cascading foreign keys to NULL on
+    databases that cannot defer constraint checks. For assignments this can
+    turn two object-scoped grants into duplicate global grants and violate the
+    global-assignment unique constraint. Remove those assignment rows first so
+    the ObjectRole cascade has no nullable foreign keys to update.
+    """
+    using = queryset.db
+    if not isinstance(using, str) or connections[using].vendor != 'microsoft':
+        return queryset.delete()
+
+    deleted_count = 0
+    deleted_by_model = {}
+    with transaction.atomic(using=using):
+        candidate_ids = set(queryset.values_list('pk', flat=True))
+        if not candidate_ids:
+            return 0, {}
+
+        # Lock only the ObjectRole rows. This prevents a concurrent assignment
+        # from appearing after assignment cleanup but before the cascade.
+        object_role_ids = set(ObjectRole.objects.using(using).select_for_update().filter(pk__in=candidate_ids).values_list('pk', flat=True))
+        if not object_role_ids:
+            return 0, {}
+
+        for assignment_model in (RoleUserAssignment, RoleTeamAssignment):
+            count, model_counts = assignment_model.objects.using(using).filter(object_role_id__in=object_role_ids).delete()
+            deleted_count += count
+            for label, model_count in model_counts.items():
+                deleted_by_model[label] = deleted_by_model.get(label, 0) + model_count
+
+        count, model_counts = ObjectRole.objects.using(using).filter(pk__in=object_role_ids).delete()
+        deleted_count += count
+        for label, model_count in model_counts.items():
+            deleted_by_model[label] = deleted_by_model.get(label, 0) + model_count
+
+    return deleted_count, deleted_by_model
+
+
 def cleanup_deleted_team_roles(team_pks: set[int]) -> tuple[set['ObjectRole'], set[int]]:
     """Remove ObjectRoles and evaluations for deleted teams. Called by defer_rbac_computations flush."""
     ancestor_roles = bulk_ancestor_roles(team_pks)
     team_ct_id = permission_registry.team_ct_id
     RoleEvaluation.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).delete()
     deleted_or_ids = set(ObjectRole.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).values_list('id', flat=True))
-    ObjectRole.objects.filter(id__in=deleted_or_ids).delete()
+    delete_object_roles(ObjectRole.objects.filter(id__in=deleted_or_ids))
     eval_model = get_evaluation_model(permission_registry.team_model)
     eval_model.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).delete()
     return ancestor_roles, deleted_or_ids
@@ -96,7 +140,7 @@ def cleanup_deleted_object_roles(object_pks: list[tuple[int, int | UUID]]) -> se
     deleted_or_ids: set[int] = set()
     for ct_id, obj_ids in by_ct.items():
         batch_ids = set(ObjectRole.objects.filter(content_type_id=ct_id, object_id__in=obj_ids).values_list('id', flat=True))
-        ObjectRole.objects.filter(id__in=batch_ids).delete()
+        delete_object_roles(ObjectRole.objects.filter(id__in=batch_ids))
         deleted_or_ids.update(batch_ids)
         uuid_ids = {oid for oid in obj_ids if isinstance(oid, UUID)}
         int_ids = obj_ids - uuid_ids
@@ -109,7 +153,7 @@ def cleanup_deleted_object_roles(object_pks: list[tuple[int, int | UUID]]) -> se
 
 def cleanup_orphaned_object_roles() -> int:
     """Delete ObjectRoles with no user or team assignments."""
-    deleted_count, _ = ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
+    deleted_count, _ = delete_object_roles(ObjectRole.objects.filter(users__isnull=True, teams__isnull=True))
     if deleted_count:
         logger.info('Cleaned up %d orphaned ObjectRole(s)', deleted_count)
     return deleted_count
@@ -249,23 +293,29 @@ def _is_stale_objectrole_fk(exc):
     """Return True if *exc* is specifically an FK violation from a stale ObjectRole reference.
 
     PostgreSQL (psycopg2/psycopg3): checks SQLSTATE 23503 (foreign_key_violation)
-    and that the referenced table is ``dab_rbac_objectrole``.  Other
-    IntegrityError sub-types (unique-constraint, check-constraint, etc.) or FK
-    violations referencing a different table return False so they propagate
-    normally.
+    and that the referenced table is ``dab_rbac_objectrole``. SQL Server
+    (pyodbc): checks SQLSTATE 23000, native error 547, and the referenced table.
+    Other IntegrityError sub-types (unique-constraint, check-constraint, etc.)
+    or FK violations referencing a different table return False so they
+    propagate normally.
 
-    Other backends (SQLite): returns False.  The TOCTOU race requires truly
-    concurrent committed transactions, which SQLite's global write lock
-    prevents, so FK errors there indicate a real bug.
+    SQLite returns False. The TOCTOU race requires truly concurrent committed
+    transactions, which SQLite's global write lock prevents, so FK errors
+    there indicate a real bug.
     """
-    cause = exc.__cause__
-    if cause is None:
-        return False
+    cause = exc.__cause__ or exc
     # psycopg3 exposes .sqlstate, psycopg2 exposes .pgcode
     sqlstate = getattr(cause, 'sqlstate', None) or getattr(cause, 'pgcode', None)
-    if sqlstate != '23503':
+    message = ' '.join(str(arg) for arg in getattr(cause, 'args', ())) or str(cause)
+    message_lower = message.lower()
+    if sqlstate == '23503':
+        return 'dab_rbac_objectrole' in message_lower
+    if sqlstate is None and getattr(cause, 'args', ()):
+        sqlstate = str(cause.args[0])
+    if sqlstate != '23000':
         return False
-    return 'dab_rbac_objectrole' in str(cause)
+    native_error_codes = {int(code) for code in re.findall(r'\((\d+)\)', message)}
+    return 547 in native_error_codes and 'foreign key' in message_lower and 'dab_rbac_objectrole' in message_lower
 
 
 def _safe_m2m_add(team, to_add):
@@ -281,7 +331,7 @@ def _safe_m2m_add(team, to_add):
     try:
         with transaction.atomic():
             team.member_roles.add(*to_add)
-    except IntegrityError as exc:
+    except DatabaseIntegrityError as exc:
         if not _is_stale_objectrole_fk(exc):
             raise
         to_add = set(ObjectRole.objects.filter(id__in=to_add).values_list('id', flat=True))
@@ -289,7 +339,7 @@ def _safe_m2m_add(team, to_add):
             try:
                 with transaction.atomic():
                     team.member_roles.add(*to_add)
-            except IntegrityError as exc:
+            except DatabaseIntegrityError as exc:
                 if not _is_stale_objectrole_fk(exc):
                     raise
                 logger.warning('Persistent IntegrityError adding member_roles for team %s, will be corrected on next recompute', team.id)
@@ -362,22 +412,56 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
     """
     if not evaluations:
         return
+    using = DEFAULT_DB_ALIAS
     try:
-        with transaction.atomic():
-            model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
-    except IntegrityError as exc:
+        with transaction.atomic(using=using):
+            if ignore_conflicts and connections[using].vendor == 'microsoft':
+                evaluations = _filter_existing_evaluation_keys(model, evaluations, using)
+                if not evaluations:
+                    return
+            bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, using=using, return_ids=False)
+    except DatabaseIntegrityError as exc:
         if not _is_stale_objectrole_fk(exc):
             raise
-        existing_role_ids = set(ObjectRole.objects.filter(id__in={e.role_id for e in evaluations}).values_list('id', flat=True))
-        evaluations = [e for e in evaluations if e.role_id in existing_role_ids]
-        if evaluations:
-            try:
-                with transaction.atomic():
-                    model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
-            except IntegrityError as exc:
-                if not _is_stale_objectrole_fk(exc):
-                    raise
-                logger.warning('Persistent IntegrityError in bulk_create for %s, will be corrected on next recompute', model.__name__)
+        _retry_safe_bulk_create_evaluations(model, evaluations, ignore_conflicts, using)
+
+
+def _retry_safe_bulk_create_evaluations(model, evaluations, ignore_conflicts, using):
+    """Retry a failed insert after dropping evaluations for deleted roles."""
+    existing_role_ids = set(ObjectRole.objects.filter(id__in={e.role_id for e in evaluations}).values_list('id', flat=True))
+    evaluations = [evaluation for evaluation in evaluations if evaluation.role_id in existing_role_ids]
+    if not evaluations:
+        return
+
+    try:
+        with transaction.atomic(using=using):
+            bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, using=using, return_ids=False)
+    except DatabaseIntegrityError as exc:
+        if not _is_stale_objectrole_fk(exc):
+            raise
+        logger.warning('Persistent IntegrityError in bulk_create for %s, will be corrected on next recompute', model.__name__)
+
+
+def _filter_existing_evaluation_keys(model, evaluations, using):
+    """Remove known or in-batch duplicate evaluation keys before SQL Server bulk insert."""
+    unique_evaluations = {}
+    for evaluation in evaluations:
+        key = tuple(getattr(evaluation, field_name) for field_name in EVALUATION_UNIQUE_KEY_FIELDS)
+        unique_evaluations.setdefault(key, evaluation)
+
+    existing_keys = set()
+    queryset = model.objects.using(using)
+    batch_size = MSSQL_EVALUATION_KEY_FILTER_BATCH_SIZE
+    evaluation_keys = list(unique_evaluations)
+    for offset in range(0, len(evaluation_keys), batch_size):
+        keys = evaluation_keys[offset : offset + batch_size]
+        key_filter = None
+        for key in keys:
+            key_match = Q(**dict(zip(EVALUATION_UNIQUE_KEY_FIELDS, key)))
+            key_filter = key_match if key_filter is None else key_filter | key_match
+        existing_keys.update(queryset.filter(key_filter).values_list(*EVALUATION_UNIQUE_KEY_FIELDS))
+
+    return [evaluation for key, evaluation in unique_evaluations.items() if key not in existing_keys]
 
 
 class EvaluationUpdates:
@@ -623,8 +707,19 @@ def _collect_created_role_updates(
     role_existing = existing.get(role.pk, {})
     for key in role_existing.keys() - expected:
         updates.to_delete.add((role_existing[key], type(key[2])))
+
+    # Group evaluations by content type to use the correct model (int vs UUID)
+    evals_by_ct = defaultdict(list)
     for codename, ct_id, obj_id in expected - role_existing.keys():
-        updates.to_add.append(RoleEvaluation(codename=codename, content_type_id=ct_id, object_id=obj_id, role=role))
+        evals_by_ct[ct_id].append((codename, obj_id))
+
+    # Create evaluation instances using the correct model for each content type
+    for ct_id, evals in evals_by_ct.items():
+        ct = types_prefetch.get_content_type(ct_id)
+        model_cls = ct.model_class()
+        eval_model = get_evaluation_model(model_cls)
+        for codename, obj_id in evals:
+            updates.to_add.append(eval_model(codename=codename, content_type_id=ct_id, object_id=obj_id, role=role))
 
 
 def recompute_role_evaluations_for_created(

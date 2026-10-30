@@ -89,9 +89,15 @@ def test_parent_change_loads_only_the_moved_objects_evaluations(rando, org_inv_r
     inv.organization = org_b
     with CaptureQueriesContext(connection) as ctx:
         inv.save()
-    eval_loads = [q['sql'] for q in ctx.captured_queries if '"dab_rbac_roleevaluation"' in q['sql'] and q['sql'].startswith('SELECT')]
+    # SQL Server uses [brackets], PostgreSQL uses "quotes"
+    eval_loads = [
+        q['sql']
+        for q in ctx.captured_queries
+        if ('"dab_rbac_roleevaluation"' in q['sql'] or '[dab_rbac_roleevaluation]' in q['sql']) and q['sql'].startswith('SELECT')
+    ]
     assert eval_loads
     # the evaluation table may appear under its own name or a subquery alias (U0)
-    scoped_to_inv = re.compile(rf'("dab_rbac_roleevaluation"|U\d+)\."object_id" = {inv.pk}\b')
+    # SQL Server uses [brackets], PostgreSQL uses "quotes"
+    scoped_to_inv = re.compile(rf'("dab_rbac_roleevaluation"|\[dab_rbac_roleevaluation\]|U\d+)\.("object_id"|\[object_id\]) = {inv.pk}\b')
     for sql in eval_loads:
         assert scoped_to_inv.search(sql), sql
