@@ -71,7 +71,7 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
 
     def _alteration_changes_bounded_column(self, old_field, new_field):
         """Return whether AlterField will change a bounded column or its indexes."""
-        schema_attributes = ('null', 'db_index', 'unique', 'primary_key', 'db_column', 'db_tablespace', 'db_collation')
+        schema_attributes = ('null', 'db_index', 'unique', 'primary_key', 'db_column', 'db_tablespace', 'db_collation', 'db_comment')
         return old_field.get_internal_type() != new_field.get_internal_type() or any(
             getattr(old_field, attr, None) != getattr(new_field, attr, None) for attr in schema_attributes
         )
