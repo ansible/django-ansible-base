@@ -445,8 +445,9 @@ def _filter_existing_evaluation_keys(model, evaluations, using):
     existing_keys = set()
     queryset = model.objects.using(using)
     batch_size = MSSQL_EVALUATION_KEY_FILTER_BATCH_SIZE
-    for offset in range(0, len(unique_evaluations), batch_size):
-        keys = list(unique_evaluations)[offset : offset + batch_size]
+    evaluation_keys = list(unique_evaluations)
+    for offset in range(0, len(evaluation_keys), batch_size):
+        keys = evaluation_keys[offset : offset + batch_size]
         key_filter = None
         for key in keys:
             key_match = Q(**dict(zip(EVALUATION_UNIQUE_KEY_FIELDS, key)))
