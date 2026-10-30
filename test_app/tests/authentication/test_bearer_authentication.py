@@ -330,13 +330,15 @@ def test_bearer_authentication_preserves_plugin_failure_when_local_oauth_rejects
 def test_bearer_authentication_preserves_local_oauth_failure_when_plugins_decline():
     """A local OAuth failure remains the response when no plugin claimed the token."""
     local_failure = AuthenticationFailed("Invalid token")
+    authenticator = BearerAuthentication()
+    request = _request("local-oauth-token")
 
     with (
         patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict()),
         patch.object(BearerAuthentication, "_authenticate_local_oauth", side_effect=local_failure),
     ):
         with pytest.raises(AuthenticationFailed) as exc_info:
-            BearerAuthentication().authenticate(_request("local-oauth-token"))
+            authenticator.authenticate(request)
 
     assert exc_info.value is local_failure
 
