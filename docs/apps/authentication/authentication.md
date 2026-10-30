@@ -64,16 +64,45 @@ If you are using DRF and enable django-ansible-base authentication we prepend ou
 ```
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        # NOTE: Do NOT put the built-in DRF SessionAuthentication here first,
-        # or anything that doesn't return a string from its authenticate_header.
-        # DRF uses the first thing here to determine if invalid auth should be
-        # 401 or 403. The UI expects 401.
+        # Authentication classes must implement
+        # ChallengeAwareAuthenticationMixin. See "Authentication challenges".
         'ansible_base.authentication.session.SessionAuthentication',
         ...
     ],
     ...
 }
 ```
+
+### Authentication challenges
+
+Every DRF authentication class used in `DEFAULT_AUTHENTICATION_CLASSES` must
+inherit from
+`ansible_base.authentication.challenge.ChallengeAwareAuthenticationMixin`.
+DRF asks only the first configured authentication class for the
+`WWW-Authenticate` header when authentication fails, even when a later class
+recognized the submitted credential. The mixin preserves the first applicable
+challenge across the complete authentication chain, so the class order can be
+changed without accidentally returning a `403` or a misleading challenge.
+
+An authentication class must:
+
+1. Inherit from `ChallengeAwareAuthenticationMixin`.
+2. Call `self.record_authentication_challenge(request, challenge)` after it
+   recognizes a credential that it owns, and before reporting that credential
+   as invalid. Record a fixed, safe challenge value only; never record a raw
+   authorization header or token.
+3. Implement `get_default_authentication_challenge(request)` with the
+   challenge it should return when no class claimed a credential. It can
+   delegate to a parent DRF authenticator when appropriate.
+
+For authenticators limited to particular paths or methods, verify that the
+request is in scope before recording a challenge or validating the credential.
+This prevents an unrelated credential from claiming a request and keeps costly
+validation out of paths that do not support that authentication method.
+
+Tests for a new authentication class should cover its valid credential, an
+invalid credential with its expected `WWW-Authenticate` header, and its
+interaction with earlier authentication classes in the configured order.
 
 ### OAuth bearer-token authentication
 
