@@ -308,6 +308,42 @@ def test_bearer_authentication_returns_safe_rfc6750_failure(reason, detail, chal
 
 
 @pytest.mark.django_db
+def test_bearer_authentication_preserves_plugin_failure_when_local_oauth_rejects():
+    """A local OAuth fallback must not hide a specific external-token failure."""
+    plugin = Mock()
+    plugin.authenticate.side_effect = BearerTokenValidationError("expired")
+
+    with (
+        patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict([(17, plugin)])),
+        patch.object(BearerAuthentication, "_authenticate_local_oauth", side_effect=AuthenticationFailed("Invalid token")),
+    ):
+        authenticator = BearerAuthentication()
+        request = _request("expired-external-token")
+        with pytest.raises(BearerAuthenticationFailed) as exc_info:
+            authenticator.authenticate(request)
+
+    assert str(exc_info.value.detail) == "Bearer token has expired."
+    assert exc_info.value.auth_header == 'Bearer realm="api", error="invalid_token", error_description="The access token expired"'
+
+
+@pytest.mark.django_db
+def test_bearer_authentication_preserves_local_oauth_failure_when_plugins_decline():
+    """A local OAuth failure remains the response when no plugin claimed the token."""
+    local_failure = AuthenticationFailed("Invalid token")
+    authenticator = BearerAuthentication()
+    request = _request("local-oauth-token")
+
+    with (
+        patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict()),
+        patch.object(BearerAuthentication, "_authenticate_local_oauth", side_effect=local_failure),
+    ):
+        with pytest.raises(AuthenticationFailed) as exc_info:
+            authenticator.authenticate(request)
+
+    assert exc_info.value is local_failure
+
+
+@pytest.mark.django_db
 def test_bearer_authentication_exposes_safe_challenge_in_drf_response():
     """DRF reads the per-request challenge from authenticate_header when rendering a 401."""
     plugin = Mock()
