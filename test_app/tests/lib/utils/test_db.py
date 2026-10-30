@@ -252,10 +252,11 @@ def test_postgres_advisory_lock_closes_using_alias_after_operational_error(monke
     replica_connection = Mock(vendor='postgresql')
     monkeypatch.setattr(db, 'connection', default_connection)
     monkeypatch.setattr(db, 'connections', {'default': default_connection, 'replica': replica_connection})
+    body_error = OperationalError('body failed')
 
     with pytest.raises(OperationalError, match='body failed'):
         with db.advisory_lock('lock', using='replica'):
-            raise OperationalError('body failed')
+            raise body_error
 
     replica_connection.close_if_unusable_or_obsolete.assert_called_once()
     default_connection.close_if_unusable_or_obsolete.assert_not_called()
@@ -266,10 +267,11 @@ def test_postgres_lock_release_error_preserves_body_exception_and_closes_connect
     cursor = replica_connection.cursor.return_value
     cursor.execute.side_effect = [None, OperationalError('release failed')]
     monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+    body_error = RuntimeError('body failed')
 
     with pytest.raises(RuntimeError, match='body failed'):
         with db.django_pglocks_advisory_lock('lock', using='replica'):
-            raise RuntimeError('body failed')
+            raise body_error
 
     replica_connection.close.assert_called_once()
     cursor.close.assert_called_once()
