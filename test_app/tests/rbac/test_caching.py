@@ -447,3 +447,24 @@ class TestMSSQLBulkCreatePrefilter:
         assert len(filter_calls[0].args[0].children) == 500
         assert len(filter_calls[1].args[0].children) == 4
         bulk_create.assert_called_once_with(model, evaluations, ignore_conflicts=True, using='default', return_ids=False)
+
+    def test_materializes_evaluation_keys_once_across_batches(self, monkeypatch):
+        model, _manager = self._mock_evaluation_model([])
+        evaluations = [
+            SimpleNamespace(object_id=object_id, content_type_id=20, codename='view_inventory', role_id=30)
+            for object_id in range(rbac_caching.MSSQL_EVALUATION_KEY_FILTER_BATCH_SIZE * 2 + 1)
+        ]
+        list_calls = 0
+        builtin_list = list
+
+        def track_list(iterable):
+            nonlocal list_calls
+            list_calls += 1
+            return builtin_list(iterable)
+
+        monkeypatch.setattr(rbac_caching, 'list', track_list, raising=False)
+
+        result = rbac_caching._filter_existing_evaluation_keys(model, evaluations, 'default')
+
+        assert result == evaluations
+        assert list_calls == 1
