@@ -19,7 +19,7 @@ def validate_mssql_text_length(value, max_length, field_name='This field'):
 
     Args:
         value: The field value to validate
-        max_length: Maximum length allowed on SQL Server
+        max_length: Maximum number of UTF-16 code units allowed on SQL Server
         field_name: Human-readable field name for error messages
 
     Raises:
@@ -39,8 +39,11 @@ def validate_mssql_text_length(value, max_length, field_name='This field'):
     if connection.vendor != 'microsoft':
         return
 
-    if len(value) > max_length:
-        raise ValidationError(f"{field_name} is limited to {max_length} characters when using MS SQL Server. Current length: {len(value)} characters.")
+    sql_server_length = len(value.encode('utf-16-le', errors='surrogatepass')) // 2
+    if sql_server_length > max_length:
+        raise ValidationError(
+            f"{field_name} is limited to {max_length} UTF-16 code units when using MS SQL Server. " f"Current length: {sql_server_length} UTF-16 code units."
+        )
 
 
 # Convenience validators for common field types
