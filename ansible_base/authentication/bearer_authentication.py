@@ -11,11 +11,11 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.request import Request
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
+from ansible_base.authentication.challenge import ChallengeAwareAuthenticationMixin
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.logging import log_auth_event, log_auth_exception
 
 logger = logging.getLogger("ansible_base.authentication.bearer_authentication")
-_REQUEST_CHALLENGE_ATTRIBUTE = "_ansible_base_bearer_authentication_challenge"
 
 
 @dataclass(frozen=True)
@@ -101,7 +101,7 @@ def get_api_authentication_backends(last_updated: Any) -> OrderedDict[int, Any]:
     return authentication_backends
 
 
-class BearerAuthentication(BaseAuthentication):
+class BearerAuthentication(ChallengeAwareAuthenticationMixin, BaseAuthentication):
     """Dispatch standard Bearer credentials to configured API authenticators and local OAuth2."""
 
     def authenticate(self, request: Request) -> tuple[AbstractBaseUser, Any] | None:
@@ -182,15 +182,8 @@ class BearerAuthentication(BaseAuthentication):
 
         return None, None, first_failure
 
-    def authenticate_header(self, request: Request) -> str:
+    def get_default_authentication_challenge(self, request: Request) -> str:
         """Return the OAuth2-provided Bearer challenge for rejected Bearer credentials."""
-        # APIView.handle_exception obtains the response header from this method,
-        # rather than from an AuthenticationFailed instance. Preserve a safe
-        # per-request challenge recorded by ``_raise_failure`` above.
-        challenge = getattr(request, _REQUEST_CHALLENGE_ATTRIBUTE, None)
-        if challenge:
-            return challenge
-
         if not self._oauth2_provider_installed():
             return "Bearer"
 
@@ -216,11 +209,10 @@ class BearerAuthentication(BaseAuthentication):
 
         return LoggedOAuth2Authentication().authenticate(request)
 
-    @staticmethod
-    def _raise_failure(request: Request, failure: BearerTokenValidationError | None = None) -> NoReturn:
+    def _raise_failure(self, request: Request, failure: BearerTokenValidationError | None = None) -> NoReturn:
         """Raise a final Bearer failure and retain its challenge for DRF response handling."""
         exception = BearerAuthenticationFailed(failure)
-        setattr(request, _REQUEST_CHALLENGE_ATTRIBUTE, exception.auth_header)
+        self.record_authentication_challenge(request, exception.auth_header)
         raise exception
 
     def _api_authentication_backends(self) -> OrderedDict[int, Any]:

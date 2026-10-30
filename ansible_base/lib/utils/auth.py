@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from typing import Any, Type, Union
 from uuid import UUID
 
@@ -10,6 +11,36 @@ from django.db.models.query import QuerySet
 
 from ansible_base.lib.abstract_models.organization import AbstractOrganization
 from ansible_base.lib.abstract_models.team import AbstractTeam
+
+_AUTHENTICATION_CHALLENGES_ATTRIBUTE = "_ansible_base_authentication_challenges"
+
+
+def _authentication_request_objects(request: Any) -> Iterator[Any]:
+    """Return a DRF request and its underlying Django request, when present."""
+    yield request
+
+    underlying_request = getattr(request, "_request", None)
+    if underlying_request is not None and underlying_request is not request:
+        yield underlying_request
+
+
+def record_authentication_challenge(request: Any, challenge: str) -> None:
+    """Record a safe authentication challenge in authenticator evaluation order."""
+    for request_object in _authentication_request_objects(request):
+        challenges = getattr(request_object, _AUTHENTICATION_CHALLENGES_ATTRIBUTE, None)
+        if challenges is None:
+            challenges = []
+            setattr(request_object, _AUTHENTICATION_CHALLENGES_ATTRIBUTE, challenges)
+        challenges.append(challenge)
+
+
+def get_authentication_challenge(request: Any, default: str | None = None) -> str | None:
+    """Return the first safe challenge recorded while authenticating a request."""
+    for request_object in _authentication_request_objects(request):
+        challenges = getattr(request_object, _AUTHENTICATION_CHALLENGES_ATTRIBUTE, ())
+        if challenges:
+            return challenges[0]
+    return default
 
 
 def get_model_from_settings(setting_name: str) -> Any:

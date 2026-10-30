@@ -1,9 +1,11 @@
+from django.conf import settings
 from rest_framework import authentication
 
+from ansible_base.authentication.challenge import ChallengeAwareAuthenticationMixin
 from ansible_base.lib.utils.settings import replace_trusted_origins
 
 
-class SessionAuthentication(authentication.SessionAuthentication):
+class SessionAuthentication(ChallengeAwareAuthenticationMixin, authentication.SessionAuthentication):
     """
     This class allows us to fail with a 401 if the user is not authenticated.
 
@@ -11,19 +13,12 @@ class SessionAuthentication(authentication.SessionAuthentication):
     Reverting the value of CSRF_TRUSTED_ORIGINS afterwards.
     """
 
-    def authenticate_header(self, request):
-        # DRF renders a 401 challenge from its *first* configured
-        # authenticator. SessionAuthentication is deliberately first, but a
-        # request that supplied Bearer credentials must receive the RFC 6750
-        # challenge produced by the Bearer dispatcher instead of ``Session``.
-        authorization = request.headers.get("Authorization", "")
-        scheme, _, _credential = authorization.partition(" ")
-        if scheme.lower() in {"bearer", "token"}:
-            # Import lazily to keep session-only installations independent of
-            # the optional authentication app and its dispatcher dependencies.
-            from ansible_base.authentication.bearer_authentication import BearerAuthentication
+    def authenticate(self, request):
+        if request.COOKIES.get(settings.SESSION_COOKIE_NAME):
+            self.record_authentication_challenge(request, "Session")
+        return super().authenticate(request)
 
-            return BearerAuthentication().authenticate_header(request)
+    def get_default_authentication_challenge(self, request):
         return "Session"
 
     @replace_trusted_origins
