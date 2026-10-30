@@ -3,6 +3,13 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
+from django.test import RequestFactory
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from ansible_base.authentication.bearer_authentication import (
     BearerAuthentication,
     BearerAuthenticationFailed,
@@ -14,12 +21,6 @@ from ansible_base.authentication.bearer_authentication import (
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.permissions import TokenScopePermission
 from ansible_base.authentication.session import SessionAuthentication
-from django.test import RequestFactory
-from rest_framework.exceptions import AuthenticationFailed
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.request import Request
-from rest_framework.response import Response
-from rest_framework.views import APIView
 
 
 def _django_request(token: str | None = None, scheme: str = "Bearer"):
@@ -323,6 +324,21 @@ def test_bearer_authentication_preserves_plugin_failure_when_local_oauth_rejects
 
     assert str(exc_info.value.detail) == "Bearer token has expired."
     assert exc_info.value.auth_header == 'Bearer realm="api", error="invalid_token", error_description="The access token expired"'
+
+
+@pytest.mark.django_db
+def test_bearer_authentication_preserves_local_oauth_failure_when_plugins_decline():
+    """A local OAuth failure remains the response when no plugin claimed the token."""
+    local_failure = AuthenticationFailed("Invalid token")
+
+    with (
+        patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict()),
+        patch.object(BearerAuthentication, "_authenticate_local_oauth", side_effect=local_failure),
+    ):
+        with pytest.raises(AuthenticationFailed) as exc_info:
+            BearerAuthentication().authenticate(_request("local-oauth-token"))
+
+    assert exc_info.value is local_failure
 
 
 @pytest.mark.django_db
