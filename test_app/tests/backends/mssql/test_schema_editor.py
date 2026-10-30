@@ -492,6 +492,31 @@ class TestSchemaEditorConstraints(TestCase):
         execute.assert_not_called()
         alter_field.assert_called_once_with(model, old_field, new_field, False)
 
+    def test_alter_field_passes_bounded_fields_for_column_comment_change(self):
+        old_field = models.TextField(null=True, db_index=True)
+        old_field.set_attributes_from_name('description')
+        new_field = models.TextField(null=True, db_index=True, db_comment='Resource description')
+        new_field.set_attributes_from_name('description')
+        model = SimpleNamespace(
+            _meta=SimpleNamespace(
+                db_table='test_table',
+                get_field=lambda field_name: old_field if field_name == 'description' else None,
+            )
+        )
+
+        with (
+            patch.object(self.schema_editor, '_get_column_type', return_value='nvarchar(max)'),
+            patch.object(self.schema_editor, 'execute'),
+            patch.object(MSSQLSchemaEditor, 'alter_field', return_value='parent result') as alter_field,
+        ):
+            self.schema_editor.alter_field(model, old_field, new_field)
+
+        _, bounded_old_field, bounded_new_field, _ = alter_field.call_args.args
+        self.assertIsInstance(bounded_old_field, models.CharField)
+        self.assertIsInstance(bounded_new_field, models.CharField)
+        self.assertEqual(bounded_new_field.max_length, 450)
+        self.assertEqual(bounded_new_field.db_comment, 'Resource description')
+
     def test_alter_unique_together_converts_existing_textfield_before_constraint(self):
         text_field = models.TextField(null=True)
         text_field.set_attributes_from_name('description')
