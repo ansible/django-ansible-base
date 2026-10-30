@@ -9,7 +9,7 @@ This utility supports:
 - **MS SQL Server** (via `sp_getapplock`)
 - **SQLite** (no-op, always returns `True`)
 
-The implementation follows the same contract as [django-pglocks](https://pypi.org/project/django-pglocks/), with extensions for production use discovered through deployment in AWX:
+The PostgreSQL implementation follows the same lock conventions as [django-pglocks](https://pypi.org/project/django-pglocks/), with extensions for production use discovered through deployment in AWX:
 - SQLite compatibility for testing
 - Database-level idle timeouts to prevent stuck processes
 - MS SQL Server support
@@ -35,17 +35,18 @@ The specific choice of `wait=False` and what to do when another task holds the l
 
 ```python
 advisory_lock(
-    *args,
-    lock_session_timeout_milliseconds=0,
-    wait=True,
+    lock_id,
     shared=False,
-    using=None
+    wait=True,
+    using=None,
+    *,
+    lock_session_timeout_milliseconds=0,
 )
 ```
 
 ### Parameters
 
-- **`*args`**: Lock identifier
+- **`lock_id`**: Lock identifier
   - **PostgreSQL**: One 64-bit integer, a pair of 32-bit integers, or a string (hashed to a 32-bit integer)
   - **MS SQL Server**: Converted to string resource name (max 255 chars)
     - Integer → `"dab_lock_{n}"`
@@ -53,21 +54,21 @@ advisory_lock(
     - String → Truncated to 255 chars if needed
     - Other types → CRC32 hash → `"dab_lock_{hash}"`
 
-- **`lock_session_timeout_milliseconds`** (int, default: 0): Database-level timeout
-  - 0 = no DAB timeout override; PostgreSQL leaves its session settings unchanged, while SQL Server waits indefinitely when `wait=True`
-  - \>0 = apply a backend-specific timeout
-  - **PostgreSQL**: Sets `idle_in_transaction_session_timeout` and `idle_session_timeout`; this does not limit how long lock acquisition waits
-  - **MS SQL Server**: Passed to `sp_getapplock @LockTimeout` and limits lock acquisition
-
-- **`wait`** (bool, default: True): Block until lock acquired?
-  - `True`: Wait for the lock. PostgreSQL's `pg_advisory_lock()` returns only after acquiring it. On SQL Server, an acquisition timeout raises `OperationalError`.
-  - `False`: Try once and return immediately if the lock is unavailable
-
-- **`shared`** (bool, default: False): Lock mode
+- **`shared`** (bool, default: `False`): Lock mode
   - `False`: Exclusive lock (no other locks allowed)
   - `True`: Shared lock (other shared locks allowed)
 
+- **`wait`** (bool, default: `True`): Block until lock acquired?
+  - `True`: Wait for the lock. PostgreSQL's `pg_advisory_lock()` returns only after acquiring it. On SQL Server, an acquisition timeout raises `OperationalError`.
+  - `False`: Try once and return immediately if the lock is unavailable
+
 - **`using`** (str, optional): Django database alias (default: `'default'`)
+
+- **`lock_session_timeout_milliseconds`** (int, default: `0`, keyword-only): Database-level timeout
+  - `0` = no DAB timeout override; PostgreSQL leaves its session settings unchanged, while SQL Server waits indefinitely when `wait=True`
+  - `>0` = apply a backend-specific timeout
+  - **PostgreSQL**: Sets `idle_in_transaction_session_timeout` and `idle_session_timeout`; this does not limit how long lock acquisition waits
+  - **MS SQL Server**: Passed to `sp_getapplock @LockTimeout` and limits lock acquisition
 
 ### Returns
 
@@ -269,9 +270,9 @@ def read_data():
 If migrating from django-pglocks:
 
 1. Replace `from django_pglocks import advisory_lock` with `from ansible_base.lib.utils.db import advisory_lock`
-2. No API changes required - the contract is identical
+2. Positional arguments use the order `lock_id`, `shared`, `wait`, `using`; `lock_session_timeout_milliseconds` is keyword-only.
 3. Code now works on MS SQL Server and SQLite in addition to PostgreSQL
-4. Lock ID conversion happens automatically for MS SQL Server
+4. SQL Server requires a lock ID, converts it to a resource name, truncates string IDs to 255 characters, and uses the timeout to limit lock acquisition. PostgreSQL uses the timeout for idle-session settings instead.
 
 ## See Also
 

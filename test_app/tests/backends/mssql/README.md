@@ -58,9 +58,9 @@ DB_BACKEND=mssql pytest test_app/tests/backends/mssql/test_jsonfield_compatibili
 
 ## Test Coverage
 
-### JSONField Compatibility Tests (17 tests)
+### JSONField Compatibility Tests (18 tests)
 
-#### JSONFieldBasicTest (3 tests)
+#### JSONFieldBasicTest (4 tests)
 - `test_default_dict_creates_new_instances` - Verify `default=dict` doesn't share references
 - `test_default_list_creates_new_instances` - Verify `default=list` doesn't share references  
 - `test_empty_dict_vs_none` - Distinguish between `{}`, `[]`, and `None`
@@ -75,7 +75,7 @@ DB_BACKEND=mssql pytest test_app/tests/backends/mssql/test_jsonfield_compatibili
 - `test_large_json_payload` - Handle ~100KB JSON objects
 - `test_deeply_nested_json` - Handle 20+ levels of nesting
 
-#### JSONFieldEdgeCasesTest (4 tests)
+#### JSONFieldEdgeCasesTest (3 tests)
 - `test_special_characters` - Unicode, quotes, backslashes, newlines
 - `test_empty_string_in_json` - Empty strings don't become NULL
 - `test_numeric_values` - Preserve int/float types
@@ -84,8 +84,9 @@ DB_BACKEND=mssql pytest test_app/tests/backends/mssql/test_jsonfield_compatibili
 - `test_bulk_create_with_jsonfield` - Bulk create with JSON data
 - `test_bulk_update_jsonfield` - Bulk update JSON fields
 
-#### JSONFieldDatabaseSpecificTest (3 tests)
+#### JSONFieldDatabaseSpecificTest (4 tests)
 - `test_database_vendor_detection` - Can detect PostgreSQL vs MS SQL
+- `test_mssql_server_and_database_use_case_accent_sensitive_collation` - **MS SQL only** - Verify server and database case/accent-sensitive collation
 - `test_mssql_uses_nvarchar_max` - **MS SQL only** - Verify nvarchar(max) storage
 - `test_postgresql_uses_jsonb` - **PostgreSQL only** - Verify jsonb storage
 
@@ -192,9 +193,10 @@ def test_with_sql_logging(self):
 # MS SQL Server
 with connection.cursor() as cursor:
     cursor.execute("""
-        SELECT CONSTRAINT_NAME, CHECK_CLAUSE
-        FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS
-        WHERE TABLE_NAME = 'your_table'
+        SELECT cc.name, cc.definition
+        FROM sys.check_constraints AS cc
+        JOIN sys.tables AS t ON t.object_id = cc.parent_object_id
+        WHERE t.object_id = OBJECT_ID(N'dbo.your_table')
     """)
     print(cursor.fetchall())
 ```
