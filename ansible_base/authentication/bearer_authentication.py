@@ -124,7 +124,15 @@ class BearerAuthentication(ChallengeAwareAuthenticationMixin, BaseAuthentication
         # ``Token`` is a documented compatibility form for local OAuth2
         # clients. Local OAuth2 is also the final standard-Bearer handler, so a
         # valid local token remains usable when external plugins decline it.
-        local_oauth_result = self._authenticate_local_oauth(request)
+        try:
+            local_oauth_result = self._authenticate_local_oauth(request)
+        except AuthenticationFailed:
+            # A matching API authenticator may have already provided a more
+            # specific safe failure, such as an expired external token. Do not
+            # let the local OAuth fallback replace it with a generic failure.
+            if first_failure is not None:
+                self._raise_failure(request, first_failure)
+            raise
         if local_oauth_result is not None:
             return local_oauth_result
 
