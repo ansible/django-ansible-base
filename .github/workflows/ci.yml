@@ -55,7 +55,7 @@ jobs:
           key_dir="$(mktemp -d)"
           trap 'rm -rf "$key_dir"' EXIT
 
-          curl --fail --silent --show-error --location \
+          curl --proto '=https' --proto-redir '=https' --fail --silent --show-error --location \
             https://packages.microsoft.com/keys/microsoft.asc \
             --output "$key_dir/microsoft.asc"
           key_fingerprint="$(gpg --show-keys --with-colons "$key_dir/microsoft.asc" | awk -F: '$1 == "fpr" { print $10; exit }')"
