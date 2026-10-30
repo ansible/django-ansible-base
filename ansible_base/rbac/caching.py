@@ -386,18 +386,9 @@ class EvaluationUpdates:
     def __init__(self):
         self.to_delete: set[tuple[int, type]] = set()
         self.to_add: list = []
-        # Memo of expected evaluations for team-held roles, shared by every
-        # ObjectRole collected in this recompute (look-ahead mode only).
-        self.lookahead_cache: dict = {}
 
-    def collect(self, object_role, types_prefetch, evaluations_prefetch=None, look_ahead=None, target_parents=None):
-        role_to_delete, role_to_add = object_role.needed_cache_updates(
-            types_prefetch=types_prefetch,
-            evaluations_prefetch=evaluations_prefetch,
-            look_ahead=look_ahead,
-            target_parents=target_parents,
-            lookahead_cache=self.lookahead_cache if look_ahead else None,
-        )
+    def collect(self, object_role, types_prefetch, evaluations_prefetch=None):
+        role_to_delete, role_to_add = object_role.needed_cache_updates(types_prefetch=types_prefetch, evaluations_prefetch=evaluations_prefetch)
         if role_to_delete:
             logger.debug('Removing %d object-permissions from ObjectRole(pk=%s)', len(role_to_delete), object_role.pk)
             self.to_delete.update(role_to_delete)
@@ -447,8 +438,6 @@ class EvaluationUpdates:
 def recompute_role_evaluations(
     object_roles: Iterable[ObjectRole],
     types_prefetch: Optional[TypesPrefetch] = None,
-    look_ahead: GenericObject | None = None,
-    target_parents: Iterable[GenericObject] | None = None,
 ) -> None:
     """Recompute RoleEvaluation entries for a specific set of ObjectRoles.
 
@@ -456,28 +445,20 @@ def recompute_role_evaluations(
     data) against existing RoleEvaluation rows, then bulk-creates missing
     entries and bulk-deletes stale ones.
 
-    With look_ahead, the scope is narrowed to that single object (used by
-    post_save signals). target_parents, the parent chain of that object,
-    additionally lets team-held roles be filtered to the ones that can grant
-    evaluations on it.
-
-    Without look_ahead, the roles are recomputed in full, batch-loading their
-    existing evaluations and team-held roles per chunk the same way
-    recompute_all_role_evaluations does, instead of one query per role.
+    The roles are recomputed in full, batch-loading their existing evaluations
+    and team-held roles per chunk the same way recompute_all_role_evaluations
+    does, instead of one query per role. A just-created object is handled by
+    recompute_role_evaluations_for_created instead.
     """
     if types_prefetch is None:
         types_prefetch = TypesPrefetch.from_db()
 
     updates = EvaluationUpdates()
-    if look_ahead:
-        for object_role in object_roles:
-            updates.collect(object_role, types_prefetch, look_ahead=look_ahead, target_parents=target_parents)
-    else:
-        roles = iter(object_roles)
-        while chunk := list(islice(roles, RECOMPUTE_CHUNK_SIZE)):
-            evaluations_prefetch = EvaluationsPrefetch.from_roles(chunk)
-            for object_role in chunk:
-                updates.collect(object_role, types_prefetch, evaluations_prefetch)
+    roles = iter(object_roles)
+    while chunk := list(islice(roles, RECOMPUTE_CHUNK_SIZE)):
+        evaluations_prefetch = EvaluationsPrefetch.from_roles(chunk)
+        for object_role in chunk:
+            updates.collect(object_role, types_prefetch, evaluations_prefetch)
     updates.apply()
 
 
@@ -594,8 +575,8 @@ def recompute_role_evaluations_for_created(
 ) -> None:
     """Recompute RoleEvaluation entries for a single, just-created object.
 
-    Equivalent to recompute_role_evaluations(object_roles, look_ahead=look_ahead,
-    target_parents=...) but organised around the object instead of around each role:
+    look_ahead is that object and target_parents its parent chain. The work is
+    organised around the object instead of around each role:
 
     * one query loads the teams every role provides membership to,
     * one query loads the team-held roles that can grant on the new object

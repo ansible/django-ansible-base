@@ -7,16 +7,11 @@ from django.test.utils import CaptureQueriesContext
 from ansible_base.rbac.caching import recompute_all_role_evaluations
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.remote import GenericObject
 from test_app.models import Inventory, Organization, Team
 
 
 def _inv_ct_id():
     return permission_registry.content_type_model.objects.get_for_model(Inventory).id
-
-
-def _org_ct_id():
-    return permission_registry.content_type_model.objects.get_for_model(Organization).id
 
 
 def _evaluation_rows():
@@ -35,11 +30,12 @@ def test_lookahead_only_loads_relevant_team_roles(rando, organization, team, org
     member_role = ObjectRole.objects.get(role_definition=member_rd, object_id=team.pk)
     relevant_role = ObjectRole.objects.get(role_definition=org_inv_rd, object_id=organization.pk)
 
-    new_inv = Inventory.objects.create(name='inv-new', organization=organization)
     with CaptureQueriesContext(connection) as ctx:
-        member_role.needed_cache_updates(look_ahead=GenericObject(_inv_ct_id(), new_inv.pk), target_parents=[GenericObject(_org_ct_id(), organization.pk)])
+        new_inv = Inventory.objects.create(name='inv-new', organization=organization)
 
-    team_role_queries = [q['sql'] for q in ctx.captured_queries if '"dab_rbac_objectrole"' in q['sql'] and 'dab_rbac_roleteamassignment' in q['sql']]
+    team_role_queries = [
+        q['sql'] for q in ctx.captured_queries if '"dab_rbac_objectrole"' in q['sql'] and '"dab_rbac_roleteamassignment"."team_id" IN' in q['sql']
+    ]
     assert len(team_role_queries) == 1, team_role_queries
     assert f'"dab_rbac_objectrole"."object_id" = \'{organization.pk}\'' in team_role_queries[0]
     # evaluations for the new inventory come from the one relevant role only

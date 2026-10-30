@@ -2,13 +2,13 @@ import logging
 import operator
 from collections.abc import Iterable
 from functools import reduce
-from typing import TYPE_CHECKING, Optional, Type, Union
+from typing import TYPE_CHECKING, Optional, Type
 from uuid import UUID
 
 # Django
 from django.conf import settings
 from django.db import models
-from django.db.models import Count, Q
+from django.db.models import Count
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
 from django.db.utils import IntegrityError
@@ -760,99 +760,53 @@ class ObjectRole(ObjectRoleFields):
         else:
             logger.debug(msg, label, count, role_pk)
 
-    def _load_existing_partials(
-        self,
-        look_ahead: GenericObject | None,
-        evaluations_prefetch: Optional['EvaluationsPrefetch'],
-    ) -> dict[tuple[str, int, Union[int, UUID]], int]:
+    def _load_existing_partials(self, evaluations_prefetch: 'EvaluationsPrefetch | None') -> dict[tuple[str, int, int | UUID], int]:
+        """Return the RoleEvaluation rows this role currently has, from both evaluation tables.
+
+        Each key is a (codename, content_type_id, object_id) tuple and its value is the id of
+        that row, which needed_cache_updates uses to delete it if it is no longer expected.
+        """
         existing_partials = {}
 
-        if look_ahead:
-            # Look-ahead: query only the table matching the pk type, filtered
-            # to the single target object.
-            source = self.permission_partials_uuid if isinstance(look_ahead.pk, UUID) else self.permission_partials
-            for eval_id, codename, content_type_id, object_id in source.filter(object_id=look_ahead.pk, content_type_id=look_ahead.content_type_id).values_list(
-                'id', 'codename', 'content_type_id', 'object_id'
-            ):
-                existing_partials[(codename, content_type_id, object_id)] = eval_id
-            self._log_partials_count(len(existing_partials), f'existing evaluation (look_ahead={look_ahead.pk})', self.pk)
-        elif evaluations_prefetch is not None:
+        if evaluations_prefetch is not None:
             existing_partials.update(evaluations_prefetch.get_partials(self.pk))
             existing_partials.update(evaluations_prefetch.get_partials_uuid(self.pk))
-            self._log_partials_count(len(existing_partials), 'existing evaluation (full)', self.pk)
         else:
             for source in (self.permission_partials, self.permission_partials_uuid):
                 for eval_id, codename, content_type_id, object_id in source.values_list('id', 'codename', 'content_type_id', 'object_id'):
                     existing_partials[(codename, content_type_id, object_id)] = eval_id
-            self._log_partials_count(len(existing_partials), 'existing evaluation (full)', self.pk)
+        self._log_partials_count(len(existing_partials), 'existing evaluation', self.pk)
 
         return existing_partials
 
-    def _team_role_evaluations(self, types_prefetch, look_ahead, target_parents, lookahead_cache=None):
+    def _team_role_evaluations(self, types_prefetch):
         """Return the evaluations this role grants through the teams it provides membership to.
 
         Holding this role makes the actor a member of the teams in provides_teams, so the actor
         inherits every role those teams hold. The result is the union of the expected direct
         permissions of those team-held roles, as (codename, content_type_id, object_id) tuples.
-
-        With look_ahead, each team-held role is evaluated for that object only. If target_parents
-        is also given, only team-held roles on the look-ahead object or one of its parents are
-        visited, since no other role can grant permissions on it.
         """
-        team_role_filter = None
-        if look_ahead and target_parents is not None:
-            team_role_filter = Q()
-            for target in (look_ahead, *target_parents):
-                team_role_filter |= Q(content_type_id=target.content_type_id, object_id=str(target.pk))
-            # and only roles whose definition can grant something on this type of object
-            team_role_filter &= Q(role_definition_id__in=types_prefetch.role_definition_ids_granting(look_ahead.content_type_id))
-
         expected_evaluations = set()
-        team_roles = ObjectRole.objects.filter(teams__in=self.provides_teams.all()).distinct()
-        if team_role_filter is not None:
-            team_roles = team_roles.filter(team_role_filter)
-        for team_role in team_roles:
-            if lookahead_cache is not None and team_role.pk in lookahead_cache:
-                expected_evaluations.update(lookahead_cache[team_role.pk])
-                continue
-            team_role_expected = team_role.expected_direct_permissions(types_prefetch, look_ahead=look_ahead)
-            if lookahead_cache is not None:
-                lookahead_cache[team_role.pk] = team_role_expected
-            expected_evaluations.update(team_role_expected)
+        for team_role in ObjectRole.objects.filter(teams__in=self.provides_teams.all()).distinct():
+            expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch))
         return expected_evaluations
 
-    def needed_cache_updates(
-        self,
-        types_prefetch=None,
-        evaluations_prefetch=None,
-        look_ahead: GenericObject | None = None,
-        target_parents: Iterable[GenericObject] | None = None,
-        lookahead_cache: dict | None = None,
-    ):
+    def needed_cache_updates(self, types_prefetch=None, evaluations_prefetch=None) -> tuple[set[tuple[int, type]], list['RoleEvaluation']]:
         """Return (to_delete, to_add) changes needed in the RoleEvaluation table
-        to make cached object-role permissions accurate for this role.
+        to make cached object-role permissions accurate for this role,
+        across all objects this role grants permissions to.
 
-        When look_ahead is given, the scope is narrowed to that single
-        object. In the RBAC inheritance system, signals
-        can start from a resource and crawl up the inheritance tree to
-        find ancestor roles (e.g. organization roles that grant permissions to
-        child inventories). The look-ahead object is that originating resource,
-        and filtering to it avoids loading the full set of cached evaluations
-        for roles that may span thousands of child objects.
+        to_delete: a set of (evaluation_id, object_id type) pairs, where the type, int or UUID,
+        says whether the row is in RoleEvaluation or RoleEvaluationUUID.
 
-        Without look_ahead, a full recompute is performed for all
-        objects this role grants permissions to.
+        to_add: a list of unsaved RoleEvaluation instances, one per missing
+        (codename, content_type_id, object_id); EvaluationUpdates sorts them into the right table.
 
         evaluations_prefetch: an EvaluationsPrefetch instance with batch-loaded
         evaluation data for this role's chunk, avoiding per-role queries.
 
-        target_parents: in look-ahead mode, the look-ahead object's parent chain.
-        When given, team-held roles are filtered to those on the look-ahead object
-        or on one of its parents, the only roles that can grant evaluations on it.
-
-        lookahead_cache: optional dict shared across one recompute, memoising the
-        expected evaluations of team-held roles by ObjectRole pk. The same
-        organization role is typically reached through many teams; compute it once.
+        A just-created object is recomputed by recompute_role_evaluations_for_created
+        instead, which narrows the work to that one object.
         """
 
         if types_prefetch is None:
@@ -860,14 +814,14 @@ class ObjectRole(ObjectRoleFields):
 
             types_prefetch = TypesPrefetch.from_db()
 
-        existing_partials = self._load_existing_partials(look_ahead, evaluations_prefetch)
-        expected_evaluations = self.expected_direct_permissions(types_prefetch, look_ahead=look_ahead)
+        existing_partials = self._load_existing_partials(evaluations_prefetch)
+        expected_evaluations = self.expected_direct_permissions(types_prefetch)
 
         if evaluations_prefetch is not None:
             for team_role in evaluations_prefetch.get_team_roles(self.pk):
-                expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, look_ahead=look_ahead))
+                expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch))
         else:
-            expected_evaluations.update(self._team_role_evaluations(types_prefetch, look_ahead, target_parents, lookahead_cache))
+            expected_evaluations.update(self._team_role_evaluations(types_prefetch))
 
         self._log_partials_count(len(expected_evaluations), 'expected evaluation', self.pk)
 

@@ -106,6 +106,7 @@ REST_FRAMEWORK = {
         'ansible_base.oauth2_provider.permissions.OAuth2ScopePermission',
         'ansible_base.rbac.api.permissions.AnsibleBaseObjectPermissions',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'ansible_base.lib.utils.schema.DABAutoSchema',
 }
 
 DATABASES = {
