@@ -8,7 +8,6 @@ from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.django import DjangoInstrumentor
-from opentelemetry.instrumentation.grpc import GrpcInstrumentorServer
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
@@ -75,6 +74,18 @@ def _instrument_psycopg() -> None:
             logging.getLogger(__name__).warning("psycopg2 nor psycopg found. Failed to instrument psycopg.")
 
 
+def _instrument_grpc_server() -> None:
+    # Only services that run a gRPC server need this, and opentelemetry-instrumentation-grpc may not be installed
+    # by the others (a service without gRPC is the normal case, so this is not a warning).
+    try:
+        from opentelemetry.instrumentation.grpc import GrpcInstrumentorServer
+    except ModuleNotFoundError:
+        logging.getLogger(__name__).info("opentelemetry-instrumentation-grpc not found. gRPC server not instrumented.")
+        return
+
+    GrpcInstrumentorServer().instrument()
+
+
 def setup_observability(
     service_name: Optional[str] = None,
     instrument_non_propagating: bool = True,
@@ -83,7 +94,8 @@ def setup_observability(
 ) -> None:
     """Configure OpenTelemetry tracing and logging for a Django application.
 
-    Instruments Django, psycopg/psycopg2, requests, gRPC, and Python logging.
+    Instruments Django, psycopg/psycopg2, requests, gRPC (when opentelemetry-instrumentation-grpc is installed), and
+    Python logging.
     Intended to be called once at application startup (e.g. AppConfig.ready()).
 
     This function is intentionally NOT idempotent. Both set_tracer_provider() and
@@ -112,5 +124,5 @@ def setup_observability(
     DjangoInstrumentor().instrument(request_hook=request_hook, response_hook=response_hook)
     _instrument_psycopg()
     RequestsInstrumentor().instrument(request_hook=outgoing_request_hook)
-    GrpcInstrumentorServer().instrument()
+    _instrument_grpc_server()
     LoggingInstrumentor().instrument()

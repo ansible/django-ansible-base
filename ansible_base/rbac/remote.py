@@ -61,12 +61,42 @@ class StandinMeta:
         self.pk = StandInPK(ct)
 
 
-class RemoteObject:
+class GenericObject:
+    """A reference to one object by its content type id and primary key, without loading the object.
+
+    object_id must be the model's own primary key type (int or UUID), as given by instance.pk,
+    because callers compare it with evaluation rows and pick the evaluation table by its type.
+
+    In RBAC recompute this names the look-ahead object: the object whose creation started
+    the recompute, which narrows the work to evaluations on that one object.
+    """
+
+    def __init__(self, content_type_id: int, object_id: int | uuid.UUID | str):
+        self.content_type_id = content_type_id
+        self.object_id = object_id
+
+    @property
+    def pk(self):
+        return self.object_id
+
+    def __repr__(self):
+        return f"<{type(self).__name__} ct={self.content_type_id} id={self.object_id}>"
+
+    def __eq__(self, value):
+        if isinstance(value, GenericObject):
+            return bool(self.content_type_id == value.content_type_id and self.pk == value.pk)
+        return super().__eq__(value)
+
+    def __hash__(self):
+        return hash((self.content_type_id, self.pk))
+
+
+class RemoteObject(GenericObject):
     """Placeholder for objects that live in another project."""
 
     def __init__(self, content_type: models.Model, object_id: Union[int, str], parent_reference=None):
+        super().__init__(content_type.id, object_id)
         self.content_type = content_type
-        self.object_id = object_id
         # Since object is remote, we do not have its properties here, so a pointer to the parent can be specified here
         self.parent_reference = parent_reference
         if not hasattr(self, '_meta'):
@@ -84,14 +114,6 @@ class RemoteObject:
 
     def __repr__(self):
         return f"<RemoteObject {self.content_type} id={self.object_id}>"
-
-    def __eq__(self, value):
-        if isinstance(value, RemoteObject):
-            return bool(self.content_type.id == value.content_type.id and self.pk == value.pk)
-        return super().__eq__(value)
-
-    def __hash__(self):
-        return hash((self.content_type.id, self.pk))
 
     @classmethod
     def get_ct_from_type(cls):

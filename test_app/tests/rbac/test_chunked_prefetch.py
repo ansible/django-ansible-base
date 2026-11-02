@@ -135,6 +135,33 @@ class TestEvaluationsPrefetchTeamRoles:
         assert set(r.pk for r in team_roles) == expected_pks
 
     @pytest.mark.django_db
+    def test_team_roles_prefetch_matches_fallback(self, member_rd, rando):
+        """Both paths add the permissions of roles held by the teams a role provides."""
+        org = Organization.objects.create(name='team_fallback_org')
+        team = Team.objects.create(name='team_fallback_team', organization=org)
+        inv = Inventory.objects.create(name='team_fallback_inv', organization=org)
+        inv_rd = RoleDefinition.objects.create_from_permissions(
+            permissions=['view_inventory'],
+            name='test-inv-view-fallback',
+            content_type=permission_registry.content_type_model.objects.get_for_model(Inventory),
+        )
+        member_role = member_rd.give_permission(rando, team).object_role
+        inv_rd.give_permission(team, inv)
+        member_role.permission_partials.all().delete()
+
+        types_prefetch = TypesPrefetch.from_db()
+        to_delete_fallback, to_add_fallback = member_role.needed_cache_updates(types_prefetch=types_prefetch)
+
+        ep = EvaluationsPrefetch.from_roles([member_role])
+        to_delete_ep, to_add_ep = member_role.needed_cache_updates(types_prefetch=types_prefetch, evaluations_prefetch=ep)
+
+        added_fallback = set((e.codename, e.content_type_id, e.object_id) for e in to_add_fallback)
+        inv_ct = permission_registry.content_type_model.objects.get_for_model(Inventory)
+        assert ('view_inventory', inv_ct.id, inv.pk) in added_fallback
+        assert to_delete_fallback == to_delete_ep
+        assert added_fallback == set((e.codename, e.content_type_id, e.object_id) for e in to_add_ep)
+
+    @pytest.mark.django_db
     def test_team_roles_empty_when_no_teams(self, org_inv_rd, rando):
         """Roles without provides_teams get an empty team_roles list."""
         org = Organization.objects.create(name='no_teams_org')
@@ -271,8 +298,9 @@ class TestEvaluationUpdates:
 class TestComputeObjectRolePermissionsQueryReduction:
     @pytest.mark.django_db
     def test_full_recompute_uses_fewer_queries_than_iterator(self, org_inv_rd, rando):
-        """The batched EvaluationsPrefetch default path should use fewer queries
-        than the old .iterator() approach for a non-trivial number of ObjectRoles."""
+        """Both batched paths (recompute_all_role_evaluations and a full
+        recompute_role_evaluations of a role set) should use fewer queries than
+        collecting each ObjectRole on its own for a non-trivial number of ObjectRoles."""
         orgs = [Organization.objects.create(name=f'qr_org_{i}') for i in range(5)]
         for org in orgs:
             for j in range(3):
@@ -290,8 +318,18 @@ class TestComputeObjectRolePermissionsQueryReduction:
         RoleEvaluation.objects.all().delete()
         RoleEvaluationUUID.objects.all().delete()
         with CaptureQueriesContext(connection) as old_ctx:
-            recompute_role_evaluations(ObjectRole.objects.iterator(), types_prefetch=types_prefetch)
+            # the per-role fallback: existing partials and team roles queried for every role
+            per_role_updates = EvaluationUpdates()
+            for role in ObjectRole.objects.iterator():
+                per_role_updates.collect(role, types_prefetch)
+            per_role_updates.apply()
         old_evals = RoleEvaluation.objects.count()
+
+        RoleEvaluation.objects.all().delete()
+        RoleEvaluationUUID.objects.all().delete()
+        with CaptureQueriesContext(connection) as set_ctx:
+            recompute_role_evaluations(ObjectRole.objects.iterator(), types_prefetch=types_prefetch)
+        set_evals = RoleEvaluation.objects.count()
 
         RoleEvaluation.objects.all().delete()
         RoleEvaluationUUID.objects.all().delete()
@@ -299,8 +337,11 @@ class TestComputeObjectRolePermissionsQueryReduction:
             recompute_all_role_evaluations()
         new_evals = RoleEvaluation.objects.count()
 
-        assert old_evals == new_evals, "Both approaches must produce the same evaluations"
-        assert len(new_ctx) < len(old_ctx), f"Batched prefetch ({len(new_ctx)} queries) should use fewer queries " f"than iterator ({len(old_ctx)} queries)"
+        assert old_evals == set_evals == new_evals, "All approaches must produce the same evaluations"
+        assert len(new_ctx) < len(old_ctx), f"Batched prefetch ({len(new_ctx)} queries) should use fewer queries " f"than per-role ({len(old_ctx)} queries)"
+        assert len(set_ctx) < len(old_ctx), (
+            f"Batched role-set recompute ({len(set_ctx)} queries) should use fewer queries " f"than per-role ({len(old_ctx)} queries)"
+        )
 
 
 class TestUUIDEvaluationPath:

@@ -2,13 +2,13 @@ import logging
 import operator
 from collections.abc import Iterable
 from functools import reduce
-from typing import TYPE_CHECKING, Optional, Type, Union
+from typing import TYPE_CHECKING, Optional, Type
 from uuid import UUID
 
 # Django
 from django.conf import settings
 from django.db import models
-from django.db.models import Count, Q
+from django.db.models import Count
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
 from django.db.utils import IntegrityError
@@ -28,7 +28,7 @@ from ansible_base.rbac.sync import maybe_reverse_sync_assignment
 from ansible_base.rbac.validators import validate_permissions_for_model
 from ansible_base.resource_registry.fields import AnsibleResourceField
 
-from ..remote import RemoteObject, StandInPK
+from ..remote import GenericObject, RemoteObject, StandInPK
 from .content_type import DABContentType
 from .fields import FederatedForeignKey
 
@@ -267,16 +267,18 @@ class RoleDefinition(CommonModel):
             return models.Q(pk__in=[])
         return reduce(operator.or_, conditions)
 
-    def give_global_permission(self, actor):
-        return self.give_or_remove_global_permission(actor, giving=True)
+    def give_global_permission(self, actor, return_created=False):
+        """Grant a global role, optionally returning ``(assignment, created)``.
+
+        ``created`` is false when the assignment already existed.
+        """
+        return self.give_or_remove_global_permission(actor, giving=True, return_created=return_created)
 
     def remove_global_permission(self, actor):
         return self.give_or_remove_global_permission(actor, giving=False)
 
-    def give_or_remove_global_permission(self, actor, giving=True):
-        if giving and (self.content_type is not None):
-            raise ValidationError('Role definition content type must be null to assign globally')
-
+    def _get_global_assignment_details(self, actor, giving):
+        """Return the assignment model and lookup fields for a user or team."""
         if actor._meta.model_name == 'user':
             if giving and (not settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES):
                 raise ValidationError('Global roles are not enabled for users')
@@ -290,14 +292,11 @@ class RoleDefinition(CommonModel):
         else:
             raise RuntimeError(f'Cannot {giving and "give" or "remove"} permission for {actor}, must be a user or team')
 
-        if giving:
-            assignment, _ = cls.objects.get_or_create(**kwargs)
-        else:
-            assignment = cls.objects.filter(**kwargs).first()
-            if assignment:
-                assignment.delete()
+        return cls, kwargs
 
-        # Clear any cached permissions
+    @staticmethod
+    def _clear_global_permission_cache(actor):
+        """Invalidate cached global permissions affected by an assignment change."""
         if actor._meta.model_name == 'user':
             if hasattr(actor, '_singleton_permissions'):
                 delattr(actor, '_singleton_permissions')
@@ -308,6 +307,26 @@ class RoleDefinition(CommonModel):
 
             bound_singleton_permissions._team_clear_signal = True
 
+    def give_or_remove_global_permission(self, actor, giving=True, return_created=False):
+        """Create or remove a global assignment and optionally report its insert result.
+
+        For grants, ``return_created`` selects an ``(assignment, created)`` result.
+        """
+        if giving and (self.content_type is not None):
+            raise ValidationError('Role definition content type must be null to assign globally')
+
+        cls, kwargs = self._get_global_assignment_details(actor, giving)
+        created = False
+        if giving:
+            assignment, created = cls.objects.get_or_create(**kwargs)
+        else:
+            assignment = cls.objects.filter(**kwargs).first()
+            if assignment:
+                assignment.delete()
+
+        self._clear_global_permission_cache(actor)
+        if return_created:
+            return assignment, created
         return assignment
 
     def give_permission(self, actor, content_object):
@@ -402,7 +421,7 @@ class ObjectRoleFields(models.Model):
         # NOTE: type casting is necessary in postgres but not sqlite3
         object_id_field = cls._meta.get_field('object_id')
         permission_qs = eval_cls.objects.filter(
-            **eval_cls._actor_role_filter(user),
+            role_id__in=eval_cls.actor_role_ids(user),
             content_type_id=models.OuterRef('content_type_id'),
         )
         # alias() keeps the Cast in WHERE only (not SELECT), enabling a semi-join point lookup
@@ -648,12 +667,57 @@ class ObjectRole(ObjectRoleFields):
                     eval_ct = permission.content_type_id
                     break
             else:
-                logger.warning(f'{self.role_definition} listed {permission.codename} but model is not a child, ignoring')
+                logger.warning(
+                    'Role definition id=%s listed %s but model is not a child, ignoring',
+                    self.role_definition_id,
+                    permission.codename,
+                )
                 return (None, None, None)
 
         return (eval_ct, child_model, filter_path)
 
-    def expected_direct_permissions(self, types_prefetch, object_pk=None, object_ct_id=None) -> set[tuple[str, int, Union[int, UUID]]]:
+    def _native_object_id(self, role_content_type) -> int | UUID:
+        """ObjectRole.object_id is stored as text; return it as the model's own pk type."""
+        if role_content_type.is_remote:
+            return StandInPK(role_content_type).to_python(self.object_id)
+        return role_content_type.model_class()._meta.pk.to_python(self.object_id)
+
+    def _grants_on_own_object(self, permission) -> bool:
+        """Whether this permission is cached as an evaluation on the role's own object."""
+        if permission.content_type_id == self.content_type_id:
+            return True
+        return is_add_perm(permission.codename) or settings.ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS
+
+    @staticmethod
+    def _child_ids(permission, eval_ct, child_model, filter_path, object_id, types_prefetch, look_ahead, child_ids_cache=None) -> list:
+        """Load child IDs, reusing the batch cache when available."""
+        if child_ids_cache is not None:
+            cache_key = (child_model, filter_path)
+            cached_children = child_ids_cache.get(cache_key)
+            if cached_children is not None and str(object_id) in cached_children:
+                return list(cached_children[str(object_id)])
+
+        permission_model = types_prefetch.get_content_type(permission.content_type_id).model_class()
+        if issubclass(permission_model, RemoteObject):
+            qs = ObjectRole.objects.filter(parent_reference=object_id, content_type=eval_ct)
+            if look_ahead:
+                qs = qs.filter(object_id=str(look_ahead.pk))
+            return list(qs.values_list(Cast('object_id', output_field=permission_model._meta.pk.django_field()), flat=True).distinct())
+        qs = child_model.objects.filter(**{filter_path: object_id})
+        if look_ahead:
+            qs = qs.filter(pk=look_ahead.pk)
+        return list(qs.values_list('pk', flat=True))
+
+    def _child_evaluations(self, permission, role_content_type, object_id, types_prefetch, look_ahead, cached_id_lists, child_ids_cache=None) -> set:
+        """Return child evaluations, skipping child types outside the look-ahead target."""
+        eval_ct, child_model, filter_path = self.get_child_filters(permission, role_content_type, types_prefetch)
+        if not eval_ct or (look_ahead and eval_ct != look_ahead.content_type_id):
+            return set()
+        if eval_ct not in cached_id_lists:
+            cached_id_lists[eval_ct] = self._child_ids(permission, eval_ct, child_model, filter_path, object_id, types_prefetch, look_ahead, child_ids_cache)
+        return {(permission.codename, eval_ct, child_id) for child_id in cached_id_lists[eval_ct] if not look_ahead or child_id == look_ahead.pk}
+
+    def expected_direct_permissions(self, types_prefetch, look_ahead: GenericObject | None = None, child_ids_cache=None) -> set[tuple[str, int, int | UUID]]:
         """The expected permissions that holding this ObjectRole confers to the holder
 
         This is given in the form of tuples, which represent RoleEvaluation entries.
@@ -661,81 +725,26 @@ class ObjectRole(ObjectRoleFields):
 
         In the case of remote objects, this list may not be comprehensive
 
-        When object_pk and object_ct_id identify a look-ahead object, child
-        content types that don't match are skipped entirely and matching id
-        lists are narrowed to the single pk, avoiding large querysets.
+        With a look_ahead object, child content types that don't match it are
+        skipped entirely and matching id lists are narrowed to its single pk,
+        avoiding large querysets. Evaluations on the role's own object are only
+        included when that object is the look-ahead object; otherwise a role like
+        "JobTemplate Execute on JT 42", reached through a team, would contribute
+        evaluations for JT 42 while JT 43 is being computed.
         """
-        if (object_pk is None) != (object_ct_id is None):
-            raise ValueError('object_pk and object_ct_id must both be provided or both be None')
+        role_content_type = types_prefetch.get_content_type(self.content_type_id)
+        object_id = self._native_object_id(role_content_type)
+        own_object_is_target = not look_ahead or (self.content_type_id == look_ahead.content_type_id and object_id == look_ahead.pk)
+
         expected_evaluations = set()
         cached_id_lists = {}
-        role_content_type = types_prefetch.get_content_type(self.content_type_id)
-        role_model = role_content_type.model_class()
-        if role_content_type.is_remote:
-            pk_field = StandInPK(role_content_type)  # remote, mock, field
-            object_id = pk_field.to_python(self.object_id)
-        else:
-            # ObjectRole.object_id is stored as text, we convert it to the model pk native type
-            object_id = role_model._meta.pk.to_python(self.object_id)
-        # When filtering to a look-ahead object, skip evaluations for the role's
-        # own content type (e.g. organization) if it doesn't match the target.
-        skip_role_ct = object_ct_id is not None and self.content_type_id != object_ct_id
-
-        # When looking ahead to a specific object, evaluations on the role's own
-        # object are only relevant if that object *is* the look-ahead object.
-        # Otherwise a role like "JobTemplate Execute on JT 42", reached through a
-        # team, would contribute evaluations for JT 42 while we are computing JT 43.
-        own_object_is_target = object_pk is None or object_id == object_pk
-
         for permission in types_prefetch.permissions_for_object_role(self):
-
-            # direct object permission
-            if permission.content_type_id == self.content_type_id:
-                if not skip_role_ct and own_object_is_target:
-                    expected_evaluations.add((permission.codename, self.content_type_id, object_id))
-                continue
-
-            # Add evaluation for the parent object, usually only for add permission
-            if not skip_role_ct and own_object_is_target and (is_add_perm(permission.codename) or settings.ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS):
+            if own_object_is_target and self._grants_on_own_object(permission):
                 expected_evaluations.add((permission.codename, self.content_type_id, object_id))
-
-            # Add evaluations for child objects, where this role gives permission to child objects
-            eval_ct, child_model, filter_path = self.get_child_filters(permission, role_content_type, types_prefetch)
-            if not eval_ct:
-                continue
-
-            # Skip child types that don't match the look-ahead object
-            if object_ct_id is not None and eval_ct != object_ct_id:
-                continue
-
-            # fetching child objects of an organization is very performance sensitive
-            # for multiple permissions of same type, make sure to only do query once
-            id_list = []
-            if eval_ct in cached_id_lists:
-                id_list = cached_id_lists[eval_ct]
-            else:
-                permission_content_type = types_prefetch.get_content_type(permission.content_type_id)
-                permission_model = permission_content_type.model_class()
-                if issubclass(permission_model, RemoteObject):
-                    # Build id_list from ObjectRole objects if it is remote object
-                    remote_qs = ObjectRole.objects.filter(parent_reference=object_id, content_type=eval_ct)
-                    if object_pk is not None:
-                        remote_qs = remote_qs.filter(object_id=str(object_pk))
-                    id_list = remote_qs.values_list(Cast('object_id', output_field=permission_model._meta.pk.django_field()), flat=True).distinct()
-                else:
-                    child_qs = child_model.objects.filter(**{filter_path: object_id})
-                    if object_pk is not None:
-                        # Look-ahead: we only care whether the target object is a child of this
-                        # role's object. Filter in SQL instead of fetching every child id of the
-                        # parent (which for an organization can be tens of thousands of rows).
-                        child_qs = child_qs.filter(pk=object_pk)
-                    id_list = child_qs.values_list('pk', flat=True)
-                cached_id_lists[eval_ct] = list(id_list)
-
-            for id in id_list:
-                if object_pk is not None and id != object_pk:
-                    continue
-                expected_evaluations.add((permission.codename, eval_ct, id))
+            if permission.content_type_id != self.content_type_id:
+                expected_evaluations |= self._child_evaluations(
+                    permission, role_content_type, object_id, types_prefetch, look_ahead, cached_id_lists, child_ids_cache
+                )
         return expected_evaluations
 
     @staticmethod
@@ -748,98 +757,96 @@ class ObjectRole(ObjectRoleFields):
         else:
             logger.debug(msg, label, count, role_pk)
 
-    def _load_existing_partials(
-        self,
-        object_pk: Optional[Union[int, UUID]],
-        object_ct_id: Optional[int],
-        evaluations_prefetch: Optional['EvaluationsPrefetch'],
-    ) -> dict[tuple[str, int, Union[int, UUID]], int]:
+    def _load_existing_partials(self, evaluations_prefetch: 'EvaluationsPrefetch | None') -> dict[tuple[str, int, int | UUID], int]:
+        """Return the RoleEvaluation rows this role currently has, from both evaluation tables.
+
+        Each key is a (codename, content_type_id, object_id) tuple and its value is the id of
+        that row, which needed_cache_updates uses to delete it if it is no longer expected.
+        """
         existing_partials = {}
 
-        if object_pk is not None and object_ct_id is not None:
-            # Look-ahead: query only the table matching the pk type, filtered
-            # to the single target object.
-            partial_filter = {'object_id': object_pk, 'content_type_id': object_ct_id}
-            source = self.permission_partials_uuid if isinstance(object_pk, UUID) else self.permission_partials
-            for eval_id, codename, content_type_id, object_id in source.filter(**partial_filter).values_list('id', 'codename', 'content_type_id', 'object_id'):
-                existing_partials[(codename, content_type_id, object_id)] = eval_id
-            self._log_partials_count(len(existing_partials), f'existing evaluation (object_pk={object_pk})', self.pk)
-        elif evaluations_prefetch is not None:
+        if evaluations_prefetch is not None:
             existing_partials.update(evaluations_prefetch.get_partials(self.pk))
             existing_partials.update(evaluations_prefetch.get_partials_uuid(self.pk))
-            self._log_partials_count(len(existing_partials), 'existing evaluation (full)', self.pk)
         else:
             for source in (self.permission_partials, self.permission_partials_uuid):
                 for eval_id, codename, content_type_id, object_id in source.values_list('id', 'codename', 'content_type_id', 'object_id'):
                     existing_partials[(codename, content_type_id, object_id)] = eval_id
-            self._log_partials_count(len(existing_partials), 'existing evaluation (full)', self.pk)
+        self._log_partials_count(len(existing_partials), 'existing evaluation', self.pk)
 
         return existing_partials
 
-    def _team_role_evaluations(self, types_prefetch, object_pk, object_ct_id, target_parents):
+    def _team_role_evaluations(self, types_prefetch, child_ids_cache=None, seen_role_ids=None):
         """Return the evaluations this role grants through the teams it provides membership to.
 
         Holding this role makes the actor a member of the teams in provides_teams, so the actor
         inherits every role those teams hold. The result is the union of the expected direct
         permissions of those team-held roles, as (codename, content_type_id, object_id) tuples.
-
-        With object_pk and object_ct_id, each team-held role is evaluated for that look-ahead
-        object only. If target_parents is also given, only team-held roles on the look-ahead
-        object or one of its parents are visited, since no other role can grant permissions on it.
         """
-        team_role_filter = None
-        if object_pk is not None and target_parents is not None:
-            team_role_filter = Q(content_type_id=object_ct_id, object_id=str(object_pk))
-            for parent_ct_id, parent_id in target_parents:
-                team_role_filter |= Q(content_type_id=parent_ct_id, object_id=str(parent_id))
+        if seen_role_ids is None:
+            seen_role_ids = set()
+        if self.pk in seen_role_ids:
+            return set()
+        seen_role_ids = seen_role_ids | {self.pk}
 
         expected_evaluations = set()
         team_roles = ObjectRole.objects.filter(teams__in=self.provides_teams.all()).distinct()
-        if team_role_filter is not None:
-            team_roles = team_roles.filter(team_role_filter)
         for team_role in team_roles:
-            expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
+            if team_role.pk in seen_role_ids:
+                continue
+            team_role_expected = team_role.expected_direct_permissions(
+                types_prefetch,
+                child_ids_cache=child_ids_cache,
+            )
+            expected_evaluations.update(team_role_expected)
         return expected_evaluations
 
-    def needed_cache_updates(self, types_prefetch=None, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None):
+    def needed_cache_updates(
+        self,
+        types_prefetch=None,
+        evaluations_prefetch=None,
+        child_ids_cache=None,
+    ) -> tuple[set[tuple[int, type]], list['RoleEvaluation']]:
         """Return (to_delete, to_add) changes needed in the RoleEvaluation table
-        to make cached object-role permissions accurate for this role.
+        to make cached object-role permissions accurate for this role,
+        across all objects this role grants permissions to.
 
-        When object_pk and object_ct_id are provided, the scope is narrowed to
-        a single look-ahead object. In the RBAC inheritance system, signals
-        can start from a resource and crawl up the inheritance tree to
-        find ancestor roles (e.g. organization roles that grant permissions to
-        child inventories). The look-ahead object is that originating resource,
-        and filtering to it avoids loading the full set of cached evaluations
-        for roles that may span thousands of child objects.
+        to_delete: a set of (evaluation_id, object_id type) pairs, where the type, int or UUID,
+        says whether the row is in RoleEvaluation or RoleEvaluationUUID.
 
-        Without object_pk/object_ct_id, a full recompute is performed for all
-        objects this role grants permissions to.
+        to_add: a list of unsaved RoleEvaluation instances, one per missing
+        (codename, content_type_id, object_id); EvaluationUpdates sorts them into the right table.
 
         evaluations_prefetch: an EvaluationsPrefetch instance with batch-loaded
         evaluation data for this role's chunk, avoiding per-role queries.
 
-        target_parents: in look-ahead mode, the (content_type_id, object_id) pairs of
-        the look-ahead object's parent chain. When given, team-held roles are
-        filtered to those on the look-ahead object or on one of its parents, the
-        only roles that can grant evaluations on it.
+        A just-created object is recomputed by recompute_role_evaluations_for_created
+        instead, which narrows the work to that one object.
         """
-        if (object_pk is None) != (object_ct_id is None):
-            raise ValueError('object_pk and object_ct_id must both be provided or both be None')
 
         if types_prefetch is None:
             from ansible_base.rbac.prefetch import TypesPrefetch
 
             types_prefetch = TypesPrefetch.from_db()
 
-        existing_partials = self._load_existing_partials(object_pk, object_ct_id, evaluations_prefetch)
-        expected_evaluations = self.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
+        existing_partials = self._load_existing_partials(evaluations_prefetch)
+        expected_evaluations = self.expected_direct_permissions(types_prefetch, child_ids_cache=child_ids_cache)
 
         if evaluations_prefetch is not None:
             for team_role in evaluations_prefetch.get_team_roles(self.pk):
-                expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
+                expected_evaluations.update(
+                    team_role.expected_direct_permissions(
+                        types_prefetch,
+                        child_ids_cache=child_ids_cache,
+                    )
+                )
         else:
-            expected_evaluations.update(self._team_role_evaluations(types_prefetch, object_pk, object_ct_id, target_parents))
+            expected_evaluations.update(
+                self._team_role_evaluations(
+                    types_prefetch,
+                    child_ids_cache=child_ids_cache,
+                )
+            )
 
         self._log_partials_count(len(expected_evaluations), 'expected evaluation', self.pk)
 
@@ -904,17 +911,21 @@ class RoleEvaluationFields(models.Model):
     content_type_id = models.PositiveIntegerField(null=False, help_text=_("The related content type id."))
 
     @staticmethod
-    def _actor_role_filter(actor):
-        """Return filter kwargs that skip the objectrole table entirely.
+    def actor_role_ids(actor: models.Model) -> QuerySet:
+        """Return a queryset of ObjectRole PKs the actor is assigned to.
 
-        Uses ``role_id__in`` with a subquery on the assignment table, which
-        avoids JOINing through ``dab_rbac_objectrole``.  Both
-        ``roleevaluation.role_id`` and ``assignment.object_role_id`` reference
-        the same objectrole PK, so the intermediate table is unnecessary.
+        Queries assignment tables directly rather than going through the
+        ``has_roles`` M2M, which would add an unnecessary JOIN through
+        ``dab_rbac_objectrole``.
         """
         if actor._meta.model_name == permission_registry.user_model._meta.model_name:
-            return {'role_id__in': RoleUserAssignment.objects.filter(user_id=actor.id).values('object_role_id')}
-        return {'role_id__in': RoleTeamAssignment.objects.filter(team_id=actor.id).values('object_role_id')}
+            return RoleUserAssignment.objects.filter(user_id=actor.id).values('object_role_id')
+        return RoleTeamAssignment.objects.filter(team_id=actor.id).values('object_role_id')
+
+    @staticmethod
+    def _actor_role_filter(actor):
+        """Deprecated — use ``actor_role_ids`` instead."""
+        return {'role_id__in': RoleEvaluationFields.actor_role_ids(actor)}  # pragma: no cover
 
     @classmethod
     def accessible_ids(cls, model_cls, actor, codename: str, content_types: Optional[Iterable[int]] = None, cast_field=None) -> QuerySet:
@@ -929,12 +940,11 @@ class RoleEvaluationFields(models.Model):
         """
         # We only have a content_types exception for multiple content types for polymorphic models
         # for normal models you should not need it, but AWX unified_ models need it to get by
-        filter_kwargs = {**cls._actor_role_filter(actor), 'codename': codename}
+        qs = cls.objects.filter(role_id__in=cls.actor_role_ids(actor), codename=codename)
         if content_types:
-            filter_kwargs['content_type_id__in'] = content_types
+            qs = qs.filter(content_type_id__in=content_types)  # pragma: no cover
         else:
-            filter_kwargs['content_type_id'] = DABContentType.objects.get_for_model(model_cls).id
-        qs = cls.objects.filter(**filter_kwargs)
+            qs = qs.filter(content_type_id=DABContentType.objects.get_for_model(model_cls).id)
         if cast_field is None:
             return qs.values_list('object_id').distinct()
         else:
@@ -952,9 +962,9 @@ class RoleEvaluationFields(models.Model):
         Returns permissions that a user has to obj from object-roles,
         does not consider permissions from user flags or system-wide roles
         """
-        return cls.objects.filter(**cls._actor_role_filter(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.id).values_list(
-            'codename', flat=True
-        )
+        return cls.objects.filter(
+            role_id__in=cls.actor_role_ids(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.id
+        ).values_list('codename', flat=True)
 
     @classmethod
     def has_obj_perm(cls, user, obj, codename) -> bool:
@@ -963,7 +973,7 @@ class RoleEvaluationFields(models.Model):
         method on permission classes, but it is named differently to avoid unintentionally conflicting
         """
         return cls.objects.filter(
-            **cls._actor_role_filter(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.pk, codename=codename
+            role_id__in=cls.actor_role_ids(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.pk, codename=codename
         ).exists()
 
 

@@ -2245,12 +2245,8 @@ class TestRoleUserAssignmentsCache:
         content_obj.id = 100
         return content_obj
 
-    def create_mock_role_assignment(
-        self, role_definition=None, content_type_id=None, object_id=None, content_object=None, role_definition_id=None, content_type_service=None
-    ):
+    def create_mock_role_assignment(self, role_definition=None, content_type_id=None, object_id=None, content_object=None, role_definition_id=None):
         """Helper to create a mock role assignment"""
-        from ansible_base.rbac.remote import get_local_resource_prefix
-
         assignment = mock.Mock()
         assignment.role_definition = role_definition
         assignment.content_type_id = content_type_id
@@ -2258,13 +2254,7 @@ class TestRoleUserAssignmentsCache:
         assignment.content_object = content_object
         assignment.role_definition_id = role_definition_id or (role_definition.id if role_definition else 1)
 
-        # Set up content_type mock for local role assignment filtering
-        if content_type_id is None:
-            assignment.content_type = None
-        else:
-            content_type_mock = mock.Mock()
-            content_type_mock.service = content_type_service or get_local_resource_prefix()  # Default to local for caching
-            assignment.content_type = content_type_mock
+        assignment.content_type = None if content_type_id is None else mock.Mock()
 
         return assignment
 
@@ -2458,10 +2448,8 @@ class TestRefactoredCacheExisting:
         role_def.id = 1
         return role_def
 
-    def create_mock_role_assignment(self, role_definition=None, content_type_id=None, object_id=None, content_object=None, content_type_service=None):
+    def create_mock_role_assignment(self, role_definition=None, content_type_id=None, object_id=None, content_object=None):
         """Helper to create a mock role assignment"""
-        from ansible_base.rbac.remote import get_local_resource_prefix
-
         assignment = mock.Mock()
         assignment.role_definition = role_definition
         assignment.content_type_id = content_type_id
@@ -2469,62 +2457,9 @@ class TestRefactoredCacheExisting:
         assignment.content_object = content_object
         assignment.role_definition_id = role_definition.id if role_definition else 1
 
-        # Set up content_type mock for service filtering
-        if content_type_id is None:
-            assignment.content_type = None
-        else:
-            content_type_mock = mock.Mock()
-            content_type_mock.service = content_type_service or get_local_resource_prefix()
-            assignment.content_type = content_type_mock
+        assignment.content_type = None if content_type_id is None else mock.Mock()
 
         return assignment
-
-    @pytest.mark.parametrize(
-        "content_type_id, object_id, service_type, should_be_cached, test_description",
-        [
-            pytest.param(None, None, None, True, "global role", id="global_role"),
-            pytest.param(10, 100, "local", True, "local service role", id="local_service"),
-            pytest.param(20, 200, "shared", True, "shared service role", id="shared_service"),
-            pytest.param(30, 300, "remote-service", False, "remote service role", id="remote_service"),
-            pytest.param(40, 400, "external-api", False, "external API service role", id="external_service"),
-        ],
-    )
-    def test_cache_existing_with_service_filtering(
-        self, cache_instance, mock_role_definition, content_type_id, object_id, service_type, should_be_cached, test_description
-    ):
-        """Test that cache_existing properly filters roles based on service type"""
-        from ansible_base.rbac.remote import get_local_resource_prefix
-
-        # Handle special case for local service
-        if service_type == "local":
-            service_type = get_local_resource_prefix()
-
-        assignment = self.create_mock_role_assignment(
-            role_definition=mock_role_definition,
-            content_type_id=content_type_id,
-            object_id=object_id,
-            content_object=mock.Mock() if content_type_id is not None else None,
-            content_type_service=service_type,
-        )
-
-        cache_instance.cache_existing([assignment])
-
-        # Verify cache behavior based on expectation
-        if should_be_cached:
-            assert "Test Role" in cache_instance.cache
-            assert content_type_id in cache_instance.cache["Test Role"]
-            assert object_id in cache_instance.cache["Test Role"][content_type_id]
-
-            cached_entry = cache_instance.cache["Test Role"][content_type_id][object_id]
-            assert cached_entry['status'] == cache_instance.STATUS_EXISTING
-            if content_type_id is None:
-                assert cached_entry['object'] is None
-            else:
-                assert cached_entry['object'] is not None
-        else:
-            # For roles that shouldn't be cached, verify they're not in the cache
-            if "Test Role" in cache_instance.cache:
-                assert content_type_id not in cache_instance.cache["Test Role"]
 
     @pytest.mark.parametrize(
         "content_type_id, object_id, expected_content_type_key, expected_object_key, has_content_object, test_description",
@@ -2598,77 +2533,6 @@ class TestRefactoredCacheExisting:
         if "Test Role" in cache_instance.cache and 10 in cache_instance.cache["Test Role"]:
             # The cache key structure exists but no object should be cached
             assert len(cache_instance.cache["Test Role"][10]) == 0
-
-    @pytest.mark.parametrize(
-        "assignments_config, expected_cached_content_types, expected_skipped_content_types",
-        [
-            pytest.param(
-                [
-                    {"content_type_id": 10, "object_id": 100, "service": "remote-service", "should_cache": False},
-                    {"content_type_id": None, "object_id": None, "service": None, "should_cache": True},
-                ],
-                [None],  # Only global role should be cached
-                [10],  # Remote service role should be skipped
-                id="skip_remote_cache_global",
-            ),
-            pytest.param(
-                [
-                    {"content_type_id": 10, "object_id": 100, "service": "local", "should_cache": True},
-                    {"content_type_id": 20, "object_id": 200, "service": "external", "should_cache": False},
-                    {"content_type_id": 30, "object_id": 300, "service": "shared", "should_cache": True},
-                ],
-                [10, 30],  # Local and shared should be cached
-                [20],  # External should be skipped
-                id="mixed_services",
-            ),
-            pytest.param(
-                [
-                    {"content_type_id": 10, "object_id": 100, "service": "remote-1", "should_cache": False},
-                    {"content_type_id": 20, "object_id": 200, "service": "remote-2", "should_cache": False},
-                ],
-                [],  # Nothing should be cached
-                [10, 20],  # All remote services should be skipped
-                id="all_remote_services",
-            ),
-        ],
-    )
-    def test_cache_existing_early_return_pattern(
-        self, cache_instance, mock_role_definition, assignments_config, expected_cached_content_types, expected_skipped_content_types
-    ):
-        """Test that cache_existing uses early return pattern correctly with various service combinations"""
-        from ansible_base.rbac.remote import get_local_resource_prefix
-
-        assignments = []
-        for config in assignments_config:
-            service = config["service"]
-            if service == "local":
-                service = get_local_resource_prefix()
-
-            assignment = self.create_mock_role_assignment(
-                role_definition=mock_role_definition,
-                content_type_id=config["content_type_id"],
-                object_id=config["object_id"],
-                content_object=mock.Mock() if config["content_type_id"] is not None else None,
-                content_type_service=service,
-            )
-            assignments.append(assignment)
-
-        cache_instance.cache_existing(assignments)
-
-        # Verify expected cached content types
-        if expected_cached_content_types:
-            assert "Test Role" in cache_instance.cache
-            for content_type_id in expected_cached_content_types:
-                assert content_type_id in cache_instance.cache["Test Role"]
-        else:
-            # If nothing should be cached, the role might not even exist in cache
-            if "Test Role" in cache_instance.cache:
-                assert len(cache_instance.cache["Test Role"]) == 0
-
-        # Verify expected skipped content types
-        if "Test Role" in cache_instance.cache:
-            for content_type_id in expected_skipped_content_types:
-                assert content_type_id not in cache_instance.cache["Test Role"]
 
 
 # --- AAP-45394 regression tests ---

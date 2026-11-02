@@ -16,7 +16,6 @@ from ansible_base.rbac.caching import (
     compute_team_member_roles,
     defer_rbac_state,
     recompute_role_evaluations,
-    team_ids_from_role_target,
 )
 from ansible_base.rbac.models.content_type import DABContentType
 from ansible_base.rbac.models.role import AssignmentBase, ObjectRole, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
@@ -204,6 +203,7 @@ def _create_assignments(
     lookup: ObjectRoleLookup,
     object_ansible_ids: dict[tuple[str, str, str], str],
     fire_signals_on_create: bool = True,
+    ignore_conflicts: bool = True,
 ) -> list[AssignmentBase]:
     """Bulk-create user and team assignment objects, return all resulting assignments."""
     created_by = current_user_or_system_user()
@@ -226,7 +226,7 @@ def _create_assignments(
     if user_assignments:
         pair_q = _pair_filter(user_assignments, 'user')
         existing_user_pks = set(RoleUserAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleUserAssignment.objects.bulk_create(user_assignments, ignore_conflicts=True)
+        RoleUserAssignment.objects.bulk_create(user_assignments, ignore_conflicts=ignore_conflicts)
         db_users = list(RoleUserAssignment.objects.filter(pair_q))
         all_assignments.extend(db_users)
         if fire_signals_on_create:
@@ -251,7 +251,7 @@ def _create_assignments(
     if team_assignments:
         pair_q = _pair_filter(team_assignments, 'team')
         existing_team_pks = set(RoleTeamAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleTeamAssignment.objects.bulk_create(team_assignments, ignore_conflicts=True)
+        RoleTeamAssignment.objects.bulk_create(team_assignments, ignore_conflicts=ignore_conflicts)
         db_teams = list(RoleTeamAssignment.objects.filter(pair_q))
         all_assignments.extend(db_teams)
         if fire_signals_on_create:
@@ -265,14 +265,28 @@ def _create_assignments(
 def _collect_recompute_team_ids(object_roles: Iterable[ObjectRole]) -> set[int]:
     """Identify team IDs that need member-role recomputation."""
     rd_has_team_perm: dict[int, bool] = {}
-    recompute_team_ids: set[int] = set()
+    organization_ids = set()
+    team_ids = set()
     for obj_role in object_roles:
         rd_id = obj_role.role_definition_id
         if rd_id not in rd_has_team_perm:
-            rd_has_team_perm[rd_id] = RoleDefinition.objects.filter(pk=rd_id, permissions__codename=permission_registry.team_permission).exists()
-        if rd_has_team_perm[rd_id]:
-            recompute_team_ids.update(team_ids_from_role_target(obj_role))
-    return recompute_team_ids
+            rd_has_team_perm[rd_id] = RoleDefinition.objects.filter(
+                pk=rd_id,
+                permissions__codename=permission_registry.team_permission,
+            ).exists()
+
+        if not rd_has_team_perm[rd_id]:
+            continue
+
+        if obj_role.content_type_id == permission_registry.org_ct_id:
+            organization_ids.add(obj_role.object_id)
+        if obj_role.content_type_id == permission_registry.team_ct_id:
+            team_ids.add(int(obj_role.object_id))
+    parent_field = permission_registry.get_parent_fd_name(permission_registry.team_model)
+    if organization_ids and parent_field:
+        team_ids.update(permission_registry.team_model.objects.filter(**{f"{parent_field}_id__in": organization_ids}).values_list("id", flat=True))
+
+    return team_ids
 
 
 def _check_defer_guard() -> None:
@@ -286,6 +300,7 @@ def _check_defer_guard() -> None:
 def _recompute_after_give(
     lookup: ObjectRoleLookup,
     assignments: list[AssignmentBase],
+    prefetch_evaluations: bool = False,
 ) -> None:
     """Run recomputation pass after bulk permission assignment."""
     _check_defer_guard()
@@ -305,7 +320,7 @@ def _recompute_after_give(
         roles_to_recompute = ObjectRole.objects.filter(pk__in=[obj_role.pk for obj_role in object_roles_to_update]).prefetch_related(
             'provides_teams__has_roles'
         )
-        recompute_role_evaluations(roles_to_recompute)
+        recompute_role_evaluations(roles_to_recompute, prefetch_evaluations=prefetch_evaluations)
 
 
 def _find_assignments(
@@ -382,11 +397,13 @@ def give_assignments(
     user_resolved: Sequence[ResolvedAssignment] = (),
     team_resolved: Sequence[ResolvedAssignment] = (),
     fire_signals_on_create: bool = True,
+    ignore_conflicts: bool = True,
+    prefetch_evaluations: bool = False,
 ) -> list[AssignmentBase]:
-    """Assign roles from already-resolved assignments (skips validation).
+    """Assign already-resolved roles and return the persisted assignments.
 
-    Lower-level alternative to bulk_give_permissions — accepts ResolvedAssignment
-    lists directly, for callers that have already resolved and validated.
+    Validation is skipped. ``ignore_conflicts`` controls whether database insert
+    conflicts are ignored or surfaced to the caller.
     """
     if not user_resolved and not team_resolved:
         return []
@@ -401,8 +418,9 @@ def give_assignments(
         lookup,
         object_ansible_ids,
         fire_signals_on_create=fire_signals_on_create,
+        ignore_conflicts=ignore_conflicts,
     )
-    _recompute_after_give(lookup, assignments)
+    _recompute_after_give(lookup, assignments, prefetch_evaluations=prefetch_evaluations)
     return assignments
 
 
@@ -410,13 +428,24 @@ def bulk_give_permissions(
     user_permissions: Sequence[PermissionTriple] = (),
     team_permissions: Sequence[PermissionTriple] = (),
     fire_signals_on_create: bool = True,
+    ignore_conflicts: bool = True,
+    prefetch_evaluations: bool = False,
 ) -> list[AssignmentBase]:
-    """Convenience API: validates triples, resolves, and delegates to give_assignments."""
+    """Validate permission triples, create their assignments, and return persisted rows.
+
+    ``ignore_conflicts`` defaults to ignoring insert conflicts; callers that need to
+    distinguish their writes can disable it and handle integrity conflicts.
+    """
     if not user_permissions and not team_permissions:
         return []
-
     user_resolved, team_resolved = _resolve_assignments(user_permissions, team_permissions)
-    return give_assignments(user_resolved, team_resolved, fire_signals_on_create=fire_signals_on_create)
+    return give_assignments(
+        user_resolved,
+        team_resolved,
+        fire_signals_on_create=fire_signals_on_create,
+        ignore_conflicts=ignore_conflicts,
+        prefetch_evaluations=prefetch_evaluations,
+    )
 
 
 def bulk_remove_permissions(

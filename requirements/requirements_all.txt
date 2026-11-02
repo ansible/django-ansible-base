@@ -18,6 +18,7 @@ charset-normalizer==3.4.4
 cryptography==46.0.7
     # via
     #   -r requirements/requirements.in
+    #   -r requirements/requirements_authentication.in
     #   jwcrypto
     #   pyjwt
     #   social-auth-core
@@ -47,7 +48,7 @@ django-oauth-toolkit==2.3.0
     # via -r requirements/requirements_oauth2_provider.in
 django-redis==6.0.0
     # via -r requirements/requirements_redis_client.in
-djangorestframework==3.15.2
+djangorestframework==3.18.3
     # via
     #   -r requirements/requirements.in
     #   drf-spectacular
@@ -197,13 +198,13 @@ redis==7.4.0
     # via
     #   -r requirements/requirements_redis_client.in
     #   django-redis
-regex==2026.7.19
-    # via -r requirements/requirements.in
 referencing==0.36.2
     # via
     #   -r requirements/requirements_api_documentation.in
     #   jsonschema
     #   jsonschema-specifications
+regex==2026.7.19
+    # via -r requirements/requirements.in
 requests==2.34.2
     # via
     #   -r requirements/requirements_jwt_consumer.in

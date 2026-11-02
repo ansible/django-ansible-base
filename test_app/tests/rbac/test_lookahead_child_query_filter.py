@@ -7,6 +7,7 @@ from django.test.utils import CaptureQueriesContext
 from ansible_base.rbac.caching import recompute_all_role_evaluations
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.remote import GenericObject
 from test_app.models import Inventory, Organization
 
 
@@ -76,7 +77,7 @@ def test_remote_child_id_list_query_is_narrowed(rando, organization):
     org_role = ObjectRole.objects.get(role_definition=org_foo_rd, object_id=organization.pk)
 
     with CaptureQueriesContext(connection) as ctx:
-        expected = org_role.expected_direct_permissions(TypesPrefetch.from_db(), object_pk=42, object_ct_id=foo_type.id)
+        expected = org_role.expected_direct_permissions(TypesPrefetch.from_db(), look_ahead=GenericObject(foo_type.id, 42))
 
     assert expected == {('view_foo', foo_type.id, 42), ('change_foo', foo_type.id, 42)}
     remote_queries = [q['sql'] for q in ctx.captured_queries if '"dab_rbac_objectrole"."parent_reference"' in q['sql']]

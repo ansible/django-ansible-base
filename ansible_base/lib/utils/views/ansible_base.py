@@ -7,6 +7,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.views import APIView
 
 from ansible_base.lib.utils.settings import get_function_from_setting, get_setting
+from ansible_base.lib.utils.views.deprecation import DEFAULT_DEPRECATION_MESSAGE, mark_deprecated
 
 logger = logging.getLogger('ansible_base.lib.utils.views.ansible_base')
 
@@ -60,12 +61,22 @@ class AnsibleBaseView(APIView):
             time_elapsed = time.time() - self.time_started
             response['X-API-Time'] = '%0.3fs' % time_elapsed
 
-        if getattr(self, 'deprecated', False):
-            response['Warning'] = getattr(
-                self, 'deprecation_warning_header_override', _('This resource has been deprecated and will be removed in a future release.')
-            )
+        self._add_deprecation_headers(response)
 
         return response
+
+    def _add_deprecation_headers(self, response):
+        """Apply deprecation metadata while preserving legacy Warning-header behavior."""
+        deprecation_metadata = getattr(self, 'deprecation', None)
+        is_legacy_deprecated = getattr(self, 'deprecated', False)
+        if not deprecation_metadata and not is_legacy_deprecated:
+            return
+
+        detail = deprecation_metadata['detail'] if deprecation_metadata else str(DEFAULT_DEPRECATION_MESSAGE)
+        mark_deprecated(response, detail)
+
+        if is_legacy_deprecated:
+            response['Warning'] = getattr(self, 'deprecation_warning_header_override', DEFAULT_DEPRECATION_MESSAGE)
 
     def dispatch(self, request, *args, **kwargs):
         # We wrap DELETE requests with deferral context managers so that

@@ -372,9 +372,18 @@ class TestJWTCommonAuth:
     def test_apply_rbac_permissions_object_roles_role_dne(self, expected_log, admin_user):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        object_roles = {'Junk': ['a']}
+        object_roles = {'Junk': {'content_type': 'organization', 'objects': [0]}}
         with expected_log(claims_logger, 'error', 'Unable to grant'):
             save_user_claims(authentication.user, {}, object_roles, [])
+
+    def test_apply_rbac_permissions_malformed_managed_object_role_is_skipped(self, admin_user, organization_admin_role):
+        authentication = JWTCommonAuth()
+        authentication.user = admin_user
+        object_roles = {organization_admin_role.name: {'content_type': 'organization', 'objects': [0]}}
+
+        save_user_claims(authentication.user, {}, object_roles, [])
+
+        assert not RoleUserAssignment.objects.filter(user=admin_user, role_definition=organization_admin_role).exists()
 
     @pytest.mark.parametrize(
         "object_roles,log_level,log_substring",
