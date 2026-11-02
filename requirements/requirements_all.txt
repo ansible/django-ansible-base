@@ -170,8 +170,9 @@ protobuf==6.33.6
     # via
     #   googleapis-common-protos
     #   opentelemetry-proto
-pyasn1==0.6.1
+pyasn1==0.6.5
     # via
+    #   -r requirements/requirements_authentication.in
     #   pyasn1-modules
     #   python-ldap
 pyasn1-modules==0.4.2

@@ -8,6 +8,7 @@ cryptography<47  # Avoid unreviewed major-version jumps; bump deliberately in it
 # LDAP Authenticator Plugins
 django-auth-ldap
 python-ldap
+pyasn1>=0.6.5  # python-ldap's ASN.1 dependency
 ldap-filter
 
 # Social Authenticator Plugins
