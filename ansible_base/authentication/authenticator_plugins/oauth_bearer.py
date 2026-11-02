@@ -360,7 +360,7 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
     )
 
     WRITE_SCOPE_NAME = CharField(
-        help_text=_("Scope value that grants write and read permissions when present in the configured Scope Claim. For example 'write'"),
+        help_text=_("Scope value that grants write and read permissions when present in the configured Scope Claim. For example 'write'."),
         required=True,
         allow_blank=False,
         allow_null=False,

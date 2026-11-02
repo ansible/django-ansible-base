@@ -36,7 +36,9 @@ the following settings:
 | `GROUPS_CLAIM` | No | Group-membership claim used by authenticator maps; defaults to `groups`. |
 | `USERINFO_URL` | No | Supplemental profile and group-claim endpoint. |
 | `EMAIL_KEY`, `FIRST_NAME_KEY`, `LAST_NAME_KEY`, `USERNAME_KEY` | No | Optional mappings from validated claims to local user fields. |
-| `SCOPE_KEY`, `READ_SCOPE_NAME`, `WRITE_SCOPE_NAME` | No | Token-scope mapping; defaults are `scope`, `read`, and `write`. |
+| `SCOPE_KEY` | Yes | JWT claim containing the token's scope values, such as `scope` or `scp`. |
+| `READ_SCOPE_NAME` | Yes | Scope value that grants API read permission. |
+| `WRITE_SCOPE_NAME` | Yes | Scope value that grants API write and read permissions. |
 | `VERIFY_SSL` | No | Verifies TLS certificates for JWKS, OIDC discovery, and UserInfo requests; defaults to `true`. |
 
 `OIDC_ENDPOINT` uses `/.well-known/openid-configuration` when the
@@ -53,6 +55,9 @@ Example configuration:
   "AUDIENCE": "automation-api",
   "ID_KEY": "sub",
   "GROUPS_CLAIM": "groups",
+  "SCOPE_KEY": "scope",
+  "READ_SCOPE_NAME": "read",
+  "WRITE_SCOPE_NAME": "write",
   "ALLOWED_ALGORITHMS": ["RS256"]
 }
 ```
@@ -67,11 +72,12 @@ JWKS, accepted asymmetric algorithms, issuer, audience, and expiration. It
 requires `exp` and applies `JWT_CLOCK_SKEW_TOLERANCE_SECONDS` to `exp`, `nbf`,
 and `iat` validation.
 
-`SCOPE_KEY` defaults to `scope`. A token receives API `read` and `write`
-permissions only when its configured `READ_SCOPE_NAME` or `WRITE_SCOPE_NAME`
-is present. `write` implies `read`; a valid token without either scope is
-authenticated but cannot access endpoints guarded by the shared token-scope
-permission. Existing RBAC checks still apply.
+Configure `SCOPE_KEY`, `READ_SCOPE_NAME`, and `WRITE_SCOPE_NAME` to match the
+provider's token format. A token receives API `read` and `write` permissions
+only when its configured `READ_SCOPE_NAME` or `WRITE_SCOPE_NAME` is present.
+`write` implies `read`; a valid token without either scope is authenticated but
+cannot access endpoints guarded by the shared token-scope permission. Existing
+RBAC checks still apply.
 
 ## Identity, groups, and profile data
 
