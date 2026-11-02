@@ -352,27 +352,27 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
     )
 
     SCOPE_KEY = CharField(
-        help_text=_("Name of the attribute to use for the scope claim. Defaults to 'scope'."),
+        help_text=_("JWT claim key that contains the token's scope values. For example - 'scp' or 'scope'. The claim value must be a string or an array."),
+        required=True,
         allow_blank=False,
         allow_null=False,
-        default="scope",
-        ui_field_label=_("Scope Key"),
+        ui_field_label=_("Scope Claim"),
     )
 
     WRITE_SCOPE_NAME = CharField(
-        help_text=_("Valid tokens will have read scope by default. Name of the scope to use for the write claim. Defaults to 'write'."),
+        help_text=_("Scope value that grants write and read permissions when present in the configured Scope Claim. For example 'write'."),
+        required=True,
         allow_blank=False,
         allow_null=False,
-        default="write",
-        ui_field_label=_("Write Scope Name"),
+        ui_field_label=_("Write Scope"),
     )
 
     READ_SCOPE_NAME = CharField(
-        help_text=_("Name of the scope to use for the read claim. Defaults to 'read'."),
+        help_text=_("Scope value that grants read permissions when present in the configured Scope Claim. For example 'read'."),
+        required=True,
         allow_blank=False,
         allow_null=False,
-        default="read",
-        ui_field_label=_("Read Scope Name"),
+        ui_field_label=_("Read Scope"),
     )
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
@@ -688,7 +688,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     def _read_write_scopes(self, claims: dict[str, Any]) -> frozenset[str]:
         """Extract verified read/write scopes, with write implying read."""
         configuration = self.database_instance.configuration
-        scope_key = configuration.get("SCOPE_KEY", "scope")
+        scope_key = configuration.get("SCOPE_KEY")
         claimed_scopes = claims.get(scope_key, "")
         if isinstance(claimed_scopes, str):
             scopes = set(claimed_scopes.split())
@@ -698,9 +698,9 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             scopes = set()
 
         user_scopes = set()
-        if configuration.get("READ_SCOPE_NAME", "read") in scopes:
+        if configuration.get("READ_SCOPE_NAME") in scopes:
             user_scopes.add("read")
-        if configuration.get("WRITE_SCOPE_NAME", "write") in scopes:
+        if configuration.get("WRITE_SCOPE_NAME") in scopes:
             user_scopes.update({"read", "write"})
 
         granted_scopes = frozenset(user_scopes)
