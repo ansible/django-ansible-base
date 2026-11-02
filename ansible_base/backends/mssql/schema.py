@@ -85,8 +85,7 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
             "db_comment",
         )
         return old_field.get_internal_type() != new_field.get_internal_type() or any(
-            getattr(old_field, attr, None) != getattr(new_field, attr, None)
-            for attr in schema_attributes
+            getattr(old_field, attr, None) != getattr(new_field, attr, None) for attr in schema_attributes
         )
 
     def _bounded_field_copy(self, model, field):
@@ -106,9 +105,7 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
             for field_name in field_names:
                 self._convert_existing_textfield_column(model, field_name)
 
-        return super().alter_unique_together(
-            model, old_unique_together, new_unique_together
-        )
+        return super().alter_unique_together(model, old_unique_together, new_unique_together)
 
     def alter_index_together(self, model, old_index_together, new_index_together):
         """Bound existing TextFields before AlterIndexTogether creates indexes."""
@@ -118,9 +115,7 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
             for field_name in field_names:
                 self._convert_existing_textfield_column(model, field_name)
 
-        return super().alter_index_together(
-            model, old_index_together, new_index_together
-        )
+        return super().alter_index_together(model, old_index_together, new_index_together)
 
     def _convert_existing_textfield_column(self, model, field_name):
         """Bound an existing nvarchar(max) TextField before indexing it."""
@@ -140,9 +135,7 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         column_name = field.column
         column_type = self._get_column_type(table_name, column_name)
         if column_type is None:
-            raise RuntimeError(
-                f"Could not find SQL Server column '{table_name}.{column_name}' before adding an index or constraint."
-            )
+            raise RuntimeError(f"Could not find SQL Server column '{table_name}.{column_name}' before adding an index or constraint.")
         if "max" not in column_type.lower():
             return
 
@@ -198,9 +191,7 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
                 max_length = self._determine_max_length(field, model)
 
                 # Create a CharField with the same attributes
-                converted_field = models.CharField(
-                    max_length=max_length, **self._copy_field_attrs(field)
-                )
+                converted_field = models.CharField(max_length=max_length, **self._copy_field_attrs(field))
 
                 # Generate SQL for CharField instead
                 return super().column_sql(model, converted_field, include_default)
@@ -226,9 +217,7 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
                 )
                 row = cursor.fetchone()
         except Exception as exc:
-            raise RuntimeError(
-                f"Could not inspect SQL Server column '{table_name}.{column_name}'."
-            ) from exc
+            raise RuntimeError(f"Could not inspect SQL Server column '{table_name}.{column_name}'.") from exc
 
         if row is None:
             return None

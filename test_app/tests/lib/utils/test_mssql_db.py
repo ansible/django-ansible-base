@@ -10,9 +10,7 @@ from django.test import override_settings
 from ansible_base.lib.utils import db
 
 
-def make_mssql_connection(
-    monkeypatch, result, raw_connection=object(), execute_error=None
-):
+def make_mssql_connection(monkeypatch, result, raw_connection=object(), execute_error=None):
     cursor = Mock()
     cursor.fetchone.return_value = result
     if execute_error is not None:
@@ -21,9 +19,7 @@ def make_mssql_connection(
     connection = Mock()
     connection.connection = raw_connection
     connection.cursor.return_value = cursor
-    monkeypatch.setattr(
-        db, "connections", {"default": connection, "replica": connection}
-    )
+    monkeypatch.setattr(db, "connections", {"default": connection, "replica": connection})
     return connection, cursor
 
 
@@ -57,9 +53,7 @@ def test_convert_lock_id_rejects_invalid_sequences(lock_id):
 def test_mssql_advisory_lock_acquires_and_releases(monkeypatch):
     connection, cursor = make_mssql_connection(monkeypatch, (0,), raw_connection=None)
 
-    with db._mssql_advisory_lock(
-        (12, 34), shared=True, lock_session_timeout_milliseconds=500, using="replica"
-    ) as acquired:
+    with db._mssql_advisory_lock((12, 34), shared=True, lock_session_timeout_milliseconds=500, using="replica") as acquired:
         assert acquired is True
 
     connection.ensure_connection.assert_called_once()
@@ -81,9 +75,7 @@ def test_mssql_advisory_lock_timeout_returns_not_acquired_when_not_waiting(monke
 
 def test_mssql_advisory_lock_timeout_raises_when_waiting(monkeypatch):
     _, cursor = make_mssql_connection(monkeypatch, (-1,))
-    lock_context = db._mssql_advisory_lock(
-        "lock", wait=True, lock_session_timeout_milliseconds=500
-    )
+    lock_context = db._mssql_advisory_lock("lock", wait=True, lock_session_timeout_milliseconds=500)
 
     with pytest.raises(OperationalError, match="timed out"):
         with lock_context:
@@ -109,9 +101,7 @@ def test_mssql_advisory_lock_raises_for_failed_acquisition(monkeypatch, row, cod
 
 def test_mssql_advisory_lock_propagates_execute_errors(monkeypatch):
     """Verify database errors during lock acquisition propagate correctly."""
-    _, cursor = make_mssql_connection(
-        monkeypatch, None, execute_error=RuntimeError("connection failed")
-    )
+    _, cursor = make_mssql_connection(monkeypatch, None, execute_error=RuntimeError("connection failed"))
     lock_context = db._mssql_advisory_lock("lock")
 
     with pytest.raises(RuntimeError, match="connection failed"):
@@ -137,12 +127,8 @@ def test_mssql_advisory_lock_release_error_preserves_body_exception_and_closes_c
 
 
 def test_advisory_lock_dispatches_to_mssql_and_passes_options(monkeypatch):
-    connection = SimpleNamespace(
-        vendor="microsoft", close_if_unusable_or_obsolete=Mock()
-    )
-    monkeypatch.setattr(
-        db, "connections", {"default": connection, "replica": connection}
-    )
+    connection = SimpleNamespace(vendor="microsoft", close_if_unusable_or_obsolete=Mock())
+    monkeypatch.setattr(db, "connections", {"default": connection, "replica": connection})
     called = {}
 
     @contextmanager
@@ -173,12 +159,8 @@ def test_advisory_lock_dispatches_to_mssql_and_passes_options(monkeypatch):
 
 
 def test_advisory_lock_preserves_positional_options_for_mssql(monkeypatch):
-    default_connection = SimpleNamespace(
-        vendor="microsoft", close_if_unusable_or_obsolete=Mock()
-    )
-    replica_connection = SimpleNamespace(
-        vendor="microsoft", close_if_unusable_or_obsolete=Mock()
-    )
+    default_connection = SimpleNamespace(vendor="microsoft", close_if_unusable_or_obsolete=Mock())
+    replica_connection = SimpleNamespace(vendor="microsoft", close_if_unusable_or_obsolete=Mock())
     monkeypatch.setattr(
         db,
         "connections",
@@ -208,9 +190,7 @@ def test_advisory_lock_preserves_positional_options_for_mssql(monkeypatch):
 
 
 def test_advisory_lock_closes_connection_after_mssql_error(monkeypatch):
-    connection = SimpleNamespace(
-        vendor="microsoft", close_if_unusable_or_obsolete=Mock()
-    )
+    connection = SimpleNamespace(vendor="microsoft", close_if_unusable_or_obsolete=Mock())
     monkeypatch.setattr(db, "connections", {"default": connection})
 
     class FailedLock:
@@ -220,9 +200,7 @@ def test_advisory_lock_closes_connection_after_mssql_error(monkeypatch):
         def __exit__(self, exc_type, exc_value, traceback):
             return False
 
-    monkeypatch.setattr(
-        db, "_mssql_advisory_lock", lambda *args, **kwargs: FailedLock()
-    )
+    monkeypatch.setattr(db, "_mssql_advisory_lock", lambda *args, **kwargs: FailedLock())
     with pytest.raises(OperationalError, match="lock failed"):
         with db.advisory_lock("lock"):
             pass
@@ -252,9 +230,7 @@ def test_advisory_lock_closes_using_alias_after_mssql_error(monkeypatch):
 
 
 def test_advisory_lock_requires_lock_id_for_mssql(monkeypatch):
-    monkeypatch.setattr(
-        db, "connections", {"default": SimpleNamespace(vendor="microsoft")}
-    )
+    monkeypatch.setattr(db, "connections", {"default": SimpleNamespace(vendor="microsoft")})
 
     with pytest.raises(ValueError, match="lock identifier"):
         with db.advisory_lock():
@@ -290,9 +266,7 @@ def test_get_sql_server_notify_params_applies_overrides_and_options():
 
 
 def test_get_sql_server_notify_params_uses_host_and_port_defaults(monkeypatch):
-    databases = {
-        "replica": {"ENGINE": "ansible_base.backends.mssql", "NAME": "replica_db"}
-    }
+    databases = {"replica": {"ENGINE": "ansible_base.backends.mssql", "NAME": "replica_db"}}
     monkeypatch.setattr(
         db,
         "combine_settings_dict",

@@ -18,9 +18,7 @@ try:
 except ModuleNotFoundError as exc:
     if exc.name != "mssql":
         raise
-    pytest.skip(
-        "mssql-django is required for SQL Server backend tests", allow_module_level=True
-    )
+    pytest.skip("mssql-django is required for SQL Server backend tests", allow_module_level=True)
 
 
 def make_schema_editor():
@@ -49,9 +47,7 @@ class TestFieldNeedsConversion(TestCase):
 
         # Create a minimal mock model
         class MockModel:
-            _meta = type(
-                "Meta", (), {"unique_together": [], "constraints": [], "indexes": []}
-            )()
+            _meta = type("Meta", (), {"unique_together": [], "constraints": [], "indexes": []})()
 
         result = self.schema_editor._field_needs_conversion(field, MockModel)
         self.assertTrue(result)
@@ -61,9 +57,7 @@ class TestFieldNeedsConversion(TestCase):
         field = models.TextField(unique=True)
 
         class MockModel:
-            _meta = type(
-                "Meta", (), {"unique_together": [], "constraints": [], "indexes": []}
-            )()
+            _meta = type("Meta", (), {"unique_together": [], "constraints": [], "indexes": []})()
 
         result = self.schema_editor._field_needs_conversion(field, MockModel)
         self.assertTrue(result)
@@ -141,9 +135,7 @@ class TestFieldNeedsConversion(TestCase):
         field.name = "test_field"
 
         class MockModel:
-            _meta = type(
-                "Meta", (), {"unique_together": [], "constraints": [], "indexes": []}
-            )()
+            _meta = type("Meta", (), {"unique_together": [], "constraints": [], "indexes": []})()
 
         result = self.schema_editor._field_needs_conversion(field, MockModel)
         self.assertFalse(result)
@@ -156,15 +148,11 @@ class TestFieldNeedsConversion(TestCase):
     def test_non_unique_constraint_and_unrelated_index_do_not_need_conversion(self):
         field = models.TextField()
         field.name = "test_field"
-        constraint = models.CheckConstraint(
-            condition=models.Q(test_field__isnull=False), name="check_test_field"
-        )
+        constraint = models.CheckConstraint(condition=models.Q(test_field__isnull=False), name="check_test_field")
         index = models.Index(fields=["other_field"], name="idx_other_field")
 
         class MockModel:
-            _meta = type(
-                "Meta", (), {"constraints": [constraint], "indexes": [index]}
-            )()
+            _meta = type("Meta", (), {"constraints": [constraint], "indexes": [index]})()
 
         self.assertFalse(self.schema_editor._field_needs_conversion(field, MockModel))
 
@@ -309,66 +297,42 @@ class TestSchemaEditorConstraints(TestCase):
         self.model = SimpleNamespace(
             _meta=SimpleNamespace(
                 db_table="test_table",
-                get_field=lambda field_name: self.field
-                if field_name == "description"
-                else None,
+                get_field=lambda field_name: self.field if field_name == "description" else None,
             )
         )
 
     def test_add_constraint_converts_existing_nvarchar_max_textfield(self):
-        constraint = models.UniqueConstraint(
-            fields=["description"], name="unique_description"
-        )
+        constraint = models.UniqueConstraint(fields=["description"], name="unique_description")
         with (
-            patch.object(
-                self.schema_editor, "_get_column_type", return_value="nvarchar(max)"
-            ) as get_column_type,
+            patch.object(self.schema_editor, "_get_column_type", return_value="nvarchar(max)") as get_column_type,
             patch.object(self.schema_editor, "execute") as execute,
-            patch.object(
-                MSSQLSchemaEditor, "add_constraint", return_value="parent result"
-            ) as add_constraint,
+            patch.object(MSSQLSchemaEditor, "add_constraint", return_value="parent result") as add_constraint,
         ):
             result = self.schema_editor.add_constraint(self.model, constraint)
 
         self.assertEqual(result, "parent result")
         get_column_type.assert_called_once_with("test_table", "description")
-        execute.assert_called_once_with(
-            "ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL"
-        )
+        execute.assert_called_once_with("ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL")
         self.assertIsInstance(self.field, models.TextField)
         self.assertIsNone(self.field.max_length)
         add_constraint.assert_called_once_with(self.model, constraint)
 
     def test_add_constraint_propagates_alter_column_error(self):
-        constraint = models.UniqueConstraint(
-            fields=["description"], name="unique_description"
-        )
+        constraint = models.UniqueConstraint(fields=["description"], name="unique_description")
         with (
-            patch.object(
-                self.schema_editor, "_get_column_type", return_value="nvarchar(max)"
-            ),
-            patch.object(
-                self.schema_editor, "execute", side_effect=RuntimeError("alter failed")
-            ),
-            patch.object(
-                MSSQLSchemaEditor, "add_constraint", return_value="parent result"
-            ),
+            patch.object(self.schema_editor, "_get_column_type", return_value="nvarchar(max)"),
+            patch.object(self.schema_editor, "execute", side_effect=RuntimeError("alter failed")),
+            patch.object(MSSQLSchemaEditor, "add_constraint", return_value="parent result"),
         ):
             with self.assertRaisesRegex(RuntimeError, "alter failed"):
                 self.schema_editor.add_constraint(self.model, constraint)
 
     def test_add_constraint_leaves_bounded_textfield_unchanged(self):
-        constraint = models.UniqueConstraint(
-            fields=["description"], name="unique_description"
-        )
+        constraint = models.UniqueConstraint(fields=["description"], name="unique_description")
         with (
-            patch.object(
-                self.schema_editor, "_get_column_type", return_value="nvarchar(255)"
-            ),
+            patch.object(self.schema_editor, "_get_column_type", return_value="nvarchar(255)"),
             patch.object(self.schema_editor, "execute") as execute,
-            patch.object(
-                MSSQLSchemaEditor, "add_constraint", return_value="parent result"
-            ),
+            patch.object(MSSQLSchemaEditor, "add_constraint", return_value="parent result"),
         ):
             self.schema_editor.add_constraint(self.model, constraint)
 
@@ -376,15 +340,11 @@ class TestSchemaEditorConstraints(TestCase):
         self.assertIsInstance(self.field, models.TextField)
 
     def test_add_constraint_ignores_non_unique_constraints(self):
-        constraint = models.CheckConstraint(
-            condition=models.Q(description__isnull=False), name="check_description"
-        )
+        constraint = models.CheckConstraint(condition=models.Q(description__isnull=False), name="check_description")
         with (
             patch.object(self.schema_editor, "_get_column_type") as get_column_type,
             patch.object(self.schema_editor, "execute") as execute,
-            patch.object(
-                MSSQLSchemaEditor, "add_constraint", return_value="parent result"
-            ),
+            patch.object(MSSQLSchemaEditor, "add_constraint", return_value="parent result"),
         ):
             self.schema_editor.add_constraint(self.model, constraint)
 
@@ -394,20 +354,14 @@ class TestSchemaEditorConstraints(TestCase):
     def test_add_index_converts_descending_textfield(self):
         index = models.Index(fields=["-description"], name="idx_description")
         with (
-            patch.object(
-                self.schema_editor, "_get_column_type", return_value="nvarchar(max)"
-            ),
+            patch.object(self.schema_editor, "_get_column_type", return_value="nvarchar(max)"),
             patch.object(self.schema_editor, "execute") as execute,
-            patch.object(
-                MSSQLSchemaEditor, "add_index", return_value="parent result"
-            ) as add_index,
+            patch.object(MSSQLSchemaEditor, "add_index", return_value="parent result") as add_index,
         ):
             result = self.schema_editor.add_index(self.model, index)
 
         self.assertEqual(result, "parent result")
-        execute.assert_called_once_with(
-            "ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL"
-        )
+        execute.assert_called_once_with("ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL")
         self.assertIsInstance(self.field, models.TextField)
         add_index.assert_called_once_with(self.model, index)
 
@@ -415,9 +369,7 @@ class TestSchemaEditorConstraints(TestCase):
         field = models.TextField(db_index=True)
         field.set_attributes_from_name("name")
         model = SimpleNamespace(_meta=SimpleNamespace(local_fields=[field]))
-        with patch.object(
-            MSSQLSchemaEditor, "create_model", return_value="parent result"
-        ) as create_model:
+        with patch.object(MSSQLSchemaEditor, "create_model", return_value="parent result") as create_model:
             result = self.schema_editor.create_model(model)
 
         self.assertEqual(result, "parent result")
@@ -428,14 +380,8 @@ class TestSchemaEditorConstraints(TestCase):
     def test_column_sql_converts_indexed_textfield(self):
         field = models.TextField(db_index=True)
         field.set_attributes_from_name("description")
-        model = SimpleNamespace(
-            _meta=SimpleNamespace(
-                label="test.Model", unique_together=[], constraints=[], indexes=[]
-            )
-        )
-        with patch.object(
-            MSSQLSchemaEditor, "column_sql", return_value=("parent sql", [])
-        ) as column_sql:
+        model = SimpleNamespace(_meta=SimpleNamespace(label="test.Model", unique_together=[], constraints=[], indexes=[]))
+        with patch.object(MSSQLSchemaEditor, "column_sql", return_value=("parent sql", [])) as column_sql:
             result = self.schema_editor.column_sql(model, field, include_default=True)
 
         self.assertEqual(result, ("parent sql", []))
@@ -448,9 +394,7 @@ class TestSchemaEditorConstraints(TestCase):
     def test_column_sql_delegates_unconverted_field(self):
         field = models.CharField(max_length=80)
         model = SimpleNamespace(_meta=SimpleNamespace(label="test.Model"))
-        with patch.object(
-            MSSQLSchemaEditor, "column_sql", return_value=("parent sql", [])
-        ) as column_sql:
+        with patch.object(MSSQLSchemaEditor, "column_sql", return_value=("parent sql", [])) as column_sql:
             result = self.schema_editor.column_sql(model, field, include_default=False)
 
         self.assertEqual(result, ("parent sql", []))
@@ -509,9 +453,7 @@ class TestSchemaEditorConstraints(TestCase):
                 model = SimpleNamespace(
                     _meta=SimpleNamespace(
                         db_table="test_table",
-                        get_field=lambda field_name: old_field
-                        if field_name == "description"
-                        else None,
+                        get_field=lambda field_name: old_field if field_name == "description" else None,
                     )
                 )
                 with (
@@ -521,31 +463,21 @@ class TestSchemaEditorConstraints(TestCase):
                         return_value="nvarchar(max)",
                     ) as get_column_type,
                     patch.object(self.schema_editor, "execute") as execute,
-                    patch.object(
-                        MSSQLSchemaEditor, "alter_field", return_value="parent result"
-                    ) as alter_field,
+                    patch.object(MSSQLSchemaEditor, "alter_field", return_value="parent result") as alter_field,
                 ):
                     result = self.schema_editor.alter_field(model, old_field, new_field)
 
                 self.assertEqual(result, "parent result")
                 get_column_type.assert_called_once_with("test_table", "description")
-                execute.assert_called_once_with(
-                    "ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL"
-                )
+                execute.assert_called_once_with("ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL")
                 alter_field.assert_called_once()
-                _, bounded_old_field, bounded_new_field, strict = (
-                    alter_field.call_args.args
-                )
+                _, bounded_old_field, bounded_new_field, strict = alter_field.call_args.args
                 self.assertIsInstance(bounded_old_field, models.CharField)
                 self.assertEqual(bounded_old_field.max_length, 450)
                 self.assertIsInstance(bounded_new_field, models.CharField)
                 self.assertEqual(bounded_new_field.max_length, 450)
-                self.assertEqual(
-                    bounded_new_field.db_index, new_field_kwargs.get("db_index", False)
-                )
-                self.assertEqual(
-                    bounded_new_field.unique, new_field_kwargs.get("unique", False)
-                )
+                self.assertEqual(bounded_new_field.db_index, new_field_kwargs.get("db_index", False))
+                self.assertEqual(bounded_new_field.unique, new_field_kwargs.get("unique", False))
                 self.assertFalse(strict)
 
     def test_alter_field_passes_bounded_fields_for_nullability_change(self):
@@ -556,27 +488,19 @@ class TestSchemaEditorConstraints(TestCase):
         model = SimpleNamespace(
             _meta=SimpleNamespace(
                 db_table="test_table",
-                get_field=lambda field_name: old_field
-                if field_name == "description"
-                else None,
+                get_field=lambda field_name: old_field if field_name == "description" else None,
             )
         )
 
         with (
-            patch.object(
-                self.schema_editor, "_get_column_type", return_value="nvarchar(max)"
-            ),
+            patch.object(self.schema_editor, "_get_column_type", return_value="nvarchar(max)"),
             patch.object(self.schema_editor, "execute") as execute,
-            patch.object(
-                MSSQLSchemaEditor, "alter_field", return_value="parent result"
-            ) as alter_field,
+            patch.object(MSSQLSchemaEditor, "alter_field", return_value="parent result") as alter_field,
         ):
             result = self.schema_editor.alter_field(model, old_field, new_field)
 
         self.assertEqual(result, "parent result")
-        execute.assert_called_once_with(
-            "ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL"
-        )
+        execute.assert_called_once_with("ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL")
         _, bounded_old_field, bounded_new_field, _ = alter_field.call_args.args
         self.assertIsInstance(bounded_old_field, models.CharField)
         self.assertEqual(bounded_old_field.max_length, 450)
@@ -595,20 +519,14 @@ class TestSchemaEditorConstraints(TestCase):
         model = SimpleNamespace(
             _meta=SimpleNamespace(
                 db_table="test_table",
-                get_field=lambda field_name: old_field
-                if field_name == "description"
-                else None,
+                get_field=lambda field_name: old_field if field_name == "description" else None,
             )
         )
 
         with (
-            patch.object(
-                self.schema_editor, "_get_column_type", return_value="nvarchar(450)"
-            ),
+            patch.object(self.schema_editor, "_get_column_type", return_value="nvarchar(450)"),
             patch.object(self.schema_editor, "execute") as execute,
-            patch.object(
-                MSSQLSchemaEditor, "alter_field", return_value="parent result"
-            ) as alter_field,
+            patch.object(MSSQLSchemaEditor, "alter_field", return_value="parent result") as alter_field,
         ):
             result = self.schema_editor.alter_field(model, old_field, new_field)
 
@@ -619,27 +537,19 @@ class TestSchemaEditorConstraints(TestCase):
     def test_alter_field_passes_bounded_fields_for_column_comment_change(self):
         old_field = models.TextField(null=True, db_index=True)
         old_field.set_attributes_from_name("description")
-        new_field = models.TextField(
-            null=True, db_index=True, db_comment="Resource description"
-        )
+        new_field = models.TextField(null=True, db_index=True, db_comment="Resource description")
         new_field.set_attributes_from_name("description")
         model = SimpleNamespace(
             _meta=SimpleNamespace(
                 db_table="test_table",
-                get_field=lambda field_name: old_field
-                if field_name == "description"
-                else None,
+                get_field=lambda field_name: old_field if field_name == "description" else None,
             )
         )
 
         with (
-            patch.object(
-                self.schema_editor, "_get_column_type", return_value="nvarchar(max)"
-            ),
+            patch.object(self.schema_editor, "_get_column_type", return_value="nvarchar(max)"),
             patch.object(self.schema_editor, "execute"),
-            patch.object(
-                MSSQLSchemaEditor, "alter_field", return_value="parent result"
-            ) as alter_field,
+            patch.object(MSSQLSchemaEditor, "alter_field", return_value="parent result") as alter_field,
         ):
             self.schema_editor.alter_field(model, old_field, new_field)
 
@@ -664,23 +574,15 @@ class TestSchemaEditorConstraints(TestCase):
         new_unique_together = (("description", "other"),)
 
         with (
-            patch.object(
-                self.schema_editor, "_get_column_type", return_value="nvarchar(max)"
-            ) as get_column_type,
+            patch.object(self.schema_editor, "_get_column_type", return_value="nvarchar(max)") as get_column_type,
             patch.object(self.schema_editor, "execute") as execute,
-            patch.object(
-                MSSQLSchemaEditor, "alter_unique_together", return_value="parent result"
-            ) as alter_unique_together,
+            patch.object(MSSQLSchemaEditor, "alter_unique_together", return_value="parent result") as alter_unique_together,
         ):
-            result = self.schema_editor.alter_unique_together(
-                model, (), new_unique_together
-            )
+            result = self.schema_editor.alter_unique_together(model, (), new_unique_together)
 
         self.assertEqual(result, "parent result")
         get_column_type.assert_called_once_with("test_table", "description")
-        execute.assert_called_once_with(
-            "ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL"
-        )
+        execute.assert_called_once_with("ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL")
         alter_unique_together.assert_called_once_with(model, (), new_unique_together)
 
     def test_alter_index_together_converts_existing_textfield_before_index(self):
@@ -698,23 +600,15 @@ class TestSchemaEditorConstraints(TestCase):
         new_index_together = (("description", "other"),)
 
         with (
-            patch.object(
-                self.schema_editor, "_get_column_type", return_value="nvarchar(max)"
-            ) as get_column_type,
+            patch.object(self.schema_editor, "_get_column_type", return_value="nvarchar(max)") as get_column_type,
             patch.object(self.schema_editor, "execute") as execute,
-            patch.object(
-                MSSQLSchemaEditor, "alter_index_together", return_value="parent result"
-            ) as alter_index_together,
+            patch.object(MSSQLSchemaEditor, "alter_index_together", return_value="parent result") as alter_index_together,
         ):
-            result = self.schema_editor.alter_index_together(
-                model, (), new_index_together
-            )
+            result = self.schema_editor.alter_index_together(model, (), new_index_together)
 
         self.assertEqual(result, "parent result")
         get_column_type.assert_called_once_with("test_table", "description")
-        execute.assert_called_once_with(
-            "ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL"
-        )
+        execute.assert_called_once_with("ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL")
         alter_index_together.assert_called_once_with(model, (), new_index_together)
 
 
@@ -740,15 +634,11 @@ class TestSchemaEditorErrorHandling(TestCase):
         """Verify RuntimeError with cause when database query fails."""
         # Mock cursor that raises an exception
         mock_cursor = MagicMock()
-        mock_cursor.__enter__.return_value.execute.side_effect = Exception(
-            "Connection lost"
-        )
+        mock_cursor.__enter__.return_value.execute.side_effect = Exception("Connection lost")
 
         self.schema_editor.connection.cursor.return_value = mock_cursor
 
-        with self.assertRaisesRegex(
-            RuntimeError, "Could not inspect SQL Server column 'test_table.test_column'"
-        ):
+        with self.assertRaisesRegex(RuntimeError, "Could not inspect SQL Server column 'test_table.test_column'"):
             self.schema_editor._get_column_type("test_table", "test_column")
 
     def test_convert_textfield_validates_data_length_before_alter(self):
@@ -770,16 +660,11 @@ class TestSchemaEditorErrorHandling(TestCase):
         self.schema_editor.connection = connection
 
         with (
-            patch.object(
-                self.schema_editor, "_get_column_type", return_value="nvarchar(max)"
-            ),
+            patch.object(self.schema_editor, "_get_column_type", return_value="nvarchar(max)"),
             patch.object(self.schema_editor, "_determine_max_length", return_value=450),
         ):
             with self.assertRaisesRegex(
                 RuntimeError,
-                r"Cannot alter SQL Server column 'test_table.description' to nvarchar\(450\): "
-                r"existing data contains values up to 600 characters",
+                r"Cannot alter SQL Server column 'test_table.description' to nvarchar\(450\): " r"existing data contains values up to 600 characters",
             ):
-                self.schema_editor._convert_existing_textfield_column(
-                    model, "description"
-                )
+                self.schema_editor._convert_existing_textfield_column(model, "description")
