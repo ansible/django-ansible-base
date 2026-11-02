@@ -192,9 +192,7 @@ class TestSafeM2mAdd:
 
     @patch("ansible_base.rbac.caching.transaction.atomic", _noop_atomic)
     @patch("ansible_base.rbac.caching.ObjectRole.objects")
-    def test_retries_on_raw_sql_server_objectrole_fk_error(
-        self, mock_or_qs, monkeypatch
-    ):
+    def test_retries_on_raw_sql_server_objectrole_fk_error(self, mock_or_qs, monkeypatch):
         class SqlServerIntegrityError(Exception):
             pass
 
@@ -237,9 +235,7 @@ class TestSafeM2mAdd:
     def test_reraises_non_fk_integrity_error(self):
         """A unique-constraint IntegrityError is re-raised, not swallowed."""
         team = MagicMock()
-        team.member_roles.add.side_effect = _make_integrity_error(
-            sqlstate="23505", message="duplicate key"
-        )
+        team.member_roles.add.side_effect = _make_integrity_error(sqlstate="23505", message="duplicate key")
         with pytest.raises(IntegrityError, match="duplicate key"):
             _safe_m2m_add(team, {1})
 
@@ -324,9 +320,7 @@ class TestSafeBulkCreateEvaluations(SkipIfMSSQL):
             if call_count == 1:
                 raise exc
 
-        with patch.object(
-            RoleEvaluation.objects, "bulk_create", side_effect=flaky_bulk_create
-        ):
+        with patch.object(RoleEvaluation.objects, "bulk_create", side_effect=flaky_bulk_create):
             _safe_bulk_create_evaluations(RoleEvaluation, [eval1, eval2], True)
 
         assert call_count == 2
@@ -372,9 +366,7 @@ class TestSafeBulkCreateEvaluations(SkipIfMSSQL):
                 raise stale_exc
             raise unique_exc
 
-        with patch.object(
-            RoleEvaluation.objects, "bulk_create", side_effect=switching_bulk_create
-        ):
+        with patch.object(RoleEvaluation.objects, "bulk_create", side_effect=switching_bulk_create):
             with pytest.raises(IntegrityError, match="duplicate key"):
                 _safe_bulk_create_evaluations(RoleEvaluation, [eval1], False)
 
@@ -397,9 +389,7 @@ class TestSafeBulkCreateEvaluations(SkipIfMSSQL):
                 raise exc
             retried_evals.extend(objs)
 
-        with patch.object(
-            RoleEvaluation.objects, "bulk_create", side_effect=flaky_then_capture
-        ):
+        with patch.object(RoleEvaluation.objects, "bulk_create", side_effect=flaky_then_capture):
             _safe_bulk_create_evaluations(RoleEvaluation, [eval_good, eval_stale], True)
 
         assert retried_evals == [eval_good]
@@ -418,9 +408,7 @@ class TestSafeBulkCreateEvaluations(SkipIfMSSQL):
             call_count += 1
             raise exc
 
-        with patch.object(
-            RoleEvaluation.objects, "bulk_create", side_effect=counting_bulk_create
-        ):
+        with patch.object(RoleEvaluation.objects, "bulk_create", side_effect=counting_bulk_create):
             _safe_bulk_create_evaluations(RoleEvaluation, [eval1], False)
 
         assert call_count == 1
@@ -429,9 +417,7 @@ class TestSafeBulkCreateEvaluations(SkipIfMSSQL):
 class TestMSSQLBulkCreatePrefilter:
     def _mock_evaluation_model(self, existing_keys):
         manager = MagicMock()
-        manager.using.return_value.filter.return_value.values_list.return_value = (
-            existing_keys
-        )
+        manager.using.return_value.filter.return_value.values_list.return_value = existing_keys
         model = SimpleNamespace(__name__="RoleEvaluation", objects=manager)
         return model, manager
 
@@ -443,31 +429,19 @@ class TestMSSQLBulkCreatePrefilter:
         )
         monkeypatch.setattr(rbac_caching.transaction, "atomic", _noop_atomic)
 
-        existing = SimpleNamespace(
-            object_id=1, content_type_id=20, codename="view_inventory", role_id=30
-        )
-        new = SimpleNamespace(
-            object_id=2, content_type_id=20, codename="view_inventory", role_id=30
-        )
-        duplicate_new = SimpleNamespace(
-            object_id=2, content_type_id=20, codename="view_inventory", role_id=30
-        )
+        existing = SimpleNamespace(object_id=1, content_type_id=20, codename="view_inventory", role_id=30)
+        new = SimpleNamespace(object_id=2, content_type_id=20, codename="view_inventory", role_id=30)
+        duplicate_new = SimpleNamespace(object_id=2, content_type_id=20, codename="view_inventory", role_id=30)
         model, manager = self._mock_evaluation_model([(1, 20, "view_inventory", 30)])
         bulk_create = MagicMock()
         monkeypatch.setattr(rbac_caching, "bulk_create_db_safe", bulk_create)
 
-        rbac_caching._safe_bulk_create_evaluations(
-            model, [existing, new, duplicate_new], ignore_conflicts=True
-        )
+        rbac_caching._safe_bulk_create_evaluations(model, [existing, new, duplicate_new], ignore_conflicts=True)
 
         manager.using.assert_called_once_with("default")
-        bulk_create.assert_called_once_with(
-            model, [new], ignore_conflicts=True, using="default", return_ids=False
-        )
+        bulk_create.assert_called_once_with(model, [new], ignore_conflicts=True, using="default", return_ids=False)
 
-    def test_chunks_key_prefilter_queries_under_sql_server_parameter_limit(
-        self, monkeypatch
-    ):
+    def test_chunks_key_prefilter_queries_under_sql_server_parameter_limit(self, monkeypatch):
         monkeypatch.setattr(
             rbac_caching,
             "connections",
@@ -488,17 +462,13 @@ class TestMSSQLBulkCreatePrefilter:
         bulk_create = MagicMock()
         monkeypatch.setattr(rbac_caching, "bulk_create_db_safe", bulk_create)
 
-        rbac_caching._safe_bulk_create_evaluations(
-            model, evaluations, ignore_conflicts=True
-        )
+        rbac_caching._safe_bulk_create_evaluations(model, evaluations, ignore_conflicts=True)
 
         filter_calls = manager.using.return_value.filter.call_args_list
         assert len(filter_calls) == 2
         assert len(filter_calls[0].args[0].children) == 500
         assert len(filter_calls[1].args[0].children) == 4
-        bulk_create.assert_called_once_with(
-            model, evaluations, ignore_conflicts=True, using="default", return_ids=False
-        )
+        bulk_create.assert_called_once_with(model, evaluations, ignore_conflicts=True, using="default", return_ids=False)
 
     def test_materializes_evaluation_keys_once_across_batches(self, monkeypatch):
         model, _manager = self._mock_evaluation_model([])
@@ -509,9 +479,7 @@ class TestMSSQLBulkCreatePrefilter:
                 codename="view_inventory",
                 role_id=30,
             )
-            for object_id in range(
-                rbac_caching.MSSQL_EVALUATION_KEY_FILTER_BATCH_SIZE * 2 + 1
-            )
+            for object_id in range(rbac_caching.MSSQL_EVALUATION_KEY_FILTER_BATCH_SIZE * 2 + 1)
         ]
         list_calls = 0
         builtin_list = list
@@ -523,9 +491,7 @@ class TestMSSQLBulkCreatePrefilter:
 
         monkeypatch.setattr(rbac_caching, "list", track_list, raising=False)
 
-        result = rbac_caching._filter_existing_evaluation_keys(
-            model, evaluations, "default"
-        )
+        result = rbac_caching._filter_existing_evaluation_keys(model, evaluations, "default")
 
         assert result == evaluations
         assert list_calls == 1
