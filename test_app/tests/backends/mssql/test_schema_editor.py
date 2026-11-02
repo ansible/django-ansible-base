@@ -29,6 +29,8 @@ def make_schema_editor():
     connection.features.can_rollback_ddl = True
     # Set up cursor context manager support for tests that call connection.cursor()
     mock_cursor = Mock()
+    # Default fetchone() to None so data validation queries don't fail on mocks
+    mock_cursor.fetchone.return_value = None
     connection.cursor.return_value.__enter__.return_value = mock_cursor
     connection.cursor.return_value.__exit__.return_value = None
     return DatabaseSchemaEditor(connection=connection)
