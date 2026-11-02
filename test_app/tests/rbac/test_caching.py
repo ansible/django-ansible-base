@@ -538,12 +538,19 @@ class TestDeleteObjectRolesErrorHandling:
     def test_propagates_database_errors_when_select_for_update_fails(self, monkeypatch):
         """Verify database errors propagate when select_for_update fails."""
         from django.db.utils import OperationalError
+        from ansible_base.rbac.models import ObjectRole
 
-        # Create a mock queryset that raises OperationalError on select_for_update
+        # Mock ObjectRole.objects to raise OperationalError on select_for_update
+        mock_manager = MagicMock()
+        mock_using = MagicMock()
+        mock_using.select_for_update.side_effect = OperationalError("lock timeout")
+        mock_manager.using.return_value = mock_using
+        monkeypatch.setattr(ObjectRole, "objects", mock_manager)
+
+        # Create a minimal queryset mock
         mock_queryset = MagicMock()
-        mock_queryset.using.return_value.select_for_update.side_effect = (
-            OperationalError("lock timeout")
-        )
+        mock_queryset.db = "default"
+        mock_queryset.values_list.return_value = [1, 2, 3]
 
         with pytest.raises(OperationalError, match="lock timeout"):
             delete_object_roles(mock_queryset)

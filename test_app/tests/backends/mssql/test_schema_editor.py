@@ -25,8 +25,12 @@ except ModuleNotFoundError as exc:
 
 def make_schema_editor():
     """Build a schema editor with the connection metadata Django requires."""
-    connection = Mock()
+    connection = MagicMock()
     connection.features.can_rollback_ddl = True
+    # Set up cursor context manager support for tests that call connection.cursor()
+    mock_cursor = Mock()
+    connection.cursor.return_value.__enter__.return_value = mock_cursor
+    connection.cursor.return_value.__exit__.return_value = None
     return DatabaseSchemaEditor(connection=connection)
 
 
@@ -757,19 +761,17 @@ class TestSchemaEditorErrorHandling(TestCase):
         )
 
         # Mock cursor that returns max data length exceeding the target max_length
-        mock_cursor = MagicMock()
-        mock_cursor.__enter__.return_value.fetchone.return_value = (
-            600,
-        )  # Current max is 600 chars
+        cursor = Mock()
+        cursor.fetchone.return_value = (600,)  # Current max is 600 chars
+        connection = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        self.schema_editor.connection = connection
 
         with (
             patch.object(
                 self.schema_editor, "_get_column_type", return_value="nvarchar(max)"
             ),
             patch.object(self.schema_editor, "_determine_max_length", return_value=450),
-            patch.object(
-                self.schema_editor.connection, "cursor", return_value=mock_cursor
-            ),
         ):
             with self.assertRaisesRegex(
                 RuntimeError,
