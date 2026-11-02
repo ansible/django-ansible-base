@@ -545,7 +545,16 @@ class TestDeleteObjectRolesErrorHandling:
         # Mock connections to make it think we're on SQL Server
         mock_connection = MagicMock()
         mock_connection.vendor = "microsoft"
-        monkeypatch.setitem(connections, "default", mock_connection)
+
+        # Mock the connections __getitem__ to return our mock connection
+        original_getitem = connections.__getitem__
+
+        def mock_getitem(key):
+            if key == "default":
+                return mock_connection
+            return original_getitem(key)
+
+        monkeypatch.setattr(connections, "__getitem__", mock_getitem)
 
         # Mock ObjectRole.objects to raise OperationalError on select_for_update
         mock_manager = MagicMock()
