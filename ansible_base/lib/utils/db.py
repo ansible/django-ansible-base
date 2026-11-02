@@ -6,7 +6,15 @@ from zlib import crc32
 
 import psycopg
 from django.conf import settings
-from django.db import DEFAULT_DB_ALIAS, IntegrityError, OperationalError, connection, connections, router, transaction
+from django.db import (
+    DEFAULT_DB_ALIAS,
+    IntegrityError,
+    OperationalError,
+    connection,
+    connections,
+    router,
+    transaction,
+)
 from django.db.backends.postgresql.base import DatabaseWrapper as PsycopgDatabaseWrapper
 from django.db.migrations.executor import MigrationExecutor
 from django.db.models import AutoField
@@ -27,14 +35,16 @@ def _close_lock_connection(db_connection):
     try:
         db_connection.close()
     except Exception:
-        logger.exception('Failed to close database connection after advisory lock release failed')
+        logger.exception(
+            "Failed to close database connection after advisory lock release failed"
+        )
 
 
 def _close_lock_cursor(cursor):
     try:
         cursor.close()
     except Exception:
-        logger.exception('Failed to close cursor during advisory lock cleanup')
+        logger.exception("Failed to close cursor during advisory lock cleanup")
 
 
 @contextmanager
@@ -47,7 +57,9 @@ def _advisory_lock_scope(cursor, db_connection, acquired, release_lock):
             try:
                 release_lock()
             except Exception:
-                logger.exception('Failed to release advisory lock; discarding its database connection')
+                logger.exception(
+                    "Failed to release advisory lock; discarding its database connection"
+                )
                 _close_lock_connection(db_connection)
         _close_lock_cursor(cursor)
         raise
@@ -91,25 +103,24 @@ def migrations_are_complete() -> bool:
 
 @contextmanager
 def django_pglocks_advisory_lock(lock_id, shared=False, wait=True, using=None):
-
     if using is None:
         using = DEFAULT_DB_ALIAS
 
     # Assemble the function name based on the options.
 
-    function_name = 'pg_'
+    function_name = "pg_"
 
     if not wait:
-        function_name += 'try_'
+        function_name += "try_"
 
-    function_name += 'advisory_lock'
+    function_name += "advisory_lock"
 
     if shared:
-        function_name += '_shared'
+        function_name += "_shared"
 
-    release_function_name = 'pg_advisory_unlock'
+    release_function_name = "pg_advisory_unlock"
     if shared:
-        release_function_name += '_shared'
+        release_function_name += "_shared"
 
     # Format up the parameters.
 
@@ -123,7 +134,9 @@ def django_pglocks_advisory_lock(lock_id, shared=False, wait=True, using=None):
         ),
     ):
         if len(lock_id) != 2:
-            raise ValueError("Tuples and lists as lock IDs must have exactly two entries.")
+            raise ValueError(
+                "Tuples and lists as lock IDs must have exactly two entries."
+            )
 
         if not isinstance(lock_id[0], int) or not isinstance(lock_id[1], int):
             raise ValueError("Both members of a tuple/list lock ID must be integers")
@@ -201,7 +214,9 @@ def _convert_lock_id_to_resource_name(lock_id):
     elif isinstance(lock_id, (list, tuple)):
         # Match PostgreSQL validation: must have exactly 2 integer elements
         if len(lock_id) != 2:
-            raise ValueError("Tuples and lists as lock IDs must have exactly two entries.")
+            raise ValueError(
+                "Tuples and lists as lock IDs must have exactly two entries."
+            )
         if not isinstance(lock_id[0], int) or not isinstance(lock_id[1], int):
             raise ValueError("Both members of a tuple/list lock ID must be integers")
         # Join tuple elements with underscore
@@ -213,7 +228,9 @@ def _convert_lock_id_to_resource_name(lock_id):
 
 
 @contextmanager
-def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_milliseconds=0, using=None):
+def _mssql_advisory_lock(
+    lock_id, shared=False, wait=True, lock_session_timeout_milliseconds=0, using=None
+):
     """
     MS SQL Server advisory lock implementation using sp_getapplock.
 
@@ -234,7 +251,7 @@ def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_
     resource_name = _convert_lock_id_to_resource_name(lock_id)
 
     # Determine lock mode
-    lock_mode = 'Shared' if shared else 'Exclusive'
+    lock_mode = "Shared" if shared else "Exclusive"
 
     # Determine timeout
     # -1 = wait indefinitely (default)
@@ -273,68 +290,93 @@ def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_
             EXEC @result = sp_getapplock @Resource=%s, @LockMode=%s, @LockTimeout=%s, @LockOwner='Session';
             SELECT @result AS lock_result;
         """
-        try:
-            cursor.execute(sql, [resource_name, lock_mode, timeout])
-            row = cursor.fetchone()
-            result = row[0] if row else -999
-        except Exception:
-            logger.exception(f'MS SQL sp_getapplock query failed for resource {resource_name}')
-            result = -999
+        cursor.execute(sql, [resource_name, lock_mode, timeout])
+        row = cursor.fetchone()
+        result = row[0] if row else -999
 
         if result >= 0:
             # Lock acquired (0 or 1)
             acquired = True
         elif result == -1:
             if wait:
-                raise OperationalError(f'MS SQL sp_getapplock timed out for resource {resource_name}')
+                raise OperationalError(
+                    f"MS SQL sp_getapplock timed out for resource {resource_name}"
+                )
             acquired = False
         else:
             # Other errors (-2, -3, -999)
-            raise OperationalError(f'MS SQL sp_getapplock failed with code {result} for resource {resource_name}')
+            raise OperationalError(
+                f"MS SQL sp_getapplock failed with code {result} for resource {resource_name}"
+            )
     except BaseException:
         _close_lock_cursor(cursor)
         raise
 
     def release_lock():
-        cursor.execute("EXEC sp_releaseapplock @Resource=%s, @LockOwner='Session'", [resource_name])
+        cursor.execute(
+            "EXEC sp_releaseapplock @Resource=%s, @LockOwner='Session'", [resource_name]
+        )
 
     with _advisory_lock_scope(cursor, conn, acquired, release_lock):
         yield acquired
 
 
 @contextmanager
-def _postgres_advisory_lock(db_connection, lock_id, shared, wait, using, lock_session_timeout_milliseconds):
+def _postgres_advisory_lock(
+    db_connection, lock_id, shared, wait, using, lock_session_timeout_milliseconds
+):
     """Acquire a PostgreSQL advisory lock and restore the caller's idle timeouts."""
     idle_in_transaction_session_timeout = None
     idle_session_timeout = None
     if lock_session_timeout_milliseconds > 0:
         with db_connection.cursor() as cursor:
-            idle_in_transaction_session_timeout = cursor.execute("SHOW idle_in_transaction_session_timeout").fetchone()[0]
-            idle_session_timeout = cursor.execute("SHOW idle_session_timeout").fetchone()[0]
-            cursor.execute("SET idle_in_transaction_session_timeout = %s", (lock_session_timeout_milliseconds,))
-            cursor.execute("SET idle_session_timeout = %s", (lock_session_timeout_milliseconds,))
+            idle_in_transaction_session_timeout = cursor.execute(
+                "SHOW idle_in_transaction_session_timeout"
+            ).fetchone()[0]
+            idle_session_timeout = cursor.execute(
+                "SHOW idle_session_timeout"
+            ).fetchone()[0]
+            cursor.execute(
+                "SET idle_in_transaction_session_timeout = %s",
+                (lock_session_timeout_milliseconds,),
+            )
+            cursor.execute(
+                "SET idle_session_timeout = %s", (lock_session_timeout_milliseconds,)
+            )
 
     internal_error = False
     try:
         lock_args = () if lock_id is _MISSING_LOCK_ID else (lock_id,)
-        with django_pglocks_advisory_lock(*lock_args, shared=shared, wait=wait, using=using) as acquired:
+        with django_pglocks_advisory_lock(
+            *lock_args, shared=shared, wait=wait, using=using
+        ) as acquired:
             yield acquired
     except OperationalError:
         # Suspected case is that timeout happened due to the given timeout
         # this is _expected_ to leave the connection in an unusable state, so dropping it is better
-        logger.info('Dropping connection due to suspected timeout inside advisory_lock')
+        logger.info("Dropping connection due to suspected timeout inside advisory_lock")
         db_connection.close_if_unusable_or_obsolete()
         internal_error = True
         raise
     finally:
-        if not internal_error and lock_session_timeout_milliseconds > 0 and db_connection.connection is not None and not db_connection.closed_in_transaction:
+        if (
+            not internal_error
+            and lock_session_timeout_milliseconds > 0
+            and db_connection.connection is not None
+            and not db_connection.closed_in_transaction
+        ):
             with db_connection.cursor() as cursor:
-                cursor.execute("SET idle_in_transaction_session_timeout = %s", (idle_in_transaction_session_timeout,))
+                cursor.execute(
+                    "SET idle_in_transaction_session_timeout = %s",
+                    (idle_in_transaction_session_timeout,),
+                )
                 cursor.execute("SET idle_session_timeout = %s", (idle_session_timeout,))
 
 
 @contextmanager
-def _mssql_advisory_lock_with_cleanup(db_connection, lock_id, shared, wait, using, lock_session_timeout_milliseconds):
+def _mssql_advisory_lock_with_cleanup(
+    db_connection, lock_id, shared, wait, using, lock_session_timeout_milliseconds
+):
     """Acquire a SQL Server application lock and close unusable connections on errors."""
     try:
         with _mssql_advisory_lock(
@@ -346,13 +388,20 @@ def _mssql_advisory_lock_with_cleanup(db_connection, lock_id, shared, wait, usin
         ) as acquired:
             yield acquired
     except OperationalError:
-        logger.info('Dropping connection due to error inside MS SQL advisory_lock')
+        logger.info("Dropping connection due to error inside MS SQL advisory_lock")
         db_connection.close_if_unusable_or_obsolete()
         raise
 
 
 @contextmanager
-def advisory_lock(lock_id=_MISSING_LOCK_ID, shared=False, wait=True, using=None, *, lock_session_timeout_milliseconds=0):
+def advisory_lock(
+    lock_id=_MISSING_LOCK_ID,
+    shared=False,
+    wait=True,
+    using=None,
+    *,
+    lock_session_timeout_milliseconds=0,
+):
     """
     Context manager for database advisory locks.
 
@@ -394,7 +443,14 @@ def advisory_lock(lock_id=_MISSING_LOCK_ID, shared=False, wait=True, using=None,
     db_connection = connections[using]
 
     if db_connection.vendor == "postgresql":
-        with _postgres_advisory_lock(db_connection, lock_id, shared, wait, using, lock_session_timeout_milliseconds) as acquired:
+        with _postgres_advisory_lock(
+            db_connection,
+            lock_id,
+            shared,
+            wait,
+            using,
+            lock_session_timeout_milliseconds,
+        ) as acquired:
             yield acquired
 
     elif db_connection.vendor == "microsoft":
@@ -417,7 +473,9 @@ def advisory_lock(lock_id=_MISSING_LOCK_ID, shared=False, wait=True, using=None,
         yield True
 
     else:
-        raise RuntimeError(f'Advisory lock not implemented for database type {db_connection.vendor}')
+        raise RuntimeError(
+            f"Advisory lock not implemented for database type {db_connection.vendor}"
+        )
 
 
 # Django settings.DATABASES['alias'] dictionary type
@@ -440,9 +498,11 @@ def psycopg_kwargs_from_settings_dict(settings_dict: dj_db_dict) -> dict:
 
     :param dict setting_dict: DATABASES in Django settings
     :return: kwargs that can be passed to psycopg.connect, or connection classes"""
-    psycopg_params = PsycopgDatabaseWrapper(settings_dict).get_connection_params().copy()
-    psycopg_params.pop('cursor_factory', None)
-    psycopg_params.pop('context', None)
+    psycopg_params = (
+        PsycopgDatabaseWrapper(settings_dict).get_connection_params().copy()
+    )
+    psycopg_params.pop("cursor_factory", None)
+    psycopg_params.pop("context", None)
     return psycopg_params
 
 
@@ -455,24 +515,26 @@ def psycopg_conn_string_from_settings_dict(settings_dict: dj_db_dict) -> str:
     return psycopg.conninfo.make_conninfo(**conn_params)
 
 
-def combine_settings_dict(settings_dict1: dj_db_dict, settings_dict2: dj_db_dict, **extra_options) -> dj_db_dict:
+def combine_settings_dict(
+    settings_dict1: dj_db_dict, settings_dict2: dj_db_dict, **extra_options
+) -> dj_db_dict:
     """Given two Django database settings dictionaries, combine them and return a new settings_dict"""
     settings_dict = deepcopy(settings_dict1)
 
     # Apply overrides specifically for the listener connection
     for k, v in settings_dict2.items():
-        if k != 'OPTIONS':
+        if k != "OPTIONS":
             settings_dict[k] = v
 
     # Merge the database OPTIONS
     # https://docs.djangoproject.com/en/5.2/ref/databases/#postgresql-connection-settings
     # These are not expected to be nested, as they are psycopg params
-    settings_dict.setdefault('OPTIONS', {})
+    settings_dict.setdefault("OPTIONS", {})
     # extra_options are used by AWX to set application_name, which is generally a good idea
-    settings_dict['OPTIONS'].update(extra_options)
+    settings_dict["OPTIONS"].update(extra_options)
     # Apply overrides from nested OPTIONS for the listener connection
-    for k, v in settings_dict2.get('OPTIONS', {}).items():
-        settings_dict['OPTIONS'][k] = v  # type: ignore[index]
+    for k, v in settings_dict2.get("OPTIONS", {}).items():
+        settings_dict["OPTIONS"][k] = v  # type: ignore[index]
 
     return settings_dict
 
@@ -486,12 +548,14 @@ def get_pg_notify_params(alias: str = DEFAULT_DB_ALIAS, **extra_options) -> dict
     - LISTENER_DATABASES, lower precedence, deprecated AWX setting.
     """
     pg_notify_overrides = {}
-    if hasattr(settings, 'PG_NOTIFY_DATABASES'):
+    if hasattr(settings, "PG_NOTIFY_DATABASES"):
         pg_notify_overrides = settings.PG_NOTIFY_DATABASES.get(alias, {})
-    elif hasattr(settings, 'LISTENER_DATABASES'):
+    elif hasattr(settings, "LISTENER_DATABASES"):
         pg_notify_overrides = settings.LISTENER_DATABASES.get(alias, {})
 
-    settings_dict = combine_settings_dict(settings.DATABASES[alias], pg_notify_overrides, **extra_options)
+    settings_dict = combine_settings_dict(
+        settings.DATABASES[alias], pg_notify_overrides, **extra_options
+    )
 
     # Reuse the Django postgres DB backend to create params for the psycopg library
     psycopg_params = psycopg_kwargs_from_settings_dict(settings_dict)
@@ -499,7 +563,9 @@ def get_pg_notify_params(alias: str = DEFAULT_DB_ALIAS, **extra_options) -> dict
     return psycopg_params
 
 
-def get_sql_server_notify_params(alias: str = DEFAULT_DB_ALIAS, **extra_options) -> dict:
+def get_sql_server_notify_params(
+    alias: str = DEFAULT_DB_ALIAS, **extra_options
+) -> dict:
     """
     Returns connection parameters for MS SQL Server Service Broker (dispatcherd sql_server broker).
 
@@ -531,23 +597,25 @@ def get_sql_server_notify_params(alias: str = DEFAULT_DB_ALIAS, **extra_options)
     Part of ANSTRAT-1887 (P1): Replace PostgreSQL NOTIFY/LISTEN for MS SQL deployments.
     """
     sql_server_overrides = {}
-    if hasattr(settings, 'SQL_SERVER_NOTIFY_DATABASES'):
+    if hasattr(settings, "SQL_SERVER_NOTIFY_DATABASES"):
         sql_server_overrides = settings.SQL_SERVER_NOTIFY_DATABASES.get(alias, {})
 
-    settings_dict = combine_settings_dict(settings.DATABASES[alias], sql_server_overrides, **extra_options)
+    settings_dict = combine_settings_dict(
+        settings.DATABASES[alias], sql_server_overrides, **extra_options
+    )
 
     # Extract pyodbc connection parameters from Django settings
     params = {
-        'server': settings_dict.get('HOST') or 'localhost',
-        'port': settings_dict.get('PORT') or 1433,
-        'database': settings_dict.get('NAME'),
-        'user': settings_dict.get('USER'),
-        'password': settings_dict.get('PASSWORD'),
+        "server": settings_dict.get("HOST") or "localhost",
+        "port": settings_dict.get("PORT") or 1433,
+        "database": settings_dict.get("NAME"),
+        "user": settings_dict.get("USER"),
+        "password": settings_dict.get("PASSWORD"),
     }
 
     # Add OPTIONS if present (driver, extra_params, etc.)
-    if 'OPTIONS' in settings_dict:
-        params.update(settings_dict['OPTIONS'])
+    if "OPTIONS" in settings_dict:
+        params.update(settings_dict["OPTIONS"])
 
     return params
 
@@ -567,12 +635,18 @@ def _bulk_insert_one(manager, model_class, obj, using, return_ids):
     queryset._prepare_for_bulk_create([obj])
     opts = model_class._meta
     fields = [field for field in opts.concrete_fields if not field.generated]
-    pk_is_set = obj._is_pk_set() if hasattr(obj, '_is_pk_set') else getattr(obj, opts.pk.attname, None) is not None
+    pk_is_set = (
+        obj._is_pk_set()
+        if hasattr(obj, "_is_pk_set")
+        else getattr(obj, opts.pk.attname, None) is not None
+    )
     if not pk_is_set:
         fields = [field for field in fields if not isinstance(field, AutoField)]
 
     returning_fields = opts.db_returning_fields if return_ids else ()
-    returned_rows = queryset._insert([obj], fields, using=using, returning_fields=returning_fields)
+    returned_rows = queryset._insert(
+        [obj], fields, using=using, returning_fields=returning_fields
+    )
     for returned_row in returned_rows:
         for value, field in zip(returned_row, returning_fields):
             setattr(obj, field.attname, value)
@@ -589,7 +663,9 @@ def _bulk_create_with_savepoints(manager, model_class, objects, using):
         savepoint_id = transaction.savepoint(using=using)
         try:
             for obj in batch:
-                created.append(_bulk_insert_one(manager, model_class, obj, using, return_ids=True))
+                created.append(
+                    _bulk_insert_one(manager, model_class, obj, using, return_ids=True)
+                )
             transaction.savepoint_commit(savepoint_id, using=using)
         except Exception:
             transaction.savepoint_rollback(savepoint_id, using=using)
@@ -597,17 +673,23 @@ def _bulk_create_with_savepoints(manager, model_class, objects, using):
     return created
 
 
-def _bulk_create_ignoring_conflicts(model_class, manager, objects, using, db_connection, return_ids):
+def _bulk_create_ignoring_conflicts(
+    model_class, manager, objects, using, db_connection, return_ids
+):
     """Try a batch insert when IDs aren't needed, then retry rows to skip conflicts."""
     created = []
     if not return_ids:
         savepoint_id = transaction.savepoint(using=using)
         try:
-            created = _bulk_create_using_manager(manager, objects, using, ignore_conflicts=False)
+            created = _bulk_create_using_manager(
+                manager, objects, using, ignore_conflicts=False
+            )
             transaction.savepoint_commit(savepoint_id, using=using)
             return created
         except DatabaseIntegrityError as exc:
-            logger.debug(f"bulk_create_db_safe: Batch insert conflicted for {model_class.__name__}: {exc}")
+            logger.warning(
+                f"bulk_create_db_safe: Batch insert conflicted for {model_class.__name__}: {exc}"
+            )
             db_connection.needs_rollback = False
             transaction.savepoint_rollback(savepoint_id, using=using)
         except Exception:
@@ -617,10 +699,16 @@ def _bulk_create_ignoring_conflicts(model_class, manager, objects, using, db_con
     for obj in objects:
         savepoint_id = transaction.savepoint(using=using)
         try:
-            created.append(_bulk_insert_one(manager, model_class, obj, using, return_ids=return_ids))
+            created.append(
+                _bulk_insert_one(
+                    manager, model_class, obj, using, return_ids=return_ids
+                )
+            )
             transaction.savepoint_commit(savepoint_id, using=using)
         except DatabaseIntegrityError as exc:
-            logger.debug(f"bulk_create_db_safe: Caught IntegrityError for {model_class.__name__}: {exc}")
+            logger.warning(
+                f"bulk_create_db_safe: Caught IntegrityError for {model_class.__name__}: {exc}"
+            )
             db_connection.needs_rollback = False
             transaction.savepoint_rollback(savepoint_id, using=using)
         except Exception:
@@ -629,7 +717,9 @@ def _bulk_create_ignoring_conflicts(model_class, manager, objects, using, db_con
     return created
 
 
-def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None, return_ids=True):
+def bulk_create_db_safe(
+    model_class, objects, ignore_conflicts=True, using=None, return_ids=True
+):
     """
     Database-safe bulk_create that works on both PostgreSQL and MS SQL Server.
 
@@ -679,11 +769,17 @@ def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None,
 
     if ignore_conflicts:
         if not db_connection.features.supports_ignore_conflicts:
-            return _bulk_create_ignoring_conflicts(model_class, manager, objects, using, db_connection, return_ids)
-        return _bulk_create_using_manager(manager, objects, using, ignore_conflicts=True)
+            return _bulk_create_ignoring_conflicts(
+                model_class, manager, objects, using, db_connection, return_ids
+            )
+        return _bulk_create_using_manager(
+            manager, objects, using, ignore_conflicts=True
+        )
 
     if not return_ids:
-        return _bulk_create_using_manager(manager, objects, using, ignore_conflicts=False)
+        return _bulk_create_using_manager(
+            manager, objects, using, ignore_conflicts=False
+        )
 
     if not db_connection.features.can_return_rows_from_bulk_insert:
         return _bulk_create_with_savepoints(manager, model_class, objects, using)

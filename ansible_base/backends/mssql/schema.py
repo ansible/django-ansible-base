@@ -11,9 +11,12 @@ from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 from mssql.schema import DatabaseSchemaEditor as MSSQLSchemaEditor
 
-from ansible_base.lib.utils.mssql import get_mssql_constrained_textfield_max_length, get_mssql_textfield_max_length
+from ansible_base.lib.utils.mssql import (
+    get_mssql_constrained_textfield_max_length,
+    get_mssql_textfield_max_length,
+)
 
-logger = logging.getLogger('ansible_base.backends.mssql.schema')
+logger = logging.getLogger("ansible_base.backends.mssql.schema")
 
 
 class DatabaseSchemaEditor(MSSQLSchemaEditor):
@@ -71,15 +74,25 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
 
     def _alteration_changes_bounded_column(self, old_field, new_field):
         """Return whether AlterField will change a bounded column or its indexes."""
-        schema_attributes = ('null', 'db_index', 'unique', 'primary_key', 'db_column', 'db_tablespace', 'db_collation', 'db_comment')
+        schema_attributes = (
+            "null",
+            "db_index",
+            "unique",
+            "primary_key",
+            "db_column",
+            "db_tablespace",
+            "db_collation",
+            "db_comment",
+        )
         return old_field.get_internal_type() != new_field.get_internal_type() or any(
-            getattr(old_field, attr, None) != getattr(new_field, attr, None) for attr in schema_attributes
+            getattr(old_field, attr, None) != getattr(new_field, attr, None)
+            for attr in schema_attributes
         )
 
     def _bounded_field_copy(self, model, field):
         """Return a CharField copy with the SQL Server length selected for this TextField."""
         _, _, args, kwargs = field.deconstruct()
-        kwargs['max_length'] = self._determine_max_length(field, model)
+        kwargs["max_length"] = self._determine_max_length(field, model)
         bounded_field = models.CharField(*args, **kwargs)
         bounded_field.set_attributes_from_name(field.name)
         bounded_field.model = model
@@ -93,7 +106,9 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
             for field_name in field_names:
                 self._convert_existing_textfield_column(model, field_name)
 
-        return super().alter_unique_together(model, old_unique_together, new_unique_together)
+        return super().alter_unique_together(
+            model, old_unique_together, new_unique_together
+        )
 
     def alter_index_together(self, model, old_index_together, new_index_together):
         """Bound existing TextFields before AlterIndexTogether creates indexes."""
@@ -103,13 +118,15 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
             for field_name in field_names:
                 self._convert_existing_textfield_column(model, field_name)
 
-        return super().alter_index_together(model, old_index_together, new_index_together)
+        return super().alter_index_together(
+            model, old_index_together, new_index_together
+        )
 
     def _convert_existing_textfield_column(self, model, field_name):
         """Bound an existing nvarchar(max) TextField before indexing it."""
-        if hasattr(field_name, 'name'):
+        if hasattr(field_name, "name"):
             field_name = field_name.name
-        field_name = field_name.lstrip('-')
+        field_name = field_name.lstrip("-")
 
         try:
             field = model._meta.get_field(field_name)
@@ -123,11 +140,34 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         column_name = field.column
         column_type = self._get_column_type(table_name, column_name)
         if column_type is None:
-            raise RuntimeError(f"Could not find SQL Server column '{table_name}.{column_name}' before adding an index or constraint.")
-        if 'max' not in column_type.lower():
+            raise RuntimeError(
+                f"Could not find SQL Server column '{table_name}.{column_name}' before adding an index or constraint."
+            )
+        if "max" not in column_type.lower():
             return
 
         max_length = self._determine_max_length(field, model)
+
+        # Validate that existing data doesn't exceed the new max_length
+        # This prevents cryptic "String or binary data would be truncated" errors
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT MAX(LEN([{column_name}])) AS max_data_length
+                FROM [{table_name}]
+                WHERE [{column_name}] IS NOT NULL
+            """
+            )
+            row = cursor.fetchone()
+            current_max_length = row[0] if row and row[0] is not None else 0
+
+        if current_max_length > max_length:
+            raise RuntimeError(
+                f"Cannot alter SQL Server column '{table_name}.{column_name}' to nvarchar({max_length}): "
+                f"existing data contains values up to {current_max_length} characters. "
+                f"Either increase max_length to at least {current_max_length}, or truncate/remove the overlength data first."
+            )
+
         null_clause = "NULL" if field.null else "NOT NULL"
         sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
         self.execute(sql)
@@ -158,7 +198,9 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
                 max_length = self._determine_max_length(field, model)
 
                 # Create a CharField with the same attributes
-                converted_field = models.CharField(max_length=max_length, **self._copy_field_attrs(field))
+                converted_field = models.CharField(
+                    max_length=max_length, **self._copy_field_attrs(field)
+                )
 
                 # Generate SQL for CharField instead
                 return super().column_sql(model, converted_field, include_default)
@@ -184,7 +226,9 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
                 )
                 row = cursor.fetchone()
         except Exception as exc:
-            raise RuntimeError(f"Could not inspect SQL Server column '{table_name}.{column_name}'.") from exc
+            raise RuntimeError(
+                f"Could not inspect SQL Server column '{table_name}.{column_name}'."
+            ) from exc
 
         if row is None:
             return None
@@ -235,30 +279,30 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
 
         # Attributes to copy (exclude max_length from TextField)
         copy_attrs = [
-            'null',
-            'blank',
-            'default',
-            'db_index',
-            'unique',
-            'verbose_name',
-            'help_text',
-            'validators',
-            'editable',
-            'choices',
-            'db_column',
-            'db_tablespace',
-            'error_messages',
+            "null",
+            "blank",
+            "default",
+            "db_index",
+            "unique",
+            "verbose_name",
+            "help_text",
+            "validators",
+            "editable",
+            "choices",
+            "db_column",
+            "db_tablespace",
+            "error_messages",
         ]
 
         for attr in copy_attrs:
             if hasattr(field, attr):
                 value = getattr(field, attr)
                 # Don't copy if it's the default value to keep the field definition clean
-                if attr == 'null' and value is False:
+                if attr == "null" and value is False:
                     continue
-                if attr == 'blank' and value is False:
+                if attr == "blank" and value is False:
                     continue
-                if attr == 'editable' and value is True:
+                if attr == "editable" and value is True:
                     continue
                 attrs[attr] = value
 
