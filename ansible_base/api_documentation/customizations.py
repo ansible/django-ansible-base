@@ -26,46 +26,64 @@ def apply_authentication_customizations() -> None:
 
 
 def apply_oauth2_customizations() -> None:
-    """Register OAuth2 authentication extension for schema generation"""
+    """Register the available Bearer authentication schemas for OpenAPI generation."""
     try:
         from drf_spectacular.extensions import OpenApiAuthenticationExtension
         from drf_spectacular.openapi import AutoSchema
         from drf_spectacular.settings import spectacular_settings
-
-        from ansible_base.authentication.bearer_authentication import BearerAuthentication
-        from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
-
     except ImportError:
-        # If dependencies aren't available, skip OAuth2 schema registration
+        # If dependencies aren't available, skip authentication schema registration.
         return
 
-    class OAuth2Scheme(OpenApiAuthenticationExtension):
-        """OAuth2 authentication scheme for the unified Bearer authenticator.
+    from django.conf import settings
 
-        We must define a custom OpenApiAuthenticationExtension subclass, as
-        drf-spectacular's built-in OAuth2 extension only targets the base OAuth2Authentication class
-        Reads configuration from SPECTACULAR_SETTINGS OAUTH2_* keys.
-        """
+    authentication_installed = 'ansible_base.authentication' in settings.INSTALLED_APPS
+    oauth2_provider_installed = 'ansible_base.oauth2_provider' in settings.INSTALLED_APPS
+    if not authentication_installed and not oauth2_provider_installed:
+        return
 
-        target_class = BearerAuthentication
-        name = 'OAuth2_Authentication'
-        priority = 1  # Needed to prevent built-in extensions overwriting the definition
+    scheme_names = []
+    scheme_definitions = []
+    target_authentication_class = None
+
+    if authentication_installed:
+        from ansible_base.authentication.bearer_authentication import BearerAuthentication
+
+        target_authentication_class = BearerAuthentication
+        scheme_names.append('BearerAuthentication')
+        scheme_definitions.append({'type': 'http', 'scheme': 'bearer'})
+
+    if oauth2_provider_installed:
+        from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
+
+        target_authentication_class = target_authentication_class or LoggedOAuth2Authentication
+        flows = {}
+        for flow_type in spectacular_settings.OAUTH2_FLOWS:
+            flows[flow_type] = {}
+            if flow_type in ('implicit', 'authorizationCode'):
+                flows[flow_type]['authorizationUrl'] = spectacular_settings.OAUTH2_AUTHORIZATION_URL
+            if flow_type in ('password', 'clientCredentials', 'authorizationCode'):
+                flows[flow_type]['tokenUrl'] = spectacular_settings.OAUTH2_TOKEN_URL
+            if spectacular_settings.OAUTH2_REFRESH_URL:
+                flows[flow_type]['refreshUrl'] = spectacular_settings.OAUTH2_REFRESH_URL
+            flows[flow_type]['scopes'] = spectacular_settings.OAUTH2_SCOPES or {}
+
+        scheme_names.append('OAuth2_Authentication')
+        scheme_definitions.append({'type': 'oauth2', 'flows': flows})
+
+    class BearerAuthenticationScheme(OpenApiAuthenticationExtension):
+        """Describe the active Bearer credentials without importing optional applications."""
+
+        target_class = target_authentication_class
+        name = scheme_names[0] if len(scheme_names) == 1 else scheme_names
+        priority = 1  # Needed to prevent built-in extensions overwriting the definition.
 
         def get_security_definition(self, auto_schema: AutoSchema):
-            flows = {}
-            for flow_type in spectacular_settings.OAUTH2_FLOWS:
-                flows[flow_type] = {}
-                if flow_type in ('implicit', 'authorizationCode'):
-                    flows[flow_type]['authorizationUrl'] = spectacular_settings.OAUTH2_AUTHORIZATION_URL
-                if flow_type in ('password', 'clientCredentials', 'authorizationCode'):
-                    flows[flow_type]['tokenUrl'] = spectacular_settings.OAUTH2_TOKEN_URL
-                if spectacular_settings.OAUTH2_REFRESH_URL:
-                    flows[flow_type]['refreshUrl'] = spectacular_settings.OAUTH2_REFRESH_URL
-                flows[flow_type]['scopes'] = spectacular_settings.OAUTH2_SCOPES or {}
+            if len(scheme_definitions) == 1:
+                return scheme_definitions[0]
+            return scheme_definitions
 
-            return {'type': 'oauth2', 'flows': flows}
-
-    class StandaloneOAuth2Scheme(OAuth2Scheme):  # NOSONAR(S5603) -- drf-spectacular registers extension subclasses at class definition.
-        """Preserve OAuth2 schema support for installations without the authentication app."""
-
-        target_class = LoggedOAuth2Authentication
+        def get_security_requirement(self, auto_schema: AutoSchema):
+            if len(scheme_names) == 1:
+                return super().get_security_requirement(auto_schema)
+            return [{scheme_name: []} for scheme_name in scheme_names]
