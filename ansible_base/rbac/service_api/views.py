@@ -261,14 +261,23 @@ class BaseSerivceRoleAssignmentViewSet(
             triples_by_key.setdefault(key, triple)
         return list(triples_by_key.values())
 
-    def _bulk_give_object_assignments(self, triples):
-        """Create object-scoped assignments for the current actor type."""
-        if self.assignment_actor_field == 'user':
-            return bulk_give_permissions(user_permissions=triples)
-        return bulk_give_permissions(team_permissions=triples)
+    def _separate_triples_by_actor(self, triples):
+        """Separate triples into user and team lists by inspecting actor type."""
+        user_triples = []
+        team_triples = []
+        for triple in triples:
+            if triple.actor._meta.model_name == 'user':
+                user_triples.append(triple)
+            else:
+                team_triples.append(triple)
+        return user_triples, team_triples
 
-    def _create_object_batch_assignments(self, pending_triples):
-        """Create object assignments, recovering from concurrent duplicate inserts.
+    def _create_batch_assignments(self, pending_triples):
+        """Create assignments, recovering from concurrent duplicate inserts.
+
+        The unified bulk_give_permissions handles both object and global assignments,
+        so we don't need to separate them. We only separate by actor type (user vs team)
+        by inspecting the actor in each triple.
 
         The named limit bounds total database attempts, including the initial insert,
         so persistent integrity conflicts cannot cause unbounded recovery work.
@@ -278,7 +287,11 @@ class BaseSerivceRoleAssignmentViewSet(
                 return []
             try:
                 with transaction.atomic():
-                    return self._bulk_give_object_assignments(pending_triples)
+                    user_triples, team_triples = self._separate_triples_by_actor(pending_triples)
+                    return bulk_give_permissions(
+                        user_permissions=user_triples,
+                        team_permissions=team_triples
+                    )
             except IntegrityError:
                 # Strict inserts distinguish our writes from a concurrent request
                 # that won the unique-assignment race. Retry only assignments still absent.
@@ -291,10 +304,9 @@ class BaseSerivceRoleAssignmentViewSet(
     def _bulk_assign(self, request):
         """Create new assignments from a batch request and synchronize them remotely.
 
-        TODO: After rebase complete, refactor this method further:
-        - Remove separation by object vs global (unified bulk_give_permissions handles both)
-        - Consider whether actor-type separation is still needed given the unified API
-        - Review the concurrent insert recovery logic in _create_object_batch_assignments
+        The unified bulk_give_permissions API handles both object and global assignments
+        in a single call, so we no longer need to separate them. We simply separate by
+        actor type (user vs team) by inspecting each triple's actor.
         """
         source, creator, assignment_data = self._validate_batch(request)
         triples = self._get_unique_batch_triples(assignment_data, request.user)
@@ -302,20 +314,9 @@ class BaseSerivceRoleAssignmentViewSet(
         assignments = []
         with transaction.atomic():
             new_triples = self._get_new_batch_triples(triples)
-            pending_object_triples = [triple for triple in new_triples if triple.content_object is not None]
-            global_triples = [triple for triple in new_triples if triple.content_object is None]
 
             with impersonate(creator):
-                # Object triples go through retry logic for concurrent insert handling
-                assignments = self._create_object_batch_assignments(pending_object_triples)
-                # Global triples: unified API handles both object and global, but we keep
-                # them separate here because global assignments don't need the retry wrapper
-                if global_triples:
-                    if self.assignment_actor_field == 'user':
-                        global_assignments = bulk_give_permissions(user_permissions=global_triples)
-                    else:
-                        global_assignments = bulk_give_permissions(team_permissions=global_triples)
-                    assignments.extend(global_assignments)
+                assignments = self._create_batch_assignments(new_triples)
 
         for assignment in assignments:
             self.remote_secondary_sync_assignment(assignment, from_service=source)
@@ -323,7 +324,12 @@ class BaseSerivceRoleAssignmentViewSet(
         return Response({'created': len(assignments), 'existing': len(triples) - len(assignments)}, status=status.HTTP_200_OK)
 
     def _bulk_unassign(self, request):
-        """Remove existing assignments from a batch request and sync each removal."""
+        """Remove existing assignments from a batch request and sync each removal.
+
+        The unified remove_assignments API handles both object and global assignments,
+        so we don't need to separate them. We only separate by actor type (user vs team)
+        by inspecting the assignment type.
+        """
         source, _creator, assignment_data = self._validate_batch(request)
         triples_by_key = {}
         for triple in self._get_permission_triples(assignment_data, request.user, check_object_permission=False):
@@ -341,14 +347,12 @@ class BaseSerivceRoleAssignmentViewSet(
             for assignment in existing:
                 check_can_remove_assignment(request.user, assignment)
 
-            object_assignments = [assignment for assignment in existing if assignment.object_role_id is not None]
-            global_assignments = [assignment for assignment in existing if assignment.object_role_id is None]
-            user_assignments = object_assignments if self.assignment_actor_field == 'user' else []
-            team_assignments = object_assignments if self.assignment_actor_field == 'team' else []
+            # Separate by assignment type (user vs team), not by object vs global.
+            # remove_assignments handles both object and global assignments.
+            user_assignments = [a for a in existing if isinstance(a, RoleUserAssignment)]
+            team_assignments = [a for a in existing if isinstance(a, RoleTeamAssignment)]
 
             remove_assignments(user_assignments=user_assignments, team_assignments=team_assignments)
-            for assignment in global_assignments:
-                assignment.role_definition.remove_global_permission(assignment.actor)
 
         for assignment in existing:
             self.remote_secondary_sync_unassignment(
