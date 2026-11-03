@@ -221,7 +221,7 @@ def test_cached_jwk_client_times_out_second_forced_refresh_during_cooldown():
         with (
             patch("ansible_base.authentication.jwk_client.time.monotonic", side_effect=[0, client.fetch_wait_seconds]),
             patch("ansible_base.authentication.jwk_client.time.sleep"),
-            pytest.raises(JWKSFetchTimeoutError, match="Timed out waiting"),
+            pytest.raises(PyJWKClientError, match="refresh cooldown"),
         ):
             client.get_jwk_set(refresh=True)
 
@@ -297,8 +297,8 @@ def test_cached_jwk_client_exponentially_backs_off_fetch_retries():
         patch("ansible_base.authentication.jwk_client.random.uniform", side_effect=[0.02, 0.04]) as uniform,
         patch("ansible_base.authentication.jwk_client.time.sleep") as sleep,
     ):
-        CachedJWKClient._sleep_before_jwk_set_retry(1, retry_count=0)
-        CachedJWKClient._sleep_before_jwk_set_retry(1, retry_count=1)
+        CachedJWKClient._sleep_before_jwk_set_retry(1, retry_count=0, timeout_error=PyJWKClientError("timeout"))
+        CachedJWKClient._sleep_before_jwk_set_retry(1, retry_count=1, timeout_error=PyJWKClientError("timeout"))
 
     assert uniform.call_args_list == [call(0.01, 0.02), call(0.02, 0.04)]
     assert sleep.call_args_list == [call(0.02), call(0.04)]
