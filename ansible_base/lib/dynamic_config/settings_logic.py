@@ -25,6 +25,7 @@ DEFAULT_SPECTACULAR_SETTINGS = {
         'ansible_base.api_documentation.postprocessing_hooks.add_x_ai_description',
         # Declares optional CleanText pattern fields in components.schemas (OpenAPI).
         'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components',
+        'ansible_base.lib.utils.schema.deprecated_fields_detail_hook',
     ],
 }
 DEFAULT_ANSIBLE_BASE_AUTH = "ansible_base.authentication.backend.AnsibleBaseAuth"
