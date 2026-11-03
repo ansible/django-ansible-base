@@ -89,6 +89,21 @@ def test_oauth2_customizations_without_authentication_does_not_import_bearer_aut
         apply_oauth2_customizations()
 
 
+def test_oauth2_customizations_skips_registration_without_drf_spectacular():
+    """OpenAPI support remains optional when drf-spectacular is unavailable."""
+    from ansible_base.api_documentation.customizations import apply_oauth2_customizations
+
+    original_import = __import__
+
+    def import_without_drf_spectacular(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == 'drf_spectacular.extensions':
+            raise ImportError('drf-spectacular is not installed')
+        return original_import(name, globals, locals, fromlist, level)
+
+    with patch('builtins.__import__', side_effect=import_without_drf_spectacular):
+        apply_oauth2_customizations()
+
+
 def test_authentication_only_schema_is_generic_bearer():
     """External authenticator plugins have no local OAuth2 flow to describe."""
     from django.conf import settings
@@ -106,6 +121,30 @@ def test_authentication_only_schema_is_generic_bearer():
     assert scheme.target_class == BearerAuthentication
     assert scheme.name == 'BearerAuthentication'
     assert scheme(target=BearerAuthentication()).get_security_definition(auto_schema=MagicMock()) == {'type': 'http', 'scheme': 'bearer'}
+    assert scheme(target=BearerAuthentication()).get_security_requirement(auto_schema=MagicMock()) == {'BearerAuthentication': []}
+
+
+def test_oauth2_schema_includes_a_configured_refresh_url():
+    """The OAuth2 schema passes drf-spectacular's refresh URL through to every flow."""
+    from django.conf import settings
+    from drf_spectacular.extensions import OpenApiAuthenticationExtension
+    from drf_spectacular.settings import spectacular_settings
+
+    from ansible_base.api_documentation.customizations import apply_oauth2_customizations
+    from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
+
+    installed_apps = [app for app in settings.INSTALLED_APPS if app != 'ansible_base.authentication']
+    registered_extensions = len(OpenApiAuthenticationExtension._registry)
+    refresh_url = 'https://example.test/o/token/refresh/'
+    with (
+        patch.object(settings, 'INSTALLED_APPS', installed_apps),
+        patch.object(spectacular_settings, 'OAUTH2_REFRESH_URL', refresh_url),
+    ):
+        apply_oauth2_customizations()
+    scheme = OpenApiAuthenticationExtension._registry[registered_extensions]
+    definitions = scheme(target=LoggedOAuth2Authentication()).get_security_definition(auto_schema=MagicMock())
+
+    assert all(flow['refreshUrl'] == refresh_url for flow in definitions['flows'].values())
 
 
 def test_no_authentication_apps_registers_no_bearer_schema():

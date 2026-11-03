@@ -46,26 +46,36 @@ def test_authenticator_backends_cache(ldap_authenticator):
 @pytest.mark.django_db
 def test_authenticator_backends_refresh_after_deleting_an_older_authenticator(ldap_authenticator):
     """Deleting a non-newest authenticator must evict the process-local cache."""
+    older_authenticator = Authenticator.objects.create(
+        name="Older enabled LDAP authenticator",
+        enabled=True,
+        type=ldap_authenticator.type,
+        configuration=ldap_authenticator.configuration,
+        category=ldap_authenticator.category,
+        order=ldap_authenticator.order + 1,
+    )
     Authenticator.objects.create(
         name="Newer disabled LDAP authenticator",
         enabled=False,
         type=ldap_authenticator.type,
         configuration=ldap_authenticator.configuration,
         category=ldap_authenticator.category,
-        order=ldap_authenticator.order + 1,
+        order=ldap_authenticator.order + 2,
     )
     backend.get_authentication_backends.cache_clear()
 
     initial_version = get_authenticator_cache_version(Authenticator.objects.exclude(category="api_auth"))
     cached = backend.get_authentication_backends(initial_version)
-    assert ldap_authenticator.id in cached
+    assert older_authenticator.id in cached
 
-    ldap_authenticator.delete()
+    older_authenticator.delete()
 
     refreshed_version = get_authenticator_cache_version(Authenticator.objects.exclude(category="api_auth"))
     assert refreshed_version[0] == initial_version[0]
     assert refreshed_version[1] == initial_version[1] - 1
-    assert not backend.get_authentication_backends(refreshed_version)
+    refreshed = backend.get_authentication_backends(refreshed_version)
+    assert ldap_authenticator.id in refreshed
+    assert older_authenticator.id not in refreshed
 
 
 @pytest.mark.django_db

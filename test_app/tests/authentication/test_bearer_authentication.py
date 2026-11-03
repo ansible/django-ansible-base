@@ -60,6 +60,26 @@ def clear_api_authenticator_cache():
     get_api_authentication_backends.cache_clear()
 
 
+def test_api_authentication_backends_loads_only_enabled_api_authenticators():
+    """The cached dispatcher queries and orders the API-authenticator subset."""
+    authenticators = Mock()
+    authenticators.order_by.return_value = authenticators
+    expected_backends = OrderedDict()
+
+    with (
+        patch.object(Authenticator.objects, "filter", return_value=authenticators) as filter_authenticators,
+        patch(
+            "ansible_base.authentication.bearer_authentication.load_authenticator_plugins",
+            return_value=expected_backends,
+        ) as load_plugins,
+    ):
+        assert get_api_authentication_backends(("cache-version", 1)) is expected_backends
+
+    filter_authenticators.assert_called_once_with(enabled=True, category="api_auth")
+    authenticators.order_by.assert_called_once_with("order")
+    load_plugins.assert_called_once_with(authenticators)
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize("auth_request", [_request(), _request("token", scheme="Basic")])
 def test_bearer_authentication_ignores_missing_or_non_bearer_authorization(auth_request):
@@ -453,26 +473,36 @@ def test_api_authentication_cache_version_includes_disabled_authenticators(oauth
 @pytest.mark.django_db
 def test_api_authentication_backends_refresh_after_deleting_an_older_authenticator(oauth_bearer_authenticator):
     """Deleting a non-newest API authenticator must evict the process-local cache."""
+    older_authenticator = Authenticator.objects.create(
+        name="Older enabled API authenticator",
+        enabled=True,
+        type=oauth_bearer_authenticator.type,
+        configuration=oauth_bearer_authenticator.configuration,
+        category="api_auth",
+        order=oauth_bearer_authenticator.order + 1,
+    )
     Authenticator.objects.create(
         name="Newer disabled API authenticator",
         enabled=False,
         type=oauth_bearer_authenticator.type,
         configuration=oauth_bearer_authenticator.configuration,
         category="api_auth",
-        order=oauth_bearer_authenticator.order + 1,
+        order=oauth_bearer_authenticator.order + 2,
     )
     get_api_authentication_backends.cache_clear()
 
     initial_version = get_authenticator_cache_version(Authenticator.objects.filter(category="api_auth"))
     cached = get_api_authentication_backends(initial_version)
-    assert oauth_bearer_authenticator.id in cached
+    assert older_authenticator.id in cached
 
-    oauth_bearer_authenticator.delete()
+    older_authenticator.delete()
 
     refreshed_version = get_authenticator_cache_version(Authenticator.objects.filter(category="api_auth"))
     assert refreshed_version[0] == initial_version[0]
     assert refreshed_version[1] == initial_version[1] - 1
-    assert not get_api_authentication_backends(refreshed_version)
+    refreshed = get_api_authentication_backends(refreshed_version)
+    assert oauth_bearer_authenticator.id in refreshed
+    assert older_authenticator.id not in refreshed
 
 
 @pytest.mark.django_db

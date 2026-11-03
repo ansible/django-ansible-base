@@ -1,3 +1,6 @@
+from typing import Any
+
+
 def get_dab_lib_doc_excludes():
     """Extend drf-spectacular's docstring boundary with DAB mixins."""
     from drf_spectacular.plumbing import get_lib_doc_excludes
@@ -42,8 +45,8 @@ def apply_oauth2_customizations() -> None:
     if not authentication_installed and not oauth2_provider_installed:
         return
 
-    scheme_names = []
-    scheme_definitions = []
+    scheme_names: list[str] = []
+    scheme_definitions: list[dict[str, Any]] = []
     target_authentication_class = None
 
     if authentication_installed:
