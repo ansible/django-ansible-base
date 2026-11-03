@@ -65,6 +65,10 @@ def maybe_reverse_sync_assignments(assignments):
 
 
 def maybe_reverse_sync_unassignment(role_definition, actor, content_object):
+    if role_definition is None:
+        logger.debug("Skip: resource already deleted")
+        return
+
     if not reverse_sync_enabled_all_conditions(role_definition):
         return
 
