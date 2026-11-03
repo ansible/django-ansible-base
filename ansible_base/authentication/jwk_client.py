@@ -161,6 +161,12 @@ class CachedJWKClient(PyJWKClient):
                     return self._parse_jwk_set(document)
                 return self._fetch_jwk_set_with_fetch_lock(use_locks)
             except _JWKSRetry:
+                # A forced-refresh cooldown may expire before this request
+                # reaches its bounded JWKS wait timeout. Keep retrying so a
+                # token signed during key rotation can still validate. We
+                # cannot safely infer the request's remaining lifetime from
+                # the cache marker, which may predate this request and be
+                # constrained by an outer worker timeout.
                 self._sleep_before_jwk_set_retry(deadline, retry_count)
                 retry_count += 1
 
