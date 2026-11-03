@@ -186,7 +186,8 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         if bearer_authentication_class not in rest_framework['DEFAULT_AUTHENTICATION_CLASSES']:
             # BearerAuthentication dispatches configured API authenticators and
             # optionally the local OAuth2 handler when that app is installed.
-            rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].append(bearer_authentication_class)
+            # Keep its predecessor's OAuth2-before-session precedence.
+            rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, bearer_authentication_class)
 
         if settings.get('ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES') is None:
             dab_data['ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES'] = ["ansible_base.authentication.authenticator_plugins"]
