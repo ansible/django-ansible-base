@@ -10,7 +10,7 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.request import Request
 
-from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
+from ansible_base.authentication.authenticator_cache import get_authenticator_cache_version, load_authenticator_plugins
 from ansible_base.authentication.challenge import ChallengeAwareAuthenticationMixin
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.logging import log_auth_event, log_auth_exception
@@ -78,27 +78,16 @@ class BearerAuthenticationFailed(AuthenticationFailed):
 
 
 @lru_cache(maxsize=1)
-def get_api_authentication_backends(last_updated: Any) -> OrderedDict[int, Any]:
+def get_api_authentication_backends(cache_version: Any) -> OrderedDict[int, Any]:
     """Return enabled API-authenticator plugins, cached until their configuration changes.
 
-    ``last_updated`` is deliberately an argument only to invalidate this small
+    ``cache_version`` is deliberately an argument only to invalidate this small
     process-local cache. Plugin instances retain their database configuration,
     so rebuilding them only when an API authenticator changes avoids a database
     query and repeated plugin construction for every bearer-token request.
     """
-    authentication_backends = OrderedDict()
-
-    for database_authenticator in Authenticator.objects.filter(enabled=True, category="api_auth").order_by("order"):
-        try:
-            plugin = get_authenticator_plugin(database_authenticator.type)
-        except ImportError:
-            continue
-
-        # Plugins use this to bind the instance and refresh their configuration.
-        plugin.update_if_needed(database_authenticator)
-        authentication_backends[database_authenticator.id] = plugin
-
-    return authentication_backends
+    authenticators = Authenticator.objects.filter(enabled=True, category="api_auth").order_by("order")
+    return load_authenticator_plugins(authenticators)
 
 
 class BearerAuthentication(ChallengeAwareAuthenticationMixin, BaseAuthentication):
@@ -224,9 +213,8 @@ class BearerAuthentication(ChallengeAwareAuthenticationMixin, BaseAuthentication
         raise exception
 
     def _api_authentication_backends(self) -> OrderedDict[int, Any]:
-        """Load cached API authenticators using the newest API row as the cache version."""
+        """Load cached API authenticators using a shared-database cache version."""
         # Include disabled rows: enabling or disabling an authenticator must
-        # evict a cache created while its prior state was in effect.
-        last_modified_item = Authenticator.objects.filter(category="api_auth").values("modified").order_by("-modified").first()
-        last_modified = None if last_modified_item is None else last_modified_item.get("modified")
-        return get_api_authentication_backends(last_modified)
+        # evict a cache created while its prior state was in effect. The row
+        # count also detects deletion of an authenticator that was not newest.
+        return get_api_authentication_backends(get_authenticator_cache_version(Authenticator.objects.filter(category="api_auth")))

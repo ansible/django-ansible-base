@@ -5,6 +5,7 @@ from unittest import mock
 import pytest
 
 import ansible_base.authentication.backend as backend
+from ansible_base.authentication.authenticator_cache import get_authenticator_cache_version
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.social_auth import SOCIAL_AUTH_PIPELINE_FAILED_STATUS
 
@@ -15,7 +16,7 @@ def test_authenticator_backends_import_error(ldap_authenticator):
     assert len(backend.get_authentication_backends("fake date")) == 1
 
     # Change the get_authenticator_plugin to fail, this will cause the backend to not be able to load
-    with mock.patch('ansible_base.authentication.backend.get_authenticator_plugin', side_effect=ImportError("Test Exception")):
+    with mock.patch('ansible_base.authentication.authenticator_cache.get_authenticator_plugin', side_effect=ImportError("Test Exception")):
         # Force the cache to get evicted by updating an authenticator.
         assert len(backend.get_authentication_backends("fake date2")) == 0
 
@@ -36,10 +37,35 @@ def test_authenticator_backends_cache(ldap_authenticator):
     assert authenticator.database_instance.name == "new_name"
 
     # verify that the cache is not updated if the last_modified date is the same
-    with mock.patch('ansible_base.authentication.backend.get_authenticator_plugin', side_effect=OSError("Test Exception")):
+    with mock.patch('ansible_base.authentication.authenticator_cache.get_authenticator_plugin', side_effect=OSError("Test Exception")):
         # If the function reruns, get_authenticator_plugin will throw an exception here
         authenticator = backend.get_authentication_backends(last_modified)[ldap_authenticator.pk]
         assert authenticator.database_instance.name == "new_name"
+
+
+@pytest.mark.django_db
+def test_authenticator_backends_refresh_after_deleting_an_older_authenticator(ldap_authenticator):
+    """Deleting a non-newest authenticator must evict the process-local cache."""
+    Authenticator.objects.create(
+        name="Newer disabled LDAP authenticator",
+        enabled=False,
+        type=ldap_authenticator.type,
+        configuration=ldap_authenticator.configuration,
+        category=ldap_authenticator.category,
+        order=ldap_authenticator.order + 1,
+    )
+    backend.get_authentication_backends.cache_clear()
+
+    initial_version = get_authenticator_cache_version(Authenticator.objects.exclude(category="api_auth"))
+    cached = backend.get_authentication_backends(initial_version)
+    assert ldap_authenticator.id in cached
+
+    ldap_authenticator.delete()
+
+    refreshed_version = get_authenticator_cache_version(Authenticator.objects.exclude(category="api_auth"))
+    assert refreshed_version[0] == initial_version[0]
+    assert refreshed_version[1] == initial_version[1] - 1
+    assert not backend.get_authentication_backends(refreshed_version)
 
 
 @pytest.mark.django_db
