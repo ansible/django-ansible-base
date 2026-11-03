@@ -2,7 +2,66 @@
 Unit tests for api_documentation authentication schema customizations.
 """
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import pytest
+
+
+@pytest.mark.parametrize(
+    ('flow_type', 'expected_urls'),
+    [
+        ('implicit', {'authorizationUrl': 'https://example.test/o/authorize/'}),
+        (
+            'authorizationCode',
+            {
+                'authorizationUrl': 'https://example.test/o/authorize/',
+                'tokenUrl': 'https://example.test/o/token/',
+            },
+        ),
+        ('password', {'tokenUrl': 'https://example.test/o/token/'}),
+        ('clientCredentials', {'tokenUrl': 'https://example.test/o/token/'}),
+        ('custom', {}),
+    ],
+)
+def test_oauth2_flow_definition_includes_urls_for_its_flow_type(flow_type, expected_urls):
+    from ansible_base.api_documentation.customizations import _oauth2_flow_definition
+
+    spectacular_settings = SimpleNamespace(
+        OAUTH2_SCOPES={'read': 'Read access'},
+        OAUTH2_AUTHORIZATION_URL='https://example.test/o/authorize/',
+        OAUTH2_TOKEN_URL='https://example.test/o/token/',
+        OAUTH2_REFRESH_URL='https://example.test/o/token/refresh/',
+    )
+
+    assert _oauth2_flow_definition(flow_type, spectacular_settings) == {
+        **expected_urls,
+        'refreshUrl': 'https://example.test/o/token/refresh/',
+        'scopes': {'read': 'Read access'},
+    }
+
+
+def test_oauth2_flows_builds_a_definition_for_every_configured_flow():
+    from ansible_base.api_documentation.customizations import _oauth2_flows
+
+    spectacular_settings = SimpleNamespace(
+        OAUTH2_FLOWS=['implicit', 'password'],
+        OAUTH2_SCOPES=None,
+        OAUTH2_AUTHORIZATION_URL='https://example.test/o/authorize/',
+        OAUTH2_TOKEN_URL='https://example.test/o/token/',
+        OAUTH2_REFRESH_URL=None,
+    )
+
+    assert _oauth2_flows(spectacular_settings) == {
+        'implicit': {
+            'authorizationUrl': 'https://example.test/o/authorize/',
+            'scopes': {},
+        },
+        'password': {
+            'tokenUrl': 'https://example.test/o/token/',
+            'scopes': {},
+        },
+    }
 
 
 def test_dab_lib_doc_excludes_clean_text_mixin():

@@ -1,5 +1,8 @@
 from typing import Any
 
+OAUTH2_AUTHORIZATION_URL_FLOWS = {'implicit', 'authorizationCode'}
+OAUTH2_TOKEN_URL_FLOWS = {'password', 'clientCredentials', 'authorizationCode'}
+
 
 def get_dab_lib_doc_excludes():
     """Extend drf-spectacular's docstring boundary with DAB mixins."""
@@ -26,6 +29,23 @@ def apply_authentication_customizations() -> None:
     class MyAuthenticationScheme(SessionScheme):
         target_class = SessionAuthentication
         name = 'SessionAuthentication'
+
+
+def _oauth2_flow_definition(flow_type: str, spectacular_settings: Any) -> dict[str, Any]:
+    """Build the schema fragment for one configured OAuth2 flow."""
+    flow = {'scopes': spectacular_settings.OAUTH2_SCOPES or {}}
+    if flow_type in OAUTH2_AUTHORIZATION_URL_FLOWS:
+        flow['authorizationUrl'] = spectacular_settings.OAUTH2_AUTHORIZATION_URL
+    if flow_type in OAUTH2_TOKEN_URL_FLOWS:
+        flow['tokenUrl'] = spectacular_settings.OAUTH2_TOKEN_URL
+    if spectacular_settings.OAUTH2_REFRESH_URL:
+        flow['refreshUrl'] = spectacular_settings.OAUTH2_REFRESH_URL
+    return flow
+
+
+def _oauth2_flows(spectacular_settings: Any) -> dict[str, dict[str, Any]]:
+    """Build OpenAPI definitions for every configured OAuth2 flow."""
+    return {flow_type: _oauth2_flow_definition(flow_type, spectacular_settings) for flow_type in spectacular_settings.OAUTH2_FLOWS}
 
 
 def apply_oauth2_customizations() -> None:
@@ -60,21 +80,10 @@ def apply_oauth2_customizations() -> None:
         from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
 
         target_authentication_class = target_authentication_class or LoggedOAuth2Authentication
-        flows = {}
-        for flow_type in spectacular_settings.OAUTH2_FLOWS:
-            flows[flow_type] = {}
-            if flow_type in ('implicit', 'authorizationCode'):
-                flows[flow_type]['authorizationUrl'] = spectacular_settings.OAUTH2_AUTHORIZATION_URL
-            if flow_type in ('password', 'clientCredentials', 'authorizationCode'):
-                flows[flow_type]['tokenUrl'] = spectacular_settings.OAUTH2_TOKEN_URL
-            if spectacular_settings.OAUTH2_REFRESH_URL:
-                flows[flow_type]['refreshUrl'] = spectacular_settings.OAUTH2_REFRESH_URL
-            flows[flow_type]['scopes'] = spectacular_settings.OAUTH2_SCOPES or {}
-
         scheme_names.append('OAuth2_Authentication')
-        scheme_definitions.append({'type': 'oauth2', 'flows': flows})
+        scheme_definitions.append({'type': 'oauth2', 'flows': _oauth2_flows(spectacular_settings)})
 
-    class BearerAuthenticationScheme(OpenApiAuthenticationExtension):
+    class BearerAuthenticationScheme(OpenApiAuthenticationExtension):  # NOSONAR(S5603) -- registration happens in the extension metaclass.
         """Describe the active Bearer credentials without importing optional applications."""
 
         target_class = target_authentication_class
