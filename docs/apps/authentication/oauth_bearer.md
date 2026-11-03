@@ -28,7 +28,7 @@ the following settings:
 | `ID_KEY` | Yes | JWT claim containing the stable external identity, such as `sub` for users or `azp` for service principals. |
 | `JWKS_URI` | One key source required | HTTPS endpoint for verification keys when discovery is not used. |
 | `OIDC_ENDPOINT` | One key source required | Issuer base URL used for OIDC discovery. |
-| `JWKS_URL_TIMEOUT` | No | JWKS request timeout in seconds; defaults to 30. |
+| `JWKS_URL_TIMEOUT` | No | JWKS request timeout in seconds; defaults to 5 and permits 1 through 300. |
 | `USERINFO_URL_TIMEOUT` | No | UserInfo request timeout in seconds; defaults to 30. |
 | `JWT_CLOCK_SKEW_TOLERANCE_SECONDS` | No | Expiration, not-before, and issued-at tolerance in seconds; defaults to 0 and permits 0 through 300. |
 | `ALLOWED_ALGORITHMS` | No | Accepted asymmetric signing algorithms; defaults to `RS256`. |
