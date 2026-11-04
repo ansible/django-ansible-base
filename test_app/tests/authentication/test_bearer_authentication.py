@@ -10,6 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ansible_base.authentication.authenticator_cache import get_authenticator_cache_version
 from ansible_base.authentication.bearer_authentication import (
     BearerAuthentication,
     BearerAuthenticationFailed,
@@ -57,6 +58,26 @@ def clear_api_authenticator_cache():
     get_api_authentication_backends.cache_clear()
     yield
     get_api_authentication_backends.cache_clear()
+
+
+def test_api_authentication_backends_loads_only_enabled_api_authenticators():
+    """The cached dispatcher queries and orders the API-authenticator subset."""
+    authenticators = Mock()
+    authenticators.order_by.return_value = authenticators
+    expected_backends = OrderedDict()
+
+    with (
+        patch.object(Authenticator.objects, "filter", return_value=authenticators) as filter_authenticators,
+        patch(
+            "ansible_base.authentication.bearer_authentication.load_authenticator_plugins",
+            return_value=expected_backends,
+        ) as load_plugins,
+    ):
+        assert get_api_authentication_backends(("cache-version", 1)) is expected_backends
+
+    filter_authenticators.assert_called_once_with(enabled=True, category="api_auth")
+    authenticators.order_by.assert_called_once_with("order")
+    load_plugins.assert_called_once_with(authenticators)
 
 
 @pytest.mark.django_db
@@ -416,7 +437,7 @@ def test_api_authentication_backends_cache_and_refresh_configuration(oauth_beare
     initial_modified = oauth_bearer_authenticator.modified
 
     with patch(
-        "ansible_base.authentication.bearer_authentication.get_authenticator_plugin",
+        "ansible_base.authentication.authenticator_cache.get_authenticator_plugin",
         return_value=plugin,
     ) as get_plugin:
         cached = get_api_authentication_backends(initial_modified)
@@ -446,14 +467,49 @@ def test_api_authentication_cache_version_includes_disabled_authenticators(oauth
     with patch("ansible_base.authentication.bearer_authentication.get_api_authentication_backends") as get_backends:
         BearerAuthentication()._api_authentication_backends()
 
-    assert get_backends.call_args.args[0] == disabled.modified
+    assert get_backends.call_args.args[0] == (disabled.modified, 2)
+
+
+@pytest.mark.django_db
+def test_api_authentication_backends_refresh_after_deleting_an_older_authenticator(oauth_bearer_authenticator):
+    """Deleting a non-newest API authenticator must evict the process-local cache."""
+    older_authenticator = Authenticator.objects.create(
+        name="Older enabled API authenticator",
+        enabled=True,
+        type=oauth_bearer_authenticator.type,
+        configuration=oauth_bearer_authenticator.configuration,
+        category="api_auth",
+        order=oauth_bearer_authenticator.order + 1,
+    )
+    Authenticator.objects.create(
+        name="Newer disabled API authenticator",
+        enabled=False,
+        type=oauth_bearer_authenticator.type,
+        configuration=oauth_bearer_authenticator.configuration,
+        category="api_auth",
+        order=oauth_bearer_authenticator.order + 2,
+    )
+    get_api_authentication_backends.cache_clear()
+
+    initial_version = get_authenticator_cache_version(Authenticator.objects.filter(category="api_auth"))
+    cached = get_api_authentication_backends(initial_version)
+    assert older_authenticator.id in cached
+
+    older_authenticator.delete()
+
+    refreshed_version = get_authenticator_cache_version(Authenticator.objects.filter(category="api_auth"))
+    assert refreshed_version[0] == initial_version[0]
+    assert refreshed_version[1] == initial_version[1] - 1
+    refreshed = get_api_authentication_backends(refreshed_version)
+    assert oauth_bearer_authenticator.id in refreshed
+    assert older_authenticator.id not in refreshed
 
 
 @pytest.mark.django_db
 def test_api_authentication_backends_skip_plugins_that_are_not_installed(oauth_bearer_authenticator):
     """A configured plugin unavailable in this deployment cannot break Bearer dispatch."""
     with patch(
-        "ansible_base.authentication.bearer_authentication.get_authenticator_plugin",
+        "ansible_base.authentication.authenticator_cache.get_authenticator_plugin",
         side_effect=ImportError,
     ):
         assert get_api_authentication_backends(oauth_bearer_authenticator.modified) == OrderedDict()

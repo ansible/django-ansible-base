@@ -1,10 +1,9 @@
 import logging
-from collections import OrderedDict
 from functools import lru_cache
 
 from django.contrib.auth.backends import ModelBackend
 
-from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
+from ansible_base.authentication.authenticator_cache import get_authenticator_cache_version, load_authenticator_plugins
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.logging import log_auth_event, log_auth_exception, log_auth_warning
 
@@ -12,18 +11,10 @@ logger = logging.getLogger('ansible_base.authentication.backend')
 
 
 @lru_cache(maxsize=1)
-def get_authentication_backends(last_updated):
-    # last_updated is primarily here as a cache busting mechanism
-    authentication_backends = OrderedDict()
-
-    for database_authenticator in Authenticator.objects.filter(enabled=True).exclude(category="api_auth").order_by('order'):
-        try:
-            authentication_backends[database_authenticator.id] = get_authenticator_plugin(database_authenticator.type)
-        except ImportError:
-            continue
-        authenticator_object = authentication_backends[database_authenticator.id]
-        authenticator_object.update_if_needed(database_authenticator)
-    return authentication_backends
+def get_authentication_backends(cache_version):
+    # cache_version is primarily here as a cache busting mechanism
+    authenticators = Authenticator.objects.filter(enabled=True).exclude(category="api_auth").order_by("order")
+    return load_authenticator_plugins(authenticators)
 
 
 class AnsibleBaseAuth(ModelBackend):
@@ -32,12 +23,11 @@ class AnsibleBaseAuth(ModelBackend):
 
         logger.debug("Starting AnsibleBaseAuth authentication")
 
-        # Query the database for the most recently last modified timestamp.
-        # This will be used as a cache key for the cached function get_authentication_backends below
-        last_modified_item = Authenticator.objects.exclude(category="api_auth").values("modified").order_by("-modified").first()
-        last_modified = None if last_modified_item is None else last_modified_item.get('modified')
+        # Query the shared database for a version used to invalidate this
+        # process-local cache across all Gateway workers.
+        cache_version = get_authenticator_cache_version(Authenticator.objects.exclude(category="api_auth"))
 
-        for authenticator_id, authenticator_object in get_authentication_backends(last_modified).items():
+        for authenticator_id, authenticator_object in get_authentication_backends(cache_version).items():
             try:
                 user = authenticator_object.authenticate(request, *args, **kwargs)
             except Exception:

@@ -130,4 +130,6 @@ def test_generate_ui_auth_data_handles_non_ui_authenticators(authenticator_filte
     assert response['ssos'] == []
     assert response['show_login_form'] is False
     getattr(logger, log_method).assert_called_once_with(message)
-    getattr(logger, 'error' if log_method == 'trace' else 'trace').assert_not_called()
+    for other_log_method in ("debug", "info", "warning", "error", "critical", "exception"):
+        if other_log_method != log_method:
+            getattr(logger, other_log_method).assert_not_called()
