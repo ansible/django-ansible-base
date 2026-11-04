@@ -906,7 +906,9 @@ class RoleEvaluationFields(models.Model):
             raise RuntimeError(f'{self._meta.model_name} model is immutable and only used internally')
         return super().save(*args, **kwargs)
 
-    codename = BoundedTextField(null=False, sql_server_max_length=100, help_text=_("The name of the permission, giving the action and the model, from the Django Permission model."))
+    codename = BoundedTextField(
+        null=False, sql_server_max_length=100, help_text=_("The name of the permission, giving the action and the model, from the Django Permission model.")
+    )
     # NOTE: we do not form object_id and content_type into a content_object, following from AWX practice
     # this can be relaxed as we have comparative performance testing to confirm doing so does not affect permissions
     content_type_id = models.PositiveIntegerField(null=False, help_text=_("The related content type id."))
