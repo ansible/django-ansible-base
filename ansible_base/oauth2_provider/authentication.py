@@ -14,11 +14,15 @@ logger = logging.getLogger('ansible_base.oauth2_provider.authentication')
 
 class OAuthLibCore(_OAuthLibCore):
     def extract_body(self, request):
-        # request.POST.items() can fail for non-form content types; return
+        # request.POST.items() can fail for non-form content types, or when the
+        # underlying request object does not support body/stream access; return
         # empty so OAuth2 falls back to the Authorization header.
         try:
             return request.POST.items()
         except (UnsupportedMediaType, ParseError):
+            return ()
+        except AttributeError as exc:
+            logger.debug('Request object does not support body parsing; skipping form body extraction: %s', exc)
             return ()
 
     def _extract_params(self, request):

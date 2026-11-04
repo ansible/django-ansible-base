@@ -300,6 +300,31 @@ def test_oauth2_extract_body_handles_parse_error():
     assert result == (), f"Expected empty tuple when ParseError is raised, got {result!r}"
 
 
+def test_oauth2_extract_body_returns_empty_for_streamless_request():
+    """Regression test for synthetic requests without body/stream support."""
+    from django.http import HttpRequest
+    from rest_framework.parsers import FormParser, JSONParser
+    from rest_framework.request import Request
+
+    from ansible_base.oauth2_provider.authentication import OAuthLibCore
+
+    class EnvoyLikeRequest(HttpRequest):
+        """Mimics a synthetic request, such as one wrapping envoy ext_authz attributes."""
+
+        encoding = "utf-8"
+
+        def __init__(self):
+            super().__init__()
+            self.method = "GET"
+            # Prevent DRF from falling back to Django's default POST attribute.
+            del self.POST
+            self.META = {"CONTENT_TYPE": "application/json", "CONTENT_LENGTH": "1"}
+
+    drf_request = Request(EnvoyLikeRequest(), parsers=[FormParser(), JSONParser()])
+    backend = OAuthLibCore.__new__(OAuthLibCore)
+    assert list(backend.extract_body(drf_request)) == []
+
+
 def test_oauth2_multipart_parse_error_full_request(unauthenticated_api_client, oauth2_admin_access_token):
     """
     End-to-end regression test: ensure a multipart upload with a bearer token
