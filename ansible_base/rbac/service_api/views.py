@@ -288,10 +288,7 @@ class BaseSerivceRoleAssignmentViewSet(
             try:
                 with transaction.atomic():
                     user_triples, team_triples = self._separate_triples_by_actor(pending_triples)
-                    return bulk_give_permissions(
-                        user_permissions=user_triples,
-                        team_permissions=team_triples
-                    )
+                    return bulk_give_permissions(user_permissions=user_triples, team_permissions=team_triples)
             except IntegrityError:
                 # Strict inserts distinguish our writes from a concurrent request
                 # that won the unique-assignment race. Retry only assignments still absent.
