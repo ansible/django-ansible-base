@@ -11,7 +11,10 @@ On SQL Server the column becomes `nvarchar(sql_server_max_length)`, and the
 field attaches a validator (counting UTF-16 code units, matching `nvarchar`
 semantics) so that over-length writes fail cleanly at the API layer instead
 of hitting the database's truncation error. The validator is vendor-checked
-at validation time and is inactive on every other database.
+at validation time and is inactive on every other database. Validation runs
+wherever field validators run — DRF serializers, model forms, and
+`full_clean()`; writes that bypass validators (for example `bulk_create` or
+direct ORM saves) still hit the database's truncation error on SQL Server.
 
 ### Usage
 
@@ -33,8 +36,9 @@ deliberately:
    codenames use 100 for parity with Django's `Permission.codename`.
  - **Roomier** where the text is user-facing and unpredictable but still
    needs an index, e.g. names at 255.
- - `450` is the `nvarchar` index-key ceiling — bounds above that cannot be
-   indexed on SQL Server either.
+ - Keep bounds on indexed fields at or under `450` to stay below every SQL
+   Server index key-size limit (900 bytes clustered, 1700 bytes nonclustered
+   on SQL Server 2016+), including in composite keys, which share the budget.
  - Fields that are never indexed or made unique (descriptions, notes) should
    stay plain `TextField`; SQL Server gives them `nvarchar(max)`, which is
    unbounded and fine.
@@ -50,6 +54,9 @@ field from silently becoming un-deployable on SQL Server.
 The check is scoped to DAB's own apps. Consumer applications (AWX, gateway,
 galaxy_ng) are deliberately unaffected — e.g. AWX's indexed-unique
 `singleton_name` will not redden its builds — until they choose to adopt.
+
+The field itself is checked too: `ansible_base.E003` errors on a
+`sql_server_max_length` outside 1–4000, the range `nvarchar` can hold.
 
 ### Adoption path for components
 
