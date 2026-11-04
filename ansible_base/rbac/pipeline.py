@@ -307,7 +307,7 @@ def _insert_new(assignments: list[AssignmentBase], actor_id_field: str, model: t
     batch_size = max(connection.ops.bulk_batch_size(fields, assignments), 1)
 
     created: list[AssignmentBase] = []
-    with transaction.atomic(savepoint=False):
+    with transaction.atomic(using=model.objects.db, savepoint=False):
         for start in range(0, len(assignments), batch_size):
             # QuerySet._insert is a private Django method. bulk_create(ignore_conflicts=True) is
             # built on it but never asks for RETURNING, so it cannot say which rows it inserted;
