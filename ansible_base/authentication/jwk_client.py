@@ -24,6 +24,10 @@ class JWKSFetchTimeoutError(PyJWKClientConnectionError):
 class _JWKSRetry(Exception):
     """Internal signal that a JWKS coordination marker is currently held."""
 
+    def __init__(self, timeout_error: PyJWKClientError) -> None:
+        super().__init__(str(timeout_error))
+        self.timeout_error = timeout_error
+
 
 class CachedJWKClient(PyJWKClient):
     """Adds a shared Django-cache layer to PyJWT's normal JWKS handling."""
@@ -99,7 +103,7 @@ class CachedJWKClient(PyJWKClient):
         """Acquire the normal fetch lease and return its ownership token."""
         fetch_owner = str(uuid4())
         if use_locks and not cache.add(self._fetch_lock_key, fetch_owner, timeout=self.fetch_lease_seconds):
-            raise _JWKSRetry
+            raise _JWKSRetry(JWKSFetchTimeoutError("Timed out waiting for a coordinated JWKS fetch"))
         return fetch_owner
 
     def _release_fetch_lock(self, owner: str, use_locks: bool) -> None:
@@ -121,7 +125,7 @@ class CachedJWKClient(PyJWKClient):
         provider refreshes.
         """
         if use_locks and not cache.add(self._refresh_lock_key, True, timeout=self.forced_refresh_cooldown):
-            raise _JWKSRetry
+            raise _JWKSRetry(PyJWKClientError("Timed out waiting for the JWKS refresh cooldown"))
 
     def _fetch_jwk_set_with_fetch_lock(self, use_locks: bool) -> PyJWKSet:
         """Fetch the JWK set when this request owns the normal fetch lease."""
@@ -133,11 +137,11 @@ class CachedJWKClient(PyJWKClient):
             self._release_fetch_lock(fetch_owner, use_locks)
 
     @staticmethod
-    def _sleep_before_jwk_set_retry(deadline: float, retry_count: int) -> None:
-        """Back off with jitter or report fetch coordination failure."""
+    def _sleep_before_jwk_set_retry(deadline: float, retry_count: int, timeout_error: PyJWKClientError) -> None:
+        """Back off with jitter or raise the coordination error that triggered the retry."""
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise JWKSFetchTimeoutError("Timed out waiting for a coordinated JWKS fetch")
+            raise timeout_error
 
         maximum_delay = min(MAX_JWKS_FETCH_RETRY_SECONDS, INITIAL_JWKS_FETCH_RETRY_SECONDS * 2**retry_count)
         delay = min(random.uniform(maximum_delay / 2, maximum_delay), remaining)
@@ -160,8 +164,17 @@ class CachedJWKClient(PyJWKClient):
                 if not refresh and (document := cache.get(self._jwk_set_cache_key)) is not None:
                     return self._parse_jwk_set(document)
                 return self._fetch_jwk_set_with_fetch_lock(use_locks)
-            except _JWKSRetry:
-                self._sleep_before_jwk_set_retry(deadline, retry_count)
+            except _JWKSRetry as retry:
+                # A forced-refresh cooldown may expire before this request
+                # reaches its bounded JWKS wait timeout. Keep retrying so a
+                # token signed during key rotation can still validate. We
+                # cannot safely infer the request's remaining lifetime from
+                # the cache marker, which may predate this request and be
+                # constrained by an outer worker timeout. On timeout, report
+                # the outcome associated with the marker that blocked this
+                # attempt: cooldown (invalid token) or fetch lease (provider
+                # unavailable).
+                self._sleep_before_jwk_set_retry(deadline, retry_count, retry.timeout_error)
                 retry_count += 1
 
     def get_signing_key_from_jwt(self, token: str | bytes) -> PyJWK:

@@ -53,12 +53,39 @@ def test_authentication_no_backends():
     assert 'ansible_base.authentication.backend.AnsibleBaseAuth' in settings['AUTHENTICATION_BACKENDS']
 
 
+def test_authentication_only_uses_bearer_before_session_authentication():
+    settings = factory("", "TEST", INSTALLED_APPS=['ansible_base.authentication'])
+
+    assert settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES'] == [
+        'ansible_base.authentication.bearer_authentication.BearerAuthentication',
+        'ansible_base.authentication.session.SessionAuthentication',
+    ]
+
+
 def test_oauth2_provider_uses_unified_bearer_authentication_when_authentication_app_is_installed():
     settings = factory("", "TEST", INSTALLED_APPS=['ansible_base.authentication', 'ansible_base.oauth2_provider'])
     authentication_classes = settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES']
 
-    assert 'ansible_base.authentication.bearer_authentication.BearerAuthentication' in authentication_classes
+    assert authentication_classes[:2] == [
+        'ansible_base.authentication.bearer_authentication.BearerAuthentication',
+        'ansible_base.authentication.session.SessionAuthentication',
+    ]
     assert 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication' not in authentication_classes
+
+
+def test_oauth2_provider_preserves_explicit_authentication_class_order():
+    bearer_authentication_class = 'ansible_base.authentication.bearer_authentication.BearerAuthentication'
+    session_authentication_class = 'ansible_base.authentication.session.SessionAuthentication'
+    configured_authentication_classes = [session_authentication_class, bearer_authentication_class]
+
+    settings = factory(
+        "",
+        "TEST",
+        INSTALLED_APPS=['ansible_base.authentication', 'ansible_base.oauth2_provider'],
+        REST_FRAMEWORK={'DEFAULT_AUTHENTICATION_CLASSES': configured_authentication_classes},
+    )
+
+    assert settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES'] == configured_authentication_classes
 
 
 def test_oauth2_provider_without_authentication_app_uses_local_oauth2_authentication():
@@ -67,6 +94,12 @@ def test_oauth2_provider_without_authentication_app_uses_local_oauth2_authentica
 
     assert 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication' in authentication_classes
     assert 'ansible_base.authentication.bearer_authentication.BearerAuthentication' not in authentication_classes
+
+
+def test_no_authentication_apps_do_not_add_dab_authentication_classes():
+    settings = factory("", "TEST", INSTALLED_APPS=[])
+
+    assert 'DEFAULT_AUTHENTICATION_CLASSES' not in settings['REST_FRAMEWORK']
 
 
 def test_append_middleware():
