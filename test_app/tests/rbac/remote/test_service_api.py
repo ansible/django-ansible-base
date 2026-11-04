@@ -561,7 +561,7 @@ def test_object_ansible_id_in_list_response(admin_api_client, rando, org_admin_r
     org2 = Organization.objects.create(name='Covering Index Test Org')
     assignment = org_admin_rd.give_permission(rando, organization)
     org_admin_rd.give_permission(rando, org2)
-    assert assignment.object_ansible_id == organization.resource.ansible_id
+    assert str(assignment.object_ansible_id) == str(organization.resource.ansible_id)
 
     url = get_relative_url('serviceuserassignment-list')
     response = admin_api_client.get(url + '?page_size=200', format="json")
