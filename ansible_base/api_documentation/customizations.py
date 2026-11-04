@@ -81,19 +81,19 @@ def apply_oauth2_customizations() -> None:
 
         target_authentication_class = target_authentication_class or LoggedOAuth2Authentication
         scheme_names.append('OAuth2_Authentication')
-        scheme_definitions.append({'type': 'oauth2', 'flows': _oauth2_flows(spectacular_settings)})
 
     class BearerAuthenticationScheme(OpenApiAuthenticationExtension):  # NOSONAR(S5603) -- registration happens in the extension metaclass.
         """Describe the active Bearer credentials without importing optional applications."""
 
         target_class = target_authentication_class
-        name = scheme_names[0] if len(scheme_names) == 1 else scheme_names
+        name = scheme_names
         priority = 1  # Needed to prevent built-in extensions overwriting the definition.
 
         def get_security_definition(self, auto_schema: AutoSchema):
-            if len(scheme_definitions) == 1:
-                return scheme_definitions[0]
-            return scheme_definitions
+            definitions = list(scheme_definitions)
+            if oauth2_provider_installed:
+                definitions.append({'type': 'oauth2', 'flows': _oauth2_flows(spectacular_settings)})
+            return definitions
 
         def get_security_requirement(self, auto_schema: AutoSchema):
             if len(scheme_names) == 1:

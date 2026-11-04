@@ -9,6 +9,7 @@ from jwt.exceptions import PyJWKClientError, PyJWKError
 from ansible_base.authentication.jwk_client import (
     CachedJWKClient,
     JWKSFetchTimeoutError,
+    _JWKSRetry,
 )
 
 
@@ -18,6 +19,10 @@ def _token(kid="key-id"):
 
 def _jwk_document(kid="key-id"):
     return {"keys": [{"kty": "oct", "k": "c2VjcmV0", "kid": kid, "alg": "HS256"}]}
+
+
+def test_jwks_retry_preserves_its_timeout_error_message():
+    assert str(_JWKSRetry(PyJWKClientError("refresh cooldown timed out"))) == "refresh cooldown timed out"
 
 
 @pytest.fixture(autouse=True)

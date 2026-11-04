@@ -25,6 +25,7 @@ class _JWKSRetry(Exception):
     """Internal signal that a JWKS coordination marker is currently held."""
 
     def __init__(self, timeout_error: PyJWKClientError) -> None:
+        super().__init__(str(timeout_error))
         self.timeout_error = timeout_error
 
 
@@ -137,7 +138,7 @@ class CachedJWKClient(PyJWKClient):
 
     @staticmethod
     def _sleep_before_jwk_set_retry(deadline: float, retry_count: int, timeout_error: PyJWKClientError) -> None:
-        """Back off with jitter or report fetch coordination failure."""
+        """Back off with jitter or raise the coordination error that triggered the retry."""
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise timeout_error
@@ -169,9 +170,10 @@ class CachedJWKClient(PyJWKClient):
                 # token signed during key rotation can still validate. We
                 # cannot safely infer the request's remaining lifetime from
                 # the cache marker, which may predate this request and be
-                # constrained by an outer worker timeout. Once it does time
-                # out, distinguish an idle cooldown (invalid token) from an
-                # active peer fetch (provider unavailable).
+                # constrained by an outer worker timeout. On timeout, report
+                # the outcome associated with the marker that blocked this
+                # attempt: cooldown (invalid token) or fetch lease (provider
+                # unavailable).
                 self._sleep_before_jwk_set_retry(deadline, retry_count, retry.timeout_error)
                 retry_count += 1
 

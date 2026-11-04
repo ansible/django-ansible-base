@@ -117,14 +117,15 @@ def test_oauth2_only_schema_targets_the_local_oauth2_authenticator():
     from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
 
     installed_apps = [app for app in settings.INSTALLED_APPS if app != 'ansible_base.authentication']
-    registered_extensions = len(OpenApiAuthenticationExtension._registry)
+    registered_extensions = set(OpenApiAuthenticationExtension._registry)
     with patch.object(settings, 'INSTALLED_APPS', installed_apps):
         apply_oauth2_customizations()
-    scheme = OpenApiAuthenticationExtension._registry[registered_extensions]
+    (scheme,) = set(OpenApiAuthenticationExtension._registry) - registered_extensions
 
     assert scheme.target_class == LoggedOAuth2Authentication
-    assert scheme.name == 'OAuth2_Authentication'
-    assert scheme(target=LoggedOAuth2Authentication()).get_security_definition(auto_schema=MagicMock())['type'] == 'oauth2'
+    assert scheme.name == ['OAuth2_Authentication']
+    definitions = scheme(target=LoggedOAuth2Authentication()).get_security_definition(auto_schema=MagicMock())
+    assert definitions[0]['type'] == 'oauth2'
 
 
 def test_oauth2_customizations_without_authentication_does_not_import_bearer_authentication():
@@ -172,14 +173,14 @@ def test_authentication_only_schema_is_generic_bearer():
     from ansible_base.authentication.bearer_authentication import BearerAuthentication
 
     installed_apps = [app for app in settings.INSTALLED_APPS if app != 'ansible_base.oauth2_provider']
-    registered_extensions = len(OpenApiAuthenticationExtension._registry)
+    registered_extensions = set(OpenApiAuthenticationExtension._registry)
     with patch.object(settings, 'INSTALLED_APPS', installed_apps):
         apply_oauth2_customizations()
-    scheme = OpenApiAuthenticationExtension._registry[registered_extensions]
+    (scheme,) = set(OpenApiAuthenticationExtension._registry) - registered_extensions
 
     assert scheme.target_class == BearerAuthentication
-    assert scheme.name == 'BearerAuthentication'
-    assert scheme(target=BearerAuthentication()).get_security_definition(auto_schema=MagicMock()) == {'type': 'http', 'scheme': 'bearer'}
+    assert scheme.name == ['BearerAuthentication']
+    assert scheme(target=BearerAuthentication()).get_security_definition(auto_schema=MagicMock()) == [{'type': 'http', 'scheme': 'bearer'}]
     assert scheme(target=BearerAuthentication()).get_security_requirement(auto_schema=MagicMock()) == {'BearerAuthentication': []}
 
 
@@ -193,17 +194,17 @@ def test_oauth2_schema_includes_a_configured_refresh_url():
     from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
 
     installed_apps = [app for app in settings.INSTALLED_APPS if app != 'ansible_base.authentication']
-    registered_extensions = len(OpenApiAuthenticationExtension._registry)
+    registered_extensions = set(OpenApiAuthenticationExtension._registry)
     refresh_url = 'https://example.test/o/token/refresh/'
     with (
         patch.object(settings, 'INSTALLED_APPS', installed_apps),
         patch.object(spectacular_settings, 'OAUTH2_REFRESH_URL', refresh_url),
     ):
         apply_oauth2_customizations()
-    scheme = OpenApiAuthenticationExtension._registry[registered_extensions]
-    definitions = scheme(target=LoggedOAuth2Authentication()).get_security_definition(auto_schema=MagicMock())
+        (scheme,) = set(OpenApiAuthenticationExtension._registry) - registered_extensions
+        definitions = scheme(target=LoggedOAuth2Authentication()).get_security_definition(auto_schema=MagicMock())
 
-    assert all(flow['refreshUrl'] == refresh_url for flow in definitions['flows'].values())
+    assert all(flow['refreshUrl'] == refresh_url for flow in definitions[0]['flows'].values())
 
 
 def test_no_authentication_apps_registers_no_bearer_schema():
@@ -219,3 +220,21 @@ def test_no_authentication_apps_registers_no_bearer_schema():
         apply_oauth2_customizations()
 
     assert len(OpenApiAuthenticationExtension._registry) == registered_extensions
+
+
+def test_api_documentation_ready_registers_oauth2_schema_without_authentication_app():
+    from django.conf import settings
+
+    from ansible_base import api_documentation
+    from ansible_base.api_documentation.apps import ApiDocumentationConfig
+
+    installed_apps = [app for app in settings.INSTALLED_APPS if app != 'ansible_base.authentication']
+    with (
+        patch.object(settings, 'INSTALLED_APPS', installed_apps),
+        patch('ansible_base.api_documentation.apps.apply_authentication_customizations') as apply_authentication,
+        patch('ansible_base.api_documentation.apps.apply_oauth2_customizations') as apply_oauth2,
+    ):
+        ApiDocumentationConfig('ansible_base.api_documentation', api_documentation).ready()
+
+    apply_authentication.assert_not_called()
+    apply_oauth2.assert_called_once_with()
