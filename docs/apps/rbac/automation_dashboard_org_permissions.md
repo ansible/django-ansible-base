@@ -174,6 +174,37 @@ Key points:
   replicate that if you need exact-managed-set semantics.
 - Add `('dab_rbac', '__first__')` to the migration's dependencies.
 
+### Does Organization Admin get these permissions automatically?
+
+Yes, **at the role-definition level**. `OrganizationAdmin` is a
+`ManagedAdminBase` (`ansible_base/rbac/managed.py`); its permissions are computed
+as every allowed permission for the organization content type (all direct
+organization permissions except `add_*`, plus permissions of descendant models).
+Once the new `DABPermission` rows exist, an Organization Admin role built from
+that definition contains both
+`view_automation_dashboard_organization` and
+`change_automation_dashboard_organization`. Users who hold Organization Admin on
+an organization therefore get the dashboard access without a separate grant.
+This is covered by
+`test_organization_admin_includes_automation_dashboard_permissions` in the POC.
+
+**Caveat — existing installations must refresh the definition.**
+`ManagedRoleConstructor.get_or_create` only syncs permissions when it *creates*
+the role (`ansible_base/rbac/managed.py`); DAB does not refresh managed role
+definitions in `post_migrate`. An Organization Admin role definition that
+already exists in the database keeps its old permission set after an upgrade
+until it is refreshed:
+
+- DAB settings-managed roles:
+  `permission_registry.create_managed_roles(apps, update_perms=True)`
+- AWX-style explicit migrations: re-run
+  `setup_managed_role_definitions(apps, schema_editor)`, which recomputes the
+  organization permission set and is idempotent.
+
+If an existing Organization Admin should not gain dashboard editing implicitly,
+grant the new permissions only through the explicit Viewer/Editor roles instead
+and remove them from the admin set (or define a narrower admin template).
+
 ### Alternative: runtime / settings-based creation
 
 Outside migrations you can use the public manager, which validates the
@@ -261,6 +292,10 @@ DJANGO_SETTINGS_MODULE=test_app.sqlite3settings \
       `ANSIBLE_BASE_ROLES_REQUIRE_VIEW`.
 - [ ] Role definitions are idempotent and marked `managed=True` if the system
       owns them.
+- [ ] Existing managed role definitions (especially Organization Admin) are
+      refreshed so they pick up the new permissions
+      (`create_managed_roles(update_perms=True)` or re-run the AWX-style setup
+      migration).
 - [ ] Permission checks (`access_qs` / `has_obj_perm`) and UI role labels are
       updated in the consumer.
 - [ ] Tests cover permission creation, role creation, assignment, and access

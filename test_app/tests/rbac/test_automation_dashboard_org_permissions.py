@@ -70,3 +70,13 @@ def test_editor_role_grants_view_and_change(rando, organization):
     assert rando.has_obj_perm(organization, CHANGE_PERM)
     assert set(Organization.access_qs(rando, VIEW_PERM)) == {organization}
     assert set(Organization.access_qs(rando, CHANGE_PERM)) == {organization}
+
+
+@pytest.mark.django_db
+def test_organization_admin_includes_automation_dashboard_permissions():
+    """Organization Admin is an 'admin base' role: it gets every non-add org permission."""
+    org_admin = RoleDefinition.objects.managed.org_admin
+    codenames = set(org_admin.permissions.values_list('codename', flat=True))
+
+    assert VIEW_PERM in codenames
+    assert CHANGE_PERM in codenames
