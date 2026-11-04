@@ -320,6 +320,15 @@ class RoleDefinition(CommonModel):
         return assignment
 
     def give_permission(self, actor, content_object):
+        """Give actor this role on content_object and return the assignment.
+
+        Returns the existing assignment if there already was one. The bulk pipeline returns
+        only the rows it inserted (INSERT ... ON CONFLICT DO NOTHING reports nothing about the
+        rows it skips), so the existing one is fetched here; this path is a single row, so the
+        lookup that does not scale in bulk is fine. content_type/object_id are resolved the same
+        way the pipeline stores them: object_id is a normalized string, so a raw non-integer pk
+        (e.g. a UUID) would not match.
+        """
         from ansible_base.rbac.pipeline import _resolve_content_object, bulk_give_permissions
 
         is_user = actor._meta.model_name == 'user'
@@ -330,11 +339,6 @@ class RoleDefinition(CommonModel):
         )
         if assignments:
             return assignments[0]
-        # The assignment already existed. The bulk path returns only newly-created rows
-        # (bulk_create can't report skipped ones), so fetch the existing one -- this path is
-        # a single row, so the lookup that doesn't scale in bulk is fine here.
-        # Resolve content_type/object_id the same way the pipeline stores them: object_id is a
-        # normalized string, so passing a raw non-integer pk (e.g. a UUID) here would not match.
         content_type, object_id, _ = _resolve_content_object(content_object)
         if is_user:
             qs = RoleUserAssignment.objects.filter(user=actor)
