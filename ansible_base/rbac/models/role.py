@@ -19,6 +19,7 @@ from rest_framework.exceptions import ValidationError
 
 # ansible_base lib functions
 from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommonModel
+from ansible_base.lib.fields import BoundedTextField
 
 # ansible_base RBAC logic imports
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
@@ -202,7 +203,7 @@ class RoleDefinition(CommonModel):
         ordering = ['id']
         verbose_name_plural = _('role_definition')
 
-    name = models.TextField(db_index=True, unique=True, help_text=_("The name of this role."))
+    name = BoundedTextField(db_index=True, unique=True, sql_server_max_length=255, help_text=_("The name of this role."))
     description = models.TextField(blank=True, help_text=_("A description of this role."))
     managed = models.BooleanField(
         default=False, editable=False, help_text=_("Is this role managed by the system (not changeable by the users).")
@@ -412,7 +413,7 @@ class ObjectRoleFields(models.Model):
         on_delete=models.CASCADE,
         help_text=_("The content type of the subject of permission assignments. Duplicated from related RoleDefinition."),
     )
-    object_id = models.TextField(null=False, help_text=_("The database primary key of the subject of permission assignments."))
+    object_id = BoundedTextField(null=False, sql_server_max_length=64, help_text=_("The database primary key of the subject of permission assignments."))
     content_object = FederatedForeignKey('content_type', 'object_id')
 
     @classmethod
@@ -606,7 +607,7 @@ class ObjectRole(ObjectRoleFields):
         help_text=_("Teams or groups who have access to the permissions defined by this object role."),
     )
     # Only for remote models
-    parent_reference = models.TextField(blank=True, db_index=True, help_text=_("The ansible_id or object_id of the parent resource."))
+    parent_reference = BoundedTextField(blank=True, db_index=True, sql_server_max_length=64, help_text=_("The ansible_id or object_id of the parent resource."))
     # COMPUTED DATA
     provides_teams = models.ManyToManyField(
         settings.ANSIBLE_BASE_TEAM_MODEL,
@@ -905,7 +906,7 @@ class RoleEvaluationFields(models.Model):
             raise RuntimeError(f'{self._meta.model_name} model is immutable and only used internally')
         return super().save(*args, **kwargs)
 
-    codename = models.TextField(null=False, help_text=_("The name of the permission, giving the action and the model, from the Django Permission model."))
+    codename = BoundedTextField(null=False, sql_server_max_length=100, help_text=_("The name of the permission, giving the action and the model, from the Django Permission model."))
     # NOTE: we do not form object_id and content_type into a content_object, following from AWX practice
     # this can be relaxed as we have comparative performance testing to confirm doing so does not affect permissions
     content_type_id = models.PositiveIntegerField(null=False, help_text=_("The related content type id."))

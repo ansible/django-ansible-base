@@ -64,3 +64,19 @@ def test_validator_counts_utf16_code_units():
         field.run_validators('\U0001F600')  # exactly 2 units, passes
         with pytest.raises(ValidationError):
             field.run_validators('a\U0001F600')  # 3 units, fails
+
+
+@pytest.mark.django_db
+def test_serializer_enforces_bound_on_microsoft_only():
+    from ansible_base.rbac.api.serializers import RoleDefinitionSerializer
+
+    with mock.patch('ansible_base.lib.fields.connection') as conn:
+        conn.vendor = 'microsoft'
+        serializer = RoleDefinitionSerializer(data={'name': 'a' * 300, 'description': ''})
+        assert not serializer.is_valid()
+        assert 'name' in serializer.errors
+
+        conn.vendor = 'postgresql'
+        serializer = RoleDefinitionSerializer(data={'name': 'a' * 300, 'description': ''})
+        errors = {} if serializer.is_valid() else serializer.errors
+        assert 'name' not in errors  # postgres: overlength name is not a field error
