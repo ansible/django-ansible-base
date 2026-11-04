@@ -19,6 +19,7 @@ from ansible_base.rbac.caching import (
     defer_rbac_state,
     recompute_role_evaluations,
 )
+from ansible_base.rbac.evaluations import bound_singleton_permissions
 from ansible_base.rbac.models.content_type import DABContentType
 from ansible_base.rbac.models.role import AssignmentBase, ObjectRole, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
@@ -446,8 +447,6 @@ def _clear_singleton_caches(assignments: Iterable[AssignmentBase]) -> None:
         else:
             team_changed = True
     if team_changed:
-        from ansible_base.rbac.evaluations import bound_singleton_permissions
-
         bound_singleton_permissions._team_clear_signal = True
 
 
