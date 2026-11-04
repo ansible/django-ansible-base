@@ -340,7 +340,7 @@ def _insert_new(assignments: list[AssignmentBase], actor_id_field: str, model: t
 
 
 def _fire_post_save(created_assignments: list[AssignmentBase]) -> None:
-    """Re-fire post_save (created=True) for rows bulk_create inserted without signalling.
+    """Re-fire post_save (created=True) for rows _insert_new inserted without signalling.
 
     ~~~ TEMPORARY -- REMOVE WITH AAP-90162 CONSUMER MIGRATION ~~~
 
@@ -675,8 +675,8 @@ def give_assignments(
     lists directly, for callers that have already resolved and validated.
 
     Returns only the *newly-created* assignments. Pairs that already existed are omitted:
-    bulk_create(ignore_conflicts=True) cannot report skipped rows, and fetching them back
-    is the query that does not scale. Callers needing pre-existing rows must fetch them.
+    INSERT ... ON CONFLICT DO NOTHING reports nothing about skipped rows, and fetching them
+    back is the query that does not scale. Callers needing pre-existing rows must fetch them.
 
     Args:
         content_objects: Optional dict mapping (content_type_id, object_id) to model instances.
