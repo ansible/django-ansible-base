@@ -4,6 +4,7 @@ from rest_framework.exceptions import ValidationError
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
 from test_app.models import Inventory, Organization, User
 
 
@@ -27,8 +28,6 @@ def test_bulk_pipeline_clears_user_singleton_cache(rando, inventory, global_inv_
     A global (singleton) grant/removal via bulk_give_permissions/bulk_remove_permissions must
     invalidate the in-memory actor's cached singleton_permissions, so callers never have to.
     """
-    from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
-
     # Prime the cache while the user has no global permissions.
     assert rando.singleton_permissions() == set()
     assert hasattr(rando, '_singleton_permissions')
@@ -43,8 +42,6 @@ def test_bulk_pipeline_clears_user_singleton_cache(rando, inventory, global_inv_
 @pytest.mark.django_db
 def test_bulk_pipeline_clears_team_singleton_cache(rando, organization, team, inventory, global_inv_rd, org_team_member_rd):
     """A global grant/removal to a team must invalidate in-memory users via the process-wide signal."""
-    from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
-
     org_team_member_rd.give_permission(rando, organization)  # rando is a member of team
 
     assert rando.singleton_permissions() == set()  # prime cache
