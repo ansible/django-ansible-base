@@ -3,6 +3,7 @@ import pytest
 from ansible_base.lib.dynamic_config.settings_logic import get_dab_settings
 
 CLEAN_TEXT_POSTPROCESSING_HOOK = "ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components"
+DEPRECATED_FIELDS_DETAIL_HOOK = "ansible_base.lib.utils.schema.deprecated_fields_detail_hook"
 
 
 @pytest.mark.parametrize(
@@ -46,14 +47,15 @@ def test_api_documentation_appends_clean_text_hook_when_postprocessing_hooks_ove
     )
 
     hooks = settings["SPECTACULAR_SETTINGS"]["POSTPROCESSING_HOOKS"]
-    assert hooks == [custom_hook, CLEAN_TEXT_POSTPROCESSING_HOOK]
+    assert hooks == [custom_hook, CLEAN_TEXT_POSTPROCESSING_HOOK, DEPRECATED_FIELDS_DETAIL_HOOK]
 
 
-def test_api_documentation_does_not_duplicate_clean_text_postprocessing_hook():
+def test_api_documentation_does_not_duplicate_required_postprocessing_hooks():
     settings = get_dab_settings(
         installed_apps=["ansible_base.api_documentation"],
-        spectacular_settings={"POSTPROCESSING_HOOKS": [CLEAN_TEXT_POSTPROCESSING_HOOK]},
+        spectacular_settings={"POSTPROCESSING_HOOKS": [CLEAN_TEXT_POSTPROCESSING_HOOK, DEPRECATED_FIELDS_DETAIL_HOOK]},
     )
 
     hooks = settings["SPECTACULAR_SETTINGS"]["POSTPROCESSING_HOOKS"]
     assert hooks.count(CLEAN_TEXT_POSTPROCESSING_HOOK) == 1
+    assert hooks.count(DEPRECATED_FIELDS_DETAIL_HOOK) == 1
