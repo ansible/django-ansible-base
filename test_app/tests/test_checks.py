@@ -4,8 +4,8 @@ from django.db import models
 from django.db.models.functions import Lower
 
 from ansible_base.authentication.models.authenticator import Authenticator
-from ansible_base.lib.checks import check_charfield_has_max_length, check_textfield_indexed_is_bounded
-from ansible_base.rbac.models import RoleDefinition
+from ansible_base.lib.checks import check_bounded_textfield_index_key_size, check_charfield_has_max_length, check_textfield_indexed_is_bounded
+from ansible_base.rbac.models import ObjectRole, RoleDefinition
 from test_app.models import MetadataTestModel
 
 
@@ -53,3 +53,59 @@ def test_check_ignores_consumer_apps():
     field = MetadataTestModel._meta.get_field('description')
     with mock.patch.object(field, 'db_index', new=True):
         assert check_textfield_indexed_is_bounded(None) == []
+
+
+def test_check_clean_on_index_key_size():
+    assert check_bounded_textfield_index_key_size(None) == []
+
+
+def test_check_flags_indexed_bound_over_key_size():
+    # nvarchar is 2 bytes per UTF-16 code unit: a bound of 500 needs 1000 bytes of
+    # index key, over SQL Server's 900-byte clustered limit
+    field = RoleDefinition._meta.get_field('name')
+    with mock.patch.object(field, 'sql_server_max_length', new=500):
+        errors = check_bounded_textfield_index_key_size(None)
+        assert [e.id for e in errors] == ['ansible_base.E004']
+        assert 'RoleDefinition.name' in errors[0].msg
+
+
+def test_check_allows_indexed_bound_at_key_size_limit():
+    field = RoleDefinition._meta.get_field('name')
+    with mock.patch.object(field, 'sql_server_max_length', new=450):
+        assert check_bounded_textfield_index_key_size(None) == []
+
+
+def test_check_ignores_unindexed_oversized_bound():
+    field = RoleDefinition._meta.get_field('name')
+    with (
+        mock.patch.object(field, 'db_index', new=False),
+        mock.patch.object(field, 'unique', new=False),
+        mock.patch.object(field, 'sql_server_max_length', new=4000),
+    ):
+        assert check_bounded_textfield_index_key_size(None) == []
+
+
+def test_check_flags_composite_key_over_budget():
+    # two bounded columns in one constraint: (300 + 300) code units = 1200 bytes of key
+    with mock.patch.object(ObjectRole._meta, 'constraints', [models.UniqueConstraint(fields=['object_id', 'parent_reference'], name='test_composite')]):
+        with mock.patch.object(ObjectRole._meta.get_field('object_id'), 'sql_server_max_length', new=300):
+            with mock.patch.object(ObjectRole._meta.get_field('parent_reference'), 'sql_server_max_length', new=300):
+                errors = check_bounded_textfield_index_key_size(None)
+                assert [e.id for e in errors] == ['ansible_base.E004']
+                assert 'test_composite' in errors[0].msg
+
+
+def test_check_flags_expression_composite_key_over_budget():
+    index = models.Index(Lower('object_id'), Lower('parent_reference'), name='test_composite_expr')
+    with mock.patch.object(ObjectRole._meta, 'indexes', [index]):
+        with mock.patch.object(ObjectRole._meta.get_field('object_id'), 'sql_server_max_length', new=300):
+            with mock.patch.object(ObjectRole._meta.get_field('parent_reference'), 'sql_server_max_length', new=300):
+                errors = check_bounded_textfield_index_key_size(None)
+                assert [e.id for e in errors] == ['ansible_base.E004']
+
+
+def test_check_ignores_consumer_apps_on_key_size():
+    # no ansible_base model is involved: test_app violations never fire
+    field = MetadataTestModel._meta.get_field('description')
+    with mock.patch.object(field, 'db_index', new=True):
+        assert check_bounded_textfield_index_key_size(None) == []

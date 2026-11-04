@@ -56,7 +56,11 @@ galaxy_ng) are deliberately unaffected — e.g. AWX's indexed-unique
 `singleton_name` will not redden its builds — until they choose to adopt.
 
 The field itself is checked too: `ansible_base.E003` errors on a
-`sql_server_max_length` outside 1–4000, the range `nvarchar` can hold.
+`sql_server_max_length` outside 1–4000, the range `nvarchar` can hold, and
+`ansible_base.E004` errors when an indexed or unique `BoundedTextField`'s
+key would exceed SQL Server's index key-size budget — 2 bytes per UTF-16
+code unit against a 900-byte limit, summed across the `BoundedTextField`
+columns of a composite index or constraint.
 
 ### Adoption path for components
 
