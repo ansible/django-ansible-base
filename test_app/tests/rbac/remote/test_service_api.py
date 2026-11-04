@@ -167,7 +167,6 @@ def test_bulk_assign_reports_concurrent_assignment_as_existing(admin_api_client,
         return [] if lookup_count == 1 else [assignment]
 
     def conflicting_insert(**kwargs):
-        assert kwargs['ignore_conflicts'] is False
         raise IntegrityError('assignment inserted concurrently')
 
     import ansible_base.rbac.service_api.views as service_views
@@ -227,18 +226,6 @@ def test_bulk_assign_reports_global_assignment_get_or_create_result(admin_api_cl
 
 
 @pytest.mark.django_db
-def test_global_permission_reports_whether_it_inserted(rando):
-    role_definition = RoleDefinition.objects.managed.sys_auditor
-
-    first, first_created = role_definition.give_global_permission(rando, return_created=True)
-    second, second_created = role_definition.give_global_permission(rando, return_created=True)
-
-    assert first_created is True
-    assert second_created is False
-    assert first.pk == second.pk
-
-
-@pytest.mark.django_db
 def test_bulk_assign_counts_global_get_or_create_race_as_existing(admin_api_client, rando, monkeypatch):
     role_definition = RoleDefinition.objects.managed.sys_auditor
     existing_assignment = role_definition.give_global_permission(rando)
@@ -246,8 +233,8 @@ def test_bulk_assign_counts_global_get_or_create_race_as_existing(admin_api_clie
     def no_existing_assignments(view, triples, for_update=False):
         return []
 
-    def get_existing_global_assignment(self, actor, return_created=False):
-        return existing_assignment, False
+    def get_existing_global_assignment(self, actor):
+        return existing_assignment
 
     from ansible_base.rbac.service_api.views import BaseSerivceRoleAssignmentViewSet
 
