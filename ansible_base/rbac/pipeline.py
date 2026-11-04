@@ -7,8 +7,9 @@ from typing import Union, cast
 
 from django.apps import apps as django_apps
 from django.conf import settings
-from django.db import connection, models
+from django.db import connection, models, transaction
 from django.db.models import Q
+from django.db.models.constants import OnConflict
 from django.db.models.signals import post_save  # TEMPORARY: see _fire_post_save / AAP-90162 merge-order note (consumers must connect to ONE signal, not both)
 
 from ansible_base.lib.utils.models import current_user_or_system_user
@@ -273,36 +274,67 @@ def _audit_log_created(created_assignments: list[AssignmentBase]) -> None:
 def _insert_new(assignments: list[AssignmentBase], actor_id_field: str, model: type[AssignmentBase]) -> list[AssignmentBase]:
     """Bulk-insert assignments and return only the newly-created rows (as the in-memory objects).
 
-    New rows are detected by PK range -- id greater than the max seen before the insert --
-    rather than a per-pair filter, so the query is constant-size regardless of batch shape
-    (skinny or fat) and rides the existing PK index. The freshly-fetched rows are matched back
-    to the in-memory objects we built (by (actor, role_definition, object_role) identity) and
-    those in-memory objects are returned with their PK backfilled. This means the returned
-    assignments keep the caller's related instances (role_definition, actor, object_role,
-    content_object) with no re-fetch, and a row a concurrent caller commits in the id gap is
-    ignored because it has no matching in-memory object. role_definition is part of the key so
-    global assignments (object_role is None) for different role definitions stay distinct.
-    (A genuine same-identity concurrent insert can still be double-counted as created -- the
-    same race window as before this change.)
+    Each batch is one ``INSERT ... ON CONFLICT DO NOTHING RETURNING id, <actor>, role_definition,
+    object_role``. The database returns exactly the rows that statement inserted -- rows skipped
+    by any unique constraint (including the partial global-assignment ones) are not returned --
+    so there is no pre-insert or post-insert query, and a concurrent insert of the same identity
+    is never counted as created here. The returned rows are matched back to the in-memory objects
+    we built (by (actor, role_definition, object_role) identity) and those objects are returned
+    with their PK backfilled, so they keep the caller's related instances (role_definition, actor,
+    object_role, content_object) with no re-fetch. role_definition is part of the key so global
+    assignments (object_role is None) for different role definitions stay distinct.
 
-    Pre-existing pairs are deliberately NOT returned. bulk_create(ignore_conflicts=True)
-    reports neither which rows it skipped nor their PKs, and fetching them back is precisely
-    the query that does not scale (an OR-of-pairs SQLite rejects past ~1000 terms). Callers
-    needing a pre-existing row must fetch it themselves -- see RoleDefinition.give_permission.
+    Pre-existing pairs are deliberately NOT returned: ON CONFLICT DO NOTHING reports nothing about
+    the rows it skipped, and fetching them back is precisely the query that does not scale (an
+    OR-of-pairs SQLite rejects past ~1000 terms). Callers needing a pre-existing row must fetch it
+    themselves -- see RoleDefinition.give_permission.
 
     Callers guard against the empty case (see _create_assignments), so ``assignments`` is
     always non-empty here.
     """
+    opts = model._meta
+    fields = [f for f in opts.concrete_fields if not f.generated and f is not opts.pk]
+    returning_fields = [
+        opts.pk,
+        opts.get_field(actor_id_field.removesuffix('_id')),
+        opts.get_field('role_definition'),
+        opts.get_field('object_role'),
+    ]
+    for assignment in assignments:
+        assignment._prepare_related_fields_for_save(operation_name='bulk_create')
     by_identity = {(getattr(a, actor_id_field), a.role_definition_id, a.object_role_id): a for a in assignments}
-    max_before = model.objects.aggregate(_m=models.Max('id'))['_m'] or 0
-    model.objects.bulk_create(assignments, ignore_conflicts=True)
+    batch_size = max(connection.ops.bulk_batch_size(fields, assignments), 1)
 
     created: list[AssignmentBase] = []
-    for row in model.objects.filter(id__gt=max_before):
-        obj = by_identity.get((getattr(row, actor_id_field), row.role_definition_id, row.object_role_id))
-        if obj is not None:
-            obj.id = row.id
-            created.append(obj)
+    with transaction.atomic(savepoint=False):
+        for start in range(0, len(assignments), batch_size):
+            # QuerySet._insert is a private Django method. bulk_create(ignore_conflicts=True) is
+            # built on it but never asks for RETURNING, so it cannot say which rows it inserted;
+            # calling _insert directly with returning_fields does, on PostgreSQL and SQLite 3.35+.
+            # test_app/tests/rbac/test_insert_new.py pins this Django behavior (RETURNING with
+            # ON CONFLICT DO NOTHING yields only the inserted rows) so a Django upgrade that
+            # changes it fails loudly instead of silently dropping audit/signal events.
+            #
+            # SQL shape (RoleUserAssignment; team_id for RoleTeamAssignment):
+            #   INSERT INTO dab_rbac_roleuserassignment (created, created_by_id, ..., user_id)
+            #   VALUES (...), (...), ...
+            #   ON CONFLICT DO NOTHING
+            #   RETURNING id, user_id, role_definition_id, object_role_id
+            rows = model.objects._insert(
+                assignments[start : start + batch_size],
+                fields=fields,
+                returning_fields=returning_fields,
+                on_conflict=OnConflict.IGNORE,
+            )
+            for row in rows:
+                if row is None:
+                    continue  # a one-object batch that conflicted: Django's one-row path returns [None]
+                pk, actor_id, role_definition_id, object_role_id = row
+                obj = by_identity[(actor_id, role_definition_id, object_role_id)]
+                obj.pk = pk
+                obj._state.adding = False
+                obj._state.db = model.objects.db
+                created.append(obj)
     return created
 
 
