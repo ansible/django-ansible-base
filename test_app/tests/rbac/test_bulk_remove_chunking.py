@@ -12,7 +12,7 @@ import pytest
 import ansible_base.rbac.pipeline as rbac_pipeline
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
-from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
+from ansible_base.rbac.pipeline import ResolvedAssignment, _find_assignments_chunked, _lookup_object_roles, bulk_give_permissions, bulk_remove_permissions
 from test_app.models import Inventory, Organization, User
 
 
@@ -55,8 +55,6 @@ def test_resolved_assignment_equality_ignores_parent_reference():
     so dict.fromkeys() collapses them before chunking — otherwise the same DB row is fetched
     from multiple batches with batch_size=1 and returned twice.
     """
-    from ansible_base.rbac.pipeline import ResolvedAssignment, _find_assignments_chunked, _lookup_object_roles
-
     org = Organization.objects.create(name='test_org')
     inv = Inventory.objects.create(name='inv', organization=org)
     user = User.objects.create(username='user')

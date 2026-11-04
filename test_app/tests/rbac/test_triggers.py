@@ -6,10 +6,11 @@ from django.conf import settings
 from django.test.utils import override_settings
 from rest_framework.exceptions import ValidationError
 
+from ansible_base.activitystream.models import Entry
 from ansible_base.rbac.caching import compute_team_member_roles
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
+from ansible_base.rbac.pipeline import _audit_log_created, bulk_give_permissions, bulk_remove_permissions
 from ansible_base.rbac.triggers import dab_post_migrate, defer_rbac_computations, post_migration_rbac_setup
 from test_app.models import Inventory, Organization, User
 
@@ -650,8 +651,6 @@ class TestBulkGivePermissions:
         bulk_create bypasses the per-row post_save, so _audit_log_created is the sole audit
         path. Exercises both actor types plus the empty-created early return.
         """
-        from ansible_base.activitystream.models import Entry
-
         inv1 = Inventory.objects.create(name='audit-sig-inv1', organization=organization)
         inv2 = Inventory.objects.create(name='audit-sig-inv2', organization=organization)
         perms = {
@@ -704,8 +703,6 @@ class TestBulkGivePermissions:
         Called directly because _create_assignments temporarily uses _fire_post_save instead;
         this keeps the restore target covered so the final cleanup PR is a safe swap-back.
         """
-        from ansible_base.rbac.pipeline import _audit_log_created
-
         inv = Inventory.objects.create(name='audit-endstate-inv', organization=organization)
         assignment = inv_rd.give_permission(rando, inv)
 
