@@ -61,9 +61,26 @@ def test_validator_counts_utf16_code_units():
     field = BoundedTextField(sql_server_max_length=2)
     with mock.patch('ansible_base.lib.fields.connection') as conn:
         conn.vendor = 'microsoft'
-        field.run_validators('\U0001F600')  # exactly 2 units, passes
+        field.run_validators('\U0001f600')  # exactly 2 units, passes
         with pytest.raises(ValidationError):
-            field.run_validators('a\U0001F600')  # 3 units, fails
+            field.run_validators('a\U0001f600')  # 3 units, fails
+
+
+def test_inherited_fields_validator_is_not_bound_to_abstract_field():
+    """Fields inherited from abstract bases must carry a validator that holds its own
+    bound, not a method bound to the abstract base's field instance (which would
+    report the abstract field's model/name and share mutable state across copies)."""
+    from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID
+
+    for model, field_name in [(ObjectRole, 'object_id'), (RoleEvaluation, 'codename'), (RoleEvaluationUUID, 'codename')]:
+        field = model._meta.get_field(field_name)
+        for v in field.validators:
+            owner = getattr(v, '__self__', None)
+            if owner is None:
+                continue
+            assert (
+                not hasattr(owner, 'sql_server_max_length') or owner is field
+            ), f'{model.__name__}.{field_name}: validator is bound to {owner!r} instead of carrying its own bound'
 
 
 @pytest.mark.django_db

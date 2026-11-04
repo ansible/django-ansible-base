@@ -5,6 +5,33 @@ from django.db import connection, models
 from django.utils.translation import gettext_lazy as _
 
 
+class SQLServerMaxLengthValidator:
+    """Reject values longer than an nvarchar bound, counting UTF-16 code units.
+
+    A standalone callable (not a field method) so that fields inherited from
+    abstract bases carry the bound with them, instead of a method bound to the
+    abstract base's field instance.
+    """
+
+    def __init__(self, sql_server_max_length):
+        self.sql_server_max_length = sql_server_max_length
+
+    def __call__(self, value):
+        if not value or connection.vendor != 'microsoft':
+            return
+        # nvarchar length is UTF-16 code units: surrogate pairs count as two
+        length = len(value.encode('utf-16-le', errors='surrogatepass')) // 2
+        if length > self.sql_server_max_length:
+            raise ValidationError(
+                _('Ensure this value has at most %(limit)d UTF-16 code units on MS SQL Server (it has %(length)d).'),
+                code='max_length',
+                params={'limit': self.sql_server_max_length, 'length': length},
+            )
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}(sql_server_max_length={self.sql_server_max_length})'
+
+
 class BoundedTextField(models.TextField):
     """TextField that SQL Server can index.
 
@@ -17,7 +44,7 @@ class BoundedTextField(models.TextField):
     def __init__(self, *args, sql_server_max_length, **kwargs):
         self.sql_server_max_length = sql_server_max_length
         super().__init__(*args, **kwargs)
-        self.validators.append(self._validate_sql_server_length)
+        self.validators.append(SQLServerMaxLengthValidator(sql_server_max_length))
 
     def deconstruct(self):
         name, path, args, kwargs = super().deconstruct()
@@ -25,20 +52,6 @@ class BoundedTextField(models.TextField):
         return name, path, args, kwargs
 
     def db_type(self, connection):
-        # Note: this method's `connection` parameter shadows the module-level import;
-        # the validator below reads the module-level one at call time.
         if connection.vendor == 'microsoft':
             return f'nvarchar({self.sql_server_max_length})'
         return super().db_type(connection)
-
-    def _validate_sql_server_length(self, value):
-        if not value or connection.vendor != 'microsoft':
-            return
-        # nvarchar length is UTF-16 code units: surrogate pairs count as two
-        length = len(value.encode('utf-16-le', errors='surrogatepass')) // 2
-        if length > self.sql_server_max_length:
-            raise ValidationError(
-                _('Ensure this value has at most %(limit)d UTF-16 code units on MS SQL Server (it has %(length)d).'),
-                code='max_length',
-                params={'limit': self.sql_server_max_length, 'length': length},
-            )
