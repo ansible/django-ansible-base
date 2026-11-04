@@ -166,7 +166,10 @@ def _resolve_assignments(
 
 
 def _batch_resolve_object_ansible_ids(resolved: Sequence[ResolvedAssignment]) -> dict[tuple[str, str, str], str]:
-    """Resolve local assignment resources in one query for the whole batch."""
+    """Resolve local assignment resources in one query for the whole batch.
+
+    Global assignments (content_type is None) are skipped - they have no object_ansible_id.
+    """
     if not resolved or not django_apps.is_installed('ansible_base.resource_registry'):
         return {}
 
@@ -174,6 +177,9 @@ def _batch_resolve_object_ansible_ids(resolved: Sequence[ResolvedAssignment]) ->
     services_by_type: dict[tuple[str, str], set[str]] = {}
     for assignment in resolved:
         content_type = assignment.content_type
+        # Skip global assignments (content_type is None)
+        if content_type is None:
+            continue
         content_type_key = (content_type.app_label, content_type.model)
         object_ids_by_type.setdefault(content_type_key, set()).add(assignment.object_id)
         services_by_type.setdefault(content_type_key, set()).add(content_type.service)
