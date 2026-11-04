@@ -17,7 +17,7 @@ logger = logging.getLogger('ansible_base.lib.channels.middleware')
 def _get_authenticated_user(scope: dict):
     request = HttpRequest()
     request.META = {_http_key(k.decode()): v.decode() for (k, v) in scope["headers"]}
-    auth_classes = [auth() for auth in api_settings.DEFAULT_AUTHENTICATION_CLASSES]  # type: ignore[operator]
+    auth_classes = [auth() for auth in api_settings.DEFAULT_AUTHENTICATION_CLASSES]
     try:
         return Request(request, authenticators=auth_classes).user
     except Exception:

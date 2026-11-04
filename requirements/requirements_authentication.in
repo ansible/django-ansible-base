@@ -9,6 +9,7 @@ requests  # OIDC discovery HTTP client for oauth_bearer (also used via social-au
 # LDAP Authenticator Plugins
 django-auth-ldap
 python-ldap
+pyasn1>=0.6.5  # CVE-2026-119197: Quadratic-complexity denial of service in binary REAL decoding
 ldap-filter
 
 # Social Authenticator Plugins
