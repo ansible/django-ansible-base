@@ -1,5 +1,6 @@
 """Model fields shared across ansible_base apps."""
 
+from django.core import checks
 from django.core.exceptions import ValidationError
 from django.db import connection, models
 from django.utils.translation import gettext_lazy as _
@@ -45,6 +46,19 @@ class BoundedTextField(models.TextField):
         self.sql_server_max_length = sql_server_max_length
         super().__init__(*args, **kwargs)
         self.validators.append(SQLServerMaxLengthValidator(sql_server_max_length))
+
+    def check(self, **kwargs):
+        errors = super().check(**kwargs)
+        if not 1 <= self.sql_server_max_length <= 4000:
+            errors.append(
+                checks.Error(
+                    f'sql_server_max_length must be between 1 and 4000, got {self.sql_server_max_length}',
+                    hint='SQL Server nvarchar accepts at most 4000 characters.',
+                    obj=self,
+                    id='ansible_base.E003',
+                )
+            )
+        return errors
 
     def deconstruct(self):
         name, path, args, kwargs = super().deconstruct()

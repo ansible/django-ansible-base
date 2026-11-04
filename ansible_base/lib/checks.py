@@ -21,6 +21,16 @@ def check_charfield_has_max_length(app_configs, **kwargs):
     return errors
 
 
+def _referenced_field_names(expressions):
+    "Field names referenced by index/constraint expressions, e.g. Index(Lower('name'))."
+    names = set()
+    for expression in expressions or ():
+        for subexpression in expression.flatten():
+            if isinstance(subexpression, models.F) and '__' not in subexpression.name:
+                names.add(subexpression.name)
+    return names
+
+
 def _is_indexed_or_unique(field, model):
     "Return True if the field is indexed or made unique at the field, Meta, or constraint level."
     if field.db_index or field.unique:
@@ -29,10 +39,12 @@ def _is_indexed_or_unique(field, model):
     if any(field.name in fields for fields in unique_together):
         return True
     for constraint in model._meta.constraints:
-        if isinstance(constraint, models.UniqueConstraint) and field.name in (constraint.fields or []):
+        if isinstance(constraint, models.UniqueConstraint) and (
+            field.name in (constraint.fields or []) or field.name in _referenced_field_names(constraint.expressions)
+        ):
             return True
     for index in model._meta.indexes:
-        if field.name in {name.lstrip('-') for name in index.fields}:
+        if field.name in {name.lstrip('-') for name in index.fields} or field.name in _referenced_field_names(index.expressions):
             return True
     return False
 

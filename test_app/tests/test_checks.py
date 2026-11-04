@@ -1,6 +1,7 @@
 from unittest import mock
 
 from django.db import models
+from django.db.models.functions import Lower
 
 from ansible_base.authentication.models.authenticator import Authenticator
 from ansible_base.lib.checks import check_charfield_has_max_length, check_textfield_indexed_is_bounded
@@ -30,6 +31,19 @@ def test_check_flags_indexed_plain_textfield():
 def test_check_flags_index_declared_in_meta():
     # ObjectRole.object_id carries no field-level db_index; its index is on Meta
     with mock.patch.object(RoleDefinition._meta, 'indexes', [models.Index(fields=['description'])]):
+        errors = check_textfield_indexed_is_bounded(None)
+        assert [e.id for e in errors] == ['ansible_base.E002']
+
+
+def test_check_flags_expression_index_on_plain_textfield():
+    # fields-based indexes leave Index.expressions empty; expression-based ones leave fields empty
+    with mock.patch.object(RoleDefinition._meta, 'indexes', [models.Index(Lower('description'), name='desc_lower_idx')]):
+        errors = check_textfield_indexed_is_bounded(None)
+        assert [e.id for e in errors] == ['ansible_base.E002']
+
+
+def test_check_flags_expression_unique_constraint_on_plain_textfield():
+    with mock.patch.object(RoleDefinition._meta, 'constraints', [models.UniqueConstraint(Lower('description'), name='uniq_desc_lower')]):
         errors = check_textfield_indexed_is_bounded(None)
         assert [e.id for e in errors] == ['ansible_base.E002']
 
