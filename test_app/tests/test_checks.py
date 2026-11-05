@@ -4,7 +4,7 @@ from django.db import models
 from django.db.models.functions import Lower
 
 from ansible_base.authentication.models.authenticator import Authenticator
-from ansible_base.lib.checks import _index_key_bytes, check_bounded_textfield_index_key_size, check_charfield_has_max_length, check_textfield_indexed_is_bounded
+from ansible_base.lib.checks import _index_key_width, check_bounded_textfield_index_key_size, check_charfield_has_max_length, check_textfield_indexed_is_bounded
 from ansible_base.rbac.models import DABContentType, ObjectRole, RoleDefinition
 from test_app.models import MetadataTestModel
 
@@ -126,9 +126,16 @@ def test_check_ignores_composite_key_without_bounded_columns():
         assert check_bounded_textfield_index_key_size(None) == []
 
 
-def test_index_key_bytes_counts_charfield_columns():
+def test_index_key_width_counts_charfield_columns():
     # mssql-django maps CharField to nvarchar: 2 bytes per character
-    assert _index_key_bytes(DABContentType, ['service', 'model']) == 400
+    assert _index_key_width(DABContentType._meta.get_field('service')) == 200
+
+
+def test_index_key_width_counts_datetime_field_as_eight_bytes():
+    # DateTimeField inherits DateField; the wider type must win so a key like
+    # BoundedTextField(848) + DateTimeField fails E004 at 1704 bytes, not passes at 1699
+    assert _index_key_width(models.DateTimeField()) == 8
+    assert _index_key_width(models.DateField()) == 3
 
 
 def test_check_ignores_consumer_apps_on_key_size():

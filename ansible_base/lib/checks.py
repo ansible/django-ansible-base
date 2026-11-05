@@ -50,19 +50,24 @@ def _is_indexed_or_unique(field, model):
     return False
 
 
+def _dab_models():
+    "Concrete, non-proxy models of ansible_base apps (app_label is dab_rbac etc.; the module path is the reliable DAB scope test)."
+    for model in django.apps.apps.get_models():
+        if not model._meta.proxy and not model._meta.abstract and django.apps.apps.get_app_config(model._meta.app_label).name.startswith('ansible_base.'):
+            yield model
+
+
+def _local_fields(model):
+    "The model's declared, non-auto-created fields."
+    return [field for field in model._meta.fields if not field.auto_created]
+
+
 @register()
 def check_textfield_indexed_is_bounded(app_configs, **kwargs):
     "Error on TextFields that carry an index or unique constraint in ansible_base apps; SQL Server cannot index nvarchar(max)."
     errors = []
-    for model in django.apps.apps.get_models():
-        if model._meta.proxy or model._meta.abstract:
-            continue
-        # app_label is dab_rbac / dab_resource_registry / etc.; the module path is the reliable DAB scope test
-        if not django.apps.apps.get_app_config(model._meta.app_label).name.startswith('ansible_base.'):
-            continue
-        for field in model._meta.fields:
-            if field.auto_created:
-                continue
+    for model in _dab_models():
+        for field in _local_fields(model):
             if isinstance(field, models.TextField) and not isinstance(field, BoundedTextField) and _is_indexed_or_unique(field, model):
                 errors.append(
                     Error(
@@ -105,9 +110,10 @@ def _index_key_width(field):
     if isinstance(field, models.ForeignKey):
         # a foreign key column mirrors the width of the target's primary key
         return _index_key_width(field.target_field)
-    for width_type, width in MSSQL_FIELD_WIDTHS.items():
-        if isinstance(field, width_type):
-            return width
+    # walk the type's own mro so subclasses count as themselves before their parents (DateTimeField inherits DateField but is wider)
+    for field_type in type(field).__mro__:
+        if field_type in MSSQL_FIELD_WIDTHS:
+            return MSSQL_FIELD_WIDTHS[field_type]
     return 0
 
 
@@ -122,11 +128,6 @@ def _index_key_fields(model, field_names):
     return fields
 
 
-def _index_key_bytes(model, field_names):
-    "Bytes of SQL Server index key that the columns named in field_names occupy."
-    return sum(_index_key_width(field) for field in _index_key_fields(model, field_names))
-
-
 def _keyed_field_names(index_or_constraint):
     "Field names an index or unique constraint keys on, via fields or expressions."
     names = {name.lstrip('-') for name in (index_or_constraint.fields or [])}
@@ -134,48 +135,58 @@ def _keyed_field_names(index_or_constraint):
     return names
 
 
+def _model_keys(model):
+    "The model's unique_together entries, unique constraints, and indexes."
+    yield from model._meta.unique_together
+    yield from (constraint for constraint in model._meta.constraints if isinstance(constraint, models.UniqueConstraint))
+    yield from model._meta.indexes
+
+
+def _field_key_size_error(model, field):
+    "E004 for a field-level indexed or unique BoundedTextField whose column alone exceeds the budget, or None."
+    if not (isinstance(field, BoundedTextField) and (field.db_index or field.unique)):
+        return None
+    key_bytes = _index_key_width(field)
+    if key_bytes <= MSSQL_INDEX_KEY_BYTES:
+        return None
+    return Error(
+        f'{model._meta.label}.{field.name} needs {key_bytes} bytes of SQL Server index key',
+        hint=f"Lower sql_server_max_length on '{field.name}' in {model._meta.label} to 850 or less; "
+        f"nvarchar takes 2 bytes per code unit and SQL Server limits nonclustered index keys to {MSSQL_INDEX_KEY_BYTES} bytes.",
+        obj=model,
+        id='ansible_base.E004',
+    )
+
+
+def _composite_key_size_error(model, key):
+    "E004 for an index or unique constraint whose columns together exceed the budget, or None. Keys without a BoundedTextField are E002's concern."
+    field_names = _keyed_field_names(key) if hasattr(key, 'fields') else set(key)  # unique_together entries are plain tuples of names
+    fields = _index_key_fields(model, field_names)
+    if not any(isinstance(field, BoundedTextField) for field in fields):
+        return None
+    key_bytes = sum(_index_key_width(field) for field in fields)
+    if key_bytes <= MSSQL_INDEX_KEY_BYTES:
+        return None
+    name = getattr(key, 'name', key)  # unique_together entries are plain tuples
+    return Error(
+        f'{model._meta.label} key {name} needs {key_bytes} bytes of SQL Server index key',
+        hint=f"Lower the sql_server_max_length of the BoundedTextField columns in {name}; "
+        f"SQL Server limits nonclustered index keys to {MSSQL_INDEX_KEY_BYTES} bytes, shared by every column in the key.",
+        obj=model,
+        id='ansible_base.E004',
+    )
+
+
 @register()
 def check_bounded_textfield_index_key_size(app_configs, **kwargs):
     "Error when an index or unique constraint containing a BoundedTextField exceeds SQL Server's index key-size budget."
     " A bound within E003's range can still be undeployable."
     errors = []
-    for model in django.apps.apps.get_models():
-        if model._meta.proxy or model._meta.abstract:
-            continue
-        if not django.apps.apps.get_app_config(model._meta.app_label).name.startswith('ansible_base.'):
-            continue
-        for field in model._meta.fields:
-            if field.auto_created:
-                continue
-            if isinstance(field, BoundedTextField) and (field.db_index or field.unique):
-                key_bytes = _index_key_width(field)
-                if key_bytes > MSSQL_INDEX_KEY_BYTES:
-                    errors.append(
-                        Error(
-                            f'{model._meta.label}.{field.name} needs {key_bytes} bytes of SQL Server index key',
-                            hint=f"Lower sql_server_max_length on '{field.name}' in {model._meta.label} to 850 or less; "
-                            f"nvarchar takes 2 bytes per code unit and SQL Server limits nonclustered index keys to {MSSQL_INDEX_KEY_BYTES} bytes.",
-                            obj=model,
-                            id='ansible_base.E004',
-                        )
-                    )
-        keys = [(ut, set(ut)) for ut in model._meta.unique_together]
-        keys += [(constraint, _keyed_field_names(constraint)) for constraint in model._meta.constraints if isinstance(constraint, models.UniqueConstraint)]
-        keys += [(index, _keyed_field_names(index)) for index in model._meta.indexes]
-        for key, field_names in keys:
-            fields = _index_key_fields(model, field_names)
-            if not any(isinstance(field, BoundedTextField) for field in fields):
-                continue  # keys without a bounded column are E002's concern, not this check's
-            key_bytes = sum(_index_key_width(field) for field in fields)
-            if key_bytes > MSSQL_INDEX_KEY_BYTES:
-                name = getattr(key, 'name', key)
-                errors.append(
-                    Error(
-                        f'{model._meta.label} key {name} needs {key_bytes} bytes of SQL Server index key',
-                        hint=f"Lower the sql_server_max_length of the BoundedTextField columns in {name}; "
-                        f"SQL Server limits nonclustered index keys to {MSSQL_INDEX_KEY_BYTES} bytes, shared by every column in the key.",
-                        obj=model,
-                        id='ansible_base.E004',
-                    )
-                )
+    for model in _dab_models():
+        for field in _local_fields(model):
+            if error := _field_key_size_error(model, field):
+                errors.append(error)
+        for key in _model_keys(model):
+            if error := _composite_key_size_error(model, key):
+                errors.append(error)
     return errors
