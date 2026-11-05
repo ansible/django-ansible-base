@@ -96,6 +96,9 @@ NVARCHAR_BYTES_PER_CODE_UNIT = 2
 # they face the tighter clustered limit.
 MSSQL_CLUSTERED_KEY_BYTES = 900
 
+# the three key-size helpers report under one check id
+INDEX_KEY_SIZE_ERROR = 'ansible_base.E004'
+
 # Storage widths, in bytes, of the fixed-width SQL Server column types that appear in indexes,
 # matching the mssql-django 2.0.0 DDL mappings (UUIDField is char(32); DateTimeField is
 # datetime2, or datetimeoffset when USE_TZ — see _index_key_width).
@@ -184,7 +187,7 @@ def _composite_pk_key_size_error(model):
         hint=f"Lower the sql_server_max_length of the BoundedTextField columns in the primary key; "
         f"primary keys are clustered on SQL Server, which limits index keys to {MSSQL_CLUSTERED_KEY_BYTES} bytes.",
         obj=model,
-        id='ansible_base.E004',
+        id=INDEX_KEY_SIZE_ERROR,
     )
 
 
@@ -201,7 +204,7 @@ def _field_key_size_error(model, field):
         hint=f"Lower sql_server_max_length on '{field.name}' in {model._meta.label} to 850 or less; "
         f"nvarchar takes 2 bytes per code unit and SQL Server limits nonclustered index keys to {MSSQL_INDEX_KEY_BYTES} bytes.",
         obj=model,
-        id='ansible_base.E004',
+        id=INDEX_KEY_SIZE_ERROR,
     )
 
 
@@ -221,7 +224,7 @@ def _composite_key_size_error(model, key, unique):
         hint=f"Lower the sql_server_max_length of the BoundedTextField columns in {name}; "
         f"SQL Server limits nonclustered index keys to {MSSQL_INDEX_KEY_BYTES} bytes, shared by every column in the key.",
         obj=model,
-        id='ansible_base.E004',
+        id=INDEX_KEY_SIZE_ERROR,
     )
 
 
