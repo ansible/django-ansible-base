@@ -134,9 +134,10 @@ def test_bearer_credential_parser_accepts_valid_headers(authorization, expected_
 def test_bearer_credential_parser_rejects_malformed_claimed_headers(authorization):
     """Malformed attempts to use a supported scheme receive a Bearer failure."""
     request = _authorization_request(authorization)
+    authenticator = BearerAuthentication()
 
     with pytest.raises(BearerAuthenticationFailed, match="Invalid Bearer token"):
-        BearerAuthentication()._get_bearer_credential(request)
+        authenticator._get_bearer_credential(request)
 
 
 def test_bearer_authentication_returns_401_for_tab_delimited_credential():
