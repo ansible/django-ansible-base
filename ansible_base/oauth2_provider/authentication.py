@@ -5,6 +5,7 @@ from django.utils.encoding import smart_str
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.oauth2_backends import OAuthLibCore as _OAuthLibCore
 from rest_framework.exceptions import ParseError, UnsupportedMediaType
+from rest_framework.request import WrappedAttributeError
 
 from ansible_base.lib.logging import log_auth_event
 from ansible_base.lib.utils.hashing import hash_string
@@ -21,7 +22,7 @@ class OAuthLibCore(_OAuthLibCore):
             return request.POST.items()
         except (UnsupportedMediaType, ParseError):
             return ()
-        except AttributeError as exc:
+        except (AttributeError, WrappedAttributeError) as exc:
             logger.debug('Request object does not support body parsing; skipping form body extraction: %s', exc)
             return ()
 
