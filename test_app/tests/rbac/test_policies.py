@@ -91,24 +91,32 @@ def test_setting_does_not_affect_other_user_changes():
 
 
 @pytest.mark.django_db
-@override_settings(ALLOW_USER_EMAIL_SELF_EDIT=True, MANAGE_ORGANIZATION_AUTH=False)
+@override_settings(ALLOW_USER_EMAIL_SELF_EDIT=True, ALLOW_USER_USERNAME_SELF_EDIT=True, MANAGE_ORGANIZATION_AUTH=False)
 def test_self_edit_setting_requires_manage_org_auth():
-    """ALLOW_USER_EMAIL_SELF_EDIT should not bypass the MANAGE_ORGANIZATION_AUTH gate."""
+    """Own-account updates stay allowed when MANAGE_ORGANIZATION_AUTH is off.
+
+    Email and username self-edit settings must not bypass that gate.
+    """
     alice = User.objects.create(username='alice')
-    assert not can_change_user(alice, alice)
+    assert can_change_user(alice, alice)
+    assert not can_change_user(alice, alice, can_self_edit=False)
+    assert not can_change_user(alice, alice, can_self_edit=False, self_edit_setting='ALLOW_USER_USERNAME_SELF_EDIT')
 
 
 @pytest.mark.django_db
 @override_settings(MANAGE_ORGANIZATION_AUTH=False)
 def test_org_admin_cannot_change_email_when_manage_org_auth_disabled(org_admin_rd, org_member_rd, organization):
-    """Org admins cannot change their own or others' email when MANAGE_ORGANIZATION_AUTH is off."""
+    """Org admins cannot change email when MANAGE_ORGANIZATION_AUTH is off.
+
+    They can still update their own account. They cannot update another user.
+    """
     org_admin = User.objects.create(username='org-admin')
     member = User.objects.create(username='member')
     org_admin_rd.give_permission(org_admin, organization)
     org_member_rd.give_permission(member, organization)
     assert not can_change_user(org_admin, org_admin, can_self_edit=False)
     assert not can_change_user(org_admin, member, can_self_edit=False)
-    assert not can_change_user(org_admin, org_admin)
+    assert can_change_user(org_admin, org_admin)
     assert not can_change_user(org_admin, member)
 
 
@@ -130,11 +138,11 @@ def test_both_none_returns_false():
 
 @pytest.mark.django_db
 @override_settings(MANAGE_ORGANIZATION_AUTH=False)
-def test_non_superuser_cannot_change_user_when_manage_org_auth_disabled():
+def test_user_can_change_self_but_not_others_when_manage_org_auth_disabled():
     alice = User.objects.create(username='alice')
     bob = User.objects.create(username='bob')
     assert not can_change_user(alice, bob)
-    assert not can_change_user(alice, alice)
+    assert can_change_user(alice, alice)
     assert not can_change_user(alice, alice, can_self_edit=False)
 
 
