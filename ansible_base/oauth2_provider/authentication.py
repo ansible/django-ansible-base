@@ -15,6 +15,7 @@ logger = logging.getLogger('ansible_base.oauth2_provider.authentication')
 
 class OAuthLibCore(_OAuthLibCore):
     def extract_body(self, request):
+        """Return form body parameters when the request supports body parsing."""
         # request.POST.items() can fail for non-form content types, or when the
         # underlying request object does not support body/stream access; return
         # empty so OAuth2 falls back to the Authorization header.
