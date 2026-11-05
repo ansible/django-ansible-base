@@ -1,4 +1,5 @@
 import logging
+import re
 from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
@@ -134,15 +135,17 @@ class BearerAuthentication(ChallengeAwareAuthenticationMixin, BaseAuthentication
             logger.debug("No Authorization header found")
             return None
 
-        auth_type, _, token = authorization.partition(" ")
-        auth_scheme = auth_type.lower()
-        if auth_scheme not in {"bearer", "token"}:
+        match = re.fullmatch(r"(?i)(Bearer|Token) +(\S+)\s*", authorization)
+        if not match:
+            if re.match(r"(?i)(?:Bearer|Token)(?=\s|$)", authorization):
+                self._raise_failure(request)
             logger.debug("Authorization header is not a Bearer credential")
             return None
 
-        token = token.strip()
-        if not token:
-            self._raise_failure(request)
+        # The re ensures we have the correct scheme and a valid token.
+        auth_scheme = match.group(1).lower()
+        token = match.group(2)
+
         return auth_scheme, token
 
     def _authenticate_api_plugins(self, request: Request, token: str) -> tuple[AbstractBaseUser | None, Any | None, BearerTokenValidationError | None]:

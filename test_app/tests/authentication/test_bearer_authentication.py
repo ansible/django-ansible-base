@@ -35,6 +35,11 @@ def _request(token: str | None = None, scheme: str = "Bearer"):
     return Request(_django_request(token, scheme))
 
 
+def _authorization_request(authorization: str):
+    """Build a DRF request with an exact Authorization header value."""
+    return Request(RequestFactory().get("/", HTTP_AUTHORIZATION=authorization))
+
+
 class _BearerProtectedView(APIView):
     """Exercise DRF's authentication-error-to-response flow for Bearer challenges."""
 
@@ -95,6 +100,66 @@ def test_bearer_authentication_rejects_an_empty_bearer_token():
 
     with pytest.raises(AuthenticationFailed, match="Invalid Bearer token"):
         authenticator.authenticate(request)
+
+
+@pytest.mark.parametrize(
+    ("authorization", "expected_credential"),
+    [
+        ("Bearer opaque-token", ("bearer", "opaque-token")),
+        ("bEaReR  opaque-token", ("bearer", "opaque-token")),
+        ("Token opaque-token", ("token", "opaque-token")),
+        ("TOKEN opaque-token", ("token", "opaque-token")),
+        ("Bearer token+/=._~-", ("bearer", "token+/=._~-")),
+        ("Bearer opaque-token \t", ("bearer", "opaque-token")),
+    ],
+)
+def test_bearer_credential_parser_accepts_valid_headers(authorization, expected_credential):
+    """Supported schemes require a space-delimited, non-whitespace credential."""
+    request = _authorization_request(authorization)
+
+    assert BearerAuthentication()._get_bearer_credential(request) == expected_credential
+
+
+@pytest.mark.parametrize(
+    "authorization",
+    [
+        "Bearer",
+        "Bearer ",
+        "Bearer\topaque-token",
+        "Token\topaque-token",
+        "Bearer opaque token",
+        "Token opaque token",
+    ],
+)
+def test_bearer_credential_parser_rejects_malformed_claimed_headers(authorization):
+    """Malformed attempts to use a supported scheme receive a Bearer failure."""
+    request = _authorization_request(authorization)
+    authenticator = BearerAuthentication()
+
+    with pytest.raises(BearerAuthenticationFailed, match="Invalid Bearer token"):
+        authenticator._get_bearer_credential(request)
+
+
+def test_bearer_authentication_returns_401_for_tab_delimited_credential():
+    """A tab cannot delimit the Bearer scheme and credential."""
+    response = _BearerProtectedView.as_view()(RequestFactory().get("/", HTTP_AUTHORIZATION="Bearer\topaque-token"))
+
+    assert response.status_code == 401
+    assert response["WWW-Authenticate"] == 'Bearer realm="api", error="invalid_token"'
+
+
+@pytest.mark.parametrize(
+    "authorization",
+    [
+        "Basic credentials",
+        "Digest credentials",
+        "Bearerish opaque-token",
+        "Tokenish opaque-token",
+    ],
+)
+def test_bearer_credential_parser_ignores_other_schemes(authorization):
+    """Headers for unrelated schemes remain available to later authenticators."""
+    assert BearerAuthentication()._get_bearer_credential(_authorization_request(authorization)) is None
 
 
 @pytest.mark.django_db
@@ -408,7 +473,7 @@ def test_bearer_authentication_audits_unexpected_plugin_exceptions_without_token
         patch("ansible_base.authentication.bearer_authentication.log_auth_exception") as log_auth_exception,
     ):
         authenticator = BearerAuthentication()
-        request = _request("untrusted token content")
+        request = _request("untrusted-token-content")
         with pytest.raises(BearerAuthenticationFailed):
             authenticator.authenticate(request)
 
