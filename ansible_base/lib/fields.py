@@ -6,6 +6,11 @@ from django.db import connection, models
 from django.utils.translation import gettext_lazy as _
 
 
+def is_sql_server(connection):
+    "True when the given database connection is SQL Server (mssql-django's vendor name)."
+    return connection.vendor == 'microsoft'
+
+
 class SQLServerMaxLengthValidator:
     """Reject values longer than an nvarchar bound, counting UTF-16 code units.
 
@@ -18,7 +23,7 @@ class SQLServerMaxLengthValidator:
         self.sql_server_max_length = sql_server_max_length
 
     def __call__(self, value):
-        if not value or connection.vendor != 'microsoft':
+        if not value or not is_sql_server(connection):
             return
         # nvarchar length is UTF-16 code units: surrogate pairs count as two
         length = len(value.encode('utf-16-le', errors='surrogatepass')) // 2
@@ -68,6 +73,6 @@ class BoundedTextField(models.TextField):
         return name, path, args, kwargs
 
     def db_type(self, connection):
-        if connection.vendor == 'microsoft':
+        if is_sql_server(connection):
             return f'nvarchar({self.sql_server_max_length})'
         return super().db_type(connection)

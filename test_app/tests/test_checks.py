@@ -43,6 +43,14 @@ def test_check_flags_expression_index_on_plain_textfield():
         assert [e.id for e in errors] == ['ansible_base.E002']
 
 
+def test_check_flags_plain_textfield_in_composite_primary_key():
+    # a CompositePrimaryKey adds nothing to _meta.constraints or field db_index/unique flags,
+    # so primary-key membership must be considered explicitly
+    with mock.patch.object(RoleDefinition._meta, 'pk', models.CompositePrimaryKey('description', 'id')):
+        errors = check_textfield_indexed_is_bounded(None)
+        assert [e.id for e in errors] == ['ansible_base.E002']
+
+
 def test_check_flags_expression_unique_constraint_on_plain_textfield():
     with mock.patch.object(RoleDefinition._meta, 'constraints', [models.UniqueConstraint(Lower('description'), name='uniq_desc_lower')]):
         errors = check_textfield_indexed_is_bounded(None)
@@ -187,4 +195,57 @@ def test_check_ignores_consumer_apps_on_key_size():
     # no ansible_base model is involved: test_app violations never fire
     field = MetadataTestModel._meta.get_field('description')
     with mock.patch.object(field, 'db_index', new=True):
+        assert check_bounded_textfield_index_key_size(None) == []
+
+
+def test_mssql_checks_run_by_default():
+    # the 'mssql' tag groups the SQL Server checks without dropping them from a plain
+    # manage.py check: registry.registered_checks is what runs when no --tags are given
+    from django.core.checks.registry import registry
+
+    assert check_textfield_indexed_is_bounded in registry.registered_checks
+    assert check_bounded_textfield_index_key_size in registry.registered_checks
+    assert 'mssql' in registry.tags_available()
+
+
+def test_check_flags_composite_primary_key_over_clustered_budget():
+    # primary keys are clustered on SQL Server (mssql-django never emits NONCLUSTERED):
+    # the 900-byte limit applies, and BTF(450) + BigAutoField id = 908 bytes
+    with (
+        mock.patch.object(RoleDefinition._meta, 'pk', models.CompositePrimaryKey('name', 'id')),
+        mock.patch.object(RoleDefinition._meta.get_field('name'), 'sql_server_max_length', new=450),
+    ):
+        errors = check_bounded_textfield_index_key_size(None)
+        assert [e.id for e in errors] == ['ansible_base.E004']
+        assert 'primary key' in errors[0].msg
+
+
+def test_check_allows_composite_primary_key_at_clustered_budget():
+    # BTF(445) + BigAutoField id = 898 bytes, inside the 900-byte clustered budget
+    with (
+        mock.patch.object(RoleDefinition._meta, 'pk', models.CompositePrimaryKey('name', 'id')),
+        mock.patch.object(RoleDefinition._meta.get_field('name'), 'sql_server_max_length', new=445),
+    ):
+        assert check_bounded_textfield_index_key_size(None) == []
+
+
+def test_check_flags_nonunique_index_over_budget_with_primary_key_columns():
+    # SQL Server carries the clustered key in every non-unique index:
+    # BTF(848) = 1696 bytes + the BigAutoField id's 8 = 1704, over the 1700-byte budget
+    with (
+        mock.patch.object(RoleDefinition._meta, 'indexes', [models.Index(fields=['name'], name='test_nonunique_with_pk')]),
+        mock.patch.object(RoleDefinition._meta.get_field('name'), 'sql_server_max_length', new=848),
+    ):
+        errors = check_bounded_textfield_index_key_size(None)
+        assert [e.id for e in errors] == ['ansible_base.E004']
+        assert 'test_nonunique_with_pk' in errors[0].msg
+
+
+def test_check_ignores_primary_key_width_for_unique_constraints():
+    # unique indexes keep the clustered key in the leaf as included columns, which do not
+    # count against the key budget: BTF(848) = 1696 bytes fits even though the pk adds 8 more
+    with (
+        mock.patch.object(RoleDefinition._meta, 'constraints', [models.UniqueConstraint(fields=['name'], name='test_unique_no_pk')]),
+        mock.patch.object(RoleDefinition._meta.get_field('name'), 'sql_server_max_length', new=848),
+    ):
         assert check_bounded_textfield_index_key_size(None) == []

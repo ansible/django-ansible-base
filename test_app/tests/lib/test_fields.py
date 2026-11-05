@@ -4,7 +4,14 @@ from unittest import mock
 import pytest
 from django.core.exceptions import ValidationError
 
-from ansible_base.lib.fields import BoundedTextField
+from ansible_base.lib.fields import BoundedTextField, is_sql_server
+
+
+def test_is_sql_server_matches_vendor():
+    # mssql-django's vendor name is 'microsoft', not 'mssql' — the helper is the one place that knows
+    assert is_sql_server(SimpleNamespace(vendor='microsoft')) is True
+    assert is_sql_server(SimpleNamespace(vendor='postgresql')) is False
+    assert is_sql_server(SimpleNamespace(vendor='')) is False
 
 
 class FakeConnection:

@@ -36,9 +36,12 @@ def _referenced_field_names(expressions):
 
 
 def _is_indexed_or_unique(field, model):
-    "Return True if the field is indexed or made unique at the field, Meta, or constraint level."
+    "Return True if the field is indexed or made unique at the field, Meta, primary-key, or constraint level."
     if field.db_index or field.unique:
         return True
+    pk = model._meta.pk
+    if isinstance(pk, models.CompositePrimaryKey) and field.name in pk.field_names:
+        return True  # primary-key columns are indexed (and clustered) on SQL Server
     unique_together = [set(ut) for ut in model._meta.unique_together]
     if any(field.name in fields for fields in unique_together):
         return True
@@ -65,7 +68,7 @@ def _local_fields(model):
     return [field for field in model._meta.fields if not field.auto_created]
 
 
-@register()
+@register('mssql')
 def check_textfield_indexed_is_bounded(app_configs, **kwargs):
     "Error on TextFields that carry an index or unique constraint in ansible_base apps; SQL Server cannot index nvarchar(max)."
     errors = []
@@ -84,11 +87,14 @@ def check_textfield_indexed_is_bounded(app_configs, **kwargs):
 
 
 # SQL Server limits index keys to 1700 bytes for the nonclustered indexes Django creates
-# for Index, UniqueConstraint, and unique_together. (The 900-byte clustered limit governs
-# the primary key, which a BoundedTextField never is.) The budget is shared by every
-# column in a composite key, so the check counts them all, not just the bounded ones.
+# for Index, UniqueConstraint, and unique_together. The budget is shared by every column
+# in a composite key, so the check counts them all, not just the bounded ones.
 MSSQL_INDEX_KEY_BYTES = 1700
 NVARCHAR_BYTES_PER_CODE_UNIT = 2
+
+# Primary keys are clustered on SQL Server (mssql-django never emits NONCLUSTERED), so
+# they face the tighter clustered limit.
+MSSQL_CLUSTERED_KEY_BYTES = 900
 
 # Storage widths, in bytes, of the fixed-width SQL Server column types that appear in indexes,
 # matching the mssql-django 2.0.0 DDL mappings (UUIDField is char(32); DateTimeField is
@@ -146,17 +152,48 @@ def _keyed_field_names(index_or_constraint):
 
 
 def _model_keys(model):
-    "The model's unique_together entries, unique constraints, and indexes."
-    yield from model._meta.unique_together
-    yield from (constraint for constraint in model._meta.constraints if isinstance(constraint, models.UniqueConstraint))
-    yield from model._meta.indexes
+    "The model's unique_together entries, unique constraints, and indexes, as (key, unique) pairs."
+    yield from ((unique_together, True) for unique_together in model._meta.unique_together)
+    yield from ((constraint, True) for constraint in model._meta.constraints if isinstance(constraint, models.UniqueConstraint))
+    yield from ((index, bool(getattr(index, 'unique', False))) for index in model._meta.indexes)
+
+
+def _pk_fields(model):
+    "The primary-key fields: the pk itself, or the members of a CompositePrimaryKey."
+    pk = model._meta.pk
+    if isinstance(pk, models.CompositePrimaryKey):
+        return _index_key_fields(model, pk.field_names)
+    return [pk] if pk is not None else []
+
+
+def _pk_key_width(model, field_names=()):
+    "Width of the primary-key columns not already named in field_names. Non-unique indexes carry the clustered key on SQL Server."
+    return sum(_index_key_width(field) for field in _pk_fields(model) if field.name not in field_names)
+
+
+def _composite_pk_key_size_error(model):
+    "E004 for a composite primary key whose columns exceed the clustered-index budget, or None. Keys without a BoundedTextField are E002's concern."
+    fields = _pk_fields(model)
+    if not any(isinstance(field, BoundedTextField) for field in fields):
+        return None
+    key_bytes = sum(_index_key_width(field) for field in fields)
+    if key_bytes <= MSSQL_CLUSTERED_KEY_BYTES:
+        return None
+    return Error(
+        f'{model._meta.label} primary key needs {key_bytes} bytes of SQL Server index key',
+        hint=f"Lower the sql_server_max_length of the BoundedTextField columns in the primary key; "
+        f"primary keys are clustered on SQL Server, which limits index keys to {MSSQL_CLUSTERED_KEY_BYTES} bytes.",
+        obj=model,
+        id='ansible_base.E004',
+    )
 
 
 def _field_key_size_error(model, field):
     "E004 for a field-level indexed or unique BoundedTextField whose column alone exceeds the budget, or None."
     if not (isinstance(field, BoundedTextField) and (field.db_index or field.unique)):
         return None
-    key_bytes = _index_key_width(field)
+    # a plain db_index is a non-unique index: it carries the clustered key at no extra budget for unique indexes
+    key_bytes = _index_key_width(field) + (0 if field.unique else _pk_key_width(model, {field.name}))
     if key_bytes <= MSSQL_INDEX_KEY_BYTES:
         return None
     return Error(
@@ -168,13 +205,14 @@ def _field_key_size_error(model, field):
     )
 
 
-def _composite_key_size_error(model, key):
+def _composite_key_size_error(model, key, unique):
     "E004 for an index or unique constraint whose columns together exceed the budget, or None. Keys without a BoundedTextField are E002's concern."
     field_names = _keyed_field_names(key) if hasattr(key, 'fields') else set(key)  # unique_together entries are plain tuples of names
     fields = _index_key_fields(model, field_names)
     if not any(isinstance(field, BoundedTextField) for field in fields):
         return None
-    key_bytes = sum(_index_key_width(field) for field in fields)
+    # a non-unique index carries the clustered key; a unique index keeps the clustered key in the leaf as included columns, which do not count
+    key_bytes = sum(_index_key_width(field) for field in fields) + (0 if unique else _pk_key_width(model, field_names))
     if key_bytes <= MSSQL_INDEX_KEY_BYTES:
         return None
     name = getattr(key, 'name', key)  # unique_together entries are plain tuples
@@ -187,7 +225,7 @@ def _composite_key_size_error(model, key):
     )
 
 
-@register()
+@register('mssql')
 def check_bounded_textfield_index_key_size(app_configs, **kwargs):
     "Error when an index or unique constraint containing a BoundedTextField exceeds SQL Server's index key-size budget."
     " A bound within E003's range can still be undeployable."
@@ -196,7 +234,9 @@ def check_bounded_textfield_index_key_size(app_configs, **kwargs):
         for field in _local_fields(model):
             if error := _field_key_size_error(model, field):
                 errors.append(error)
-        for key in _model_keys(model):
-            if error := _composite_key_size_error(model, key):
+        for key, unique in _model_keys(model):
+            if error := _composite_key_size_error(model, key, unique):
                 errors.append(error)
+        if error := _composite_pk_key_size_error(model):
+            errors.append(error)
     return errors
