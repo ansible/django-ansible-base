@@ -141,7 +141,7 @@ def test_bearer_credential_parser_rejects_malformed_claimed_headers(authorizatio
 
 def test_bearer_authentication_returns_401_for_tab_delimited_credential():
     """A tab cannot delimit the Bearer scheme and credential."""
-    response = _BearerProtectedView.as_view()(_authorization_request("Bearer\topaque-token"))
+    response = _BearerProtectedView.as_view()(RequestFactory().get("/", HTTP_AUTHORIZATION="Bearer\topaque-token"))
 
     assert response.status_code == 401
     assert response["WWW-Authenticate"] == 'Bearer realm="api", error="invalid_token"'
@@ -472,7 +472,7 @@ def test_bearer_authentication_audits_unexpected_plugin_exceptions_without_token
         patch("ansible_base.authentication.bearer_authentication.log_auth_exception") as log_auth_exception,
     ):
         authenticator = BearerAuthentication()
-        request = _request("untrusted token content")
+        request = _request("untrusted-token-content")
         with pytest.raises(BearerAuthenticationFailed):
             authenticator.authenticate(request)
 
