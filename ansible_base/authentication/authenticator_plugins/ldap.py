@@ -592,9 +592,10 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
         """
         This gets called by _LDAPUser to create the user in the database.
         """
+        email_attr = ldap_user.settings.USER_ATTR_MAP.get('email')
         user, _authenticator_user, created = get_or_create_authenticator_user(
             uid=username.lower(),
-            email=ldap_user.attrs.data.get(ldap_user.settings.USER_ATTR_MAP['email'], ""),
+            email=(ldap_user.attrs.get(email_attr) or [''])[0] if email_attr else "",
             authenticator=self.database_instance,
             user_details={
                 "username": username,
