@@ -83,7 +83,22 @@ def test_inherited_fields_validator_is_not_bound_to_abstract_field():
             ), f'{model.__name__}.{field_name}: validator is bound to {owner!r} instead of carrying its own bound'
 
 
-@pytest.mark.parametrize('bound, flagged', [(0, True), (-1, True), (4001, True), (4000, False), (255, False), (1, False)])
+@pytest.mark.parametrize(
+    'bound, flagged',
+    [
+        (0, True),
+        (-1, True),
+        (4001, True),
+        (4000, False),
+        (255, False),
+        (1, False),
+        # non-integers must error, not pass (1.5/True) or crash the check (None/'255')
+        (1.5, True),
+        (True, True),
+        (None, True),
+        ('255', True),
+    ],
+)
 def test_check_flags_out_of_range_sql_server_bound(bound, flagged):
     """The field's own system check rejects bounds nvarchar cannot hold (max 4000)."""
     from ansible_base.rbac.models import RoleDefinition

@@ -1,4 +1,5 @@
 import django.apps
+from django.conf import settings
 from django.core.checks import Error, register
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
@@ -26,7 +27,9 @@ def _referenced_field_names(expressions):
     "Field names referenced by index/constraint expressions, e.g. Index(Lower('name'))."
     names = set()
     for expression in expressions or ():
-        for subexpression in expression.flatten():
+        # root F expressions have no flatten(); Django wraps positional index/constraint strings in F
+        subexpressions = expression.flatten() if hasattr(expression, 'flatten') else [expression]
+        for subexpression in subexpressions:
             if isinstance(subexpression, models.F) and '__' not in subexpression.name:
                 names.add(subexpression.name)
     return names
@@ -87,7 +90,9 @@ def check_textfield_indexed_is_bounded(app_configs, **kwargs):
 MSSQL_INDEX_KEY_BYTES = 1700
 NVARCHAR_BYTES_PER_CODE_UNIT = 2
 
-# Storage widths, in bytes, of the fixed-width SQL Server column types that appear in indexes.
+# Storage widths, in bytes, of the fixed-width SQL Server column types that appear in indexes,
+# matching the mssql-django 2.0.0 DDL mappings (UUIDField is char(32); DateTimeField is
+# datetime2, or datetimeoffset when USE_TZ — see _index_key_width).
 MSSQL_FIELD_WIDTHS = {
     models.BooleanField: 1,
     models.SmallIntegerField: 2,
@@ -96,14 +101,17 @@ MSSQL_FIELD_WIDTHS = {
     models.DateField: 3,
     models.DateTimeField: 8,
     models.TimeField: 5,
-    models.UUIDField: 16,
+    models.UUIDField: 32,
 }
 
 
 def _index_key_width(field):
     "Bytes of SQL Server index key that field's column occupies (0 for types not worth counting, e.g. plain TextField)."
     if isinstance(field, BoundedTextField):
-        return NVARCHAR_BYTES_PER_CODE_UNIT * field.sql_server_max_length
+        bound = field.sql_server_max_length
+        if not isinstance(bound, int) or isinstance(bound, bool):
+            return 0  # E003 reports invalid bounds; E004 must not crash while summing widths
+        return NVARCHAR_BYTES_PER_CODE_UNIT * bound
     if isinstance(field, models.CharField):
         # mssql-django maps CharField to nvarchar(max_length)
         return NVARCHAR_BYTES_PER_CODE_UNIT * (field.max_length or 0)
@@ -113,6 +121,8 @@ def _index_key_width(field):
     # walk the type's own mro so subclasses count as themselves before their parents (DateTimeField inherits DateField but is wider)
     for field_type in type(field).__mro__:
         if field_type in MSSQL_FIELD_WIDTHS:
+            if field_type is models.DateTimeField and settings.USE_TZ:
+                return MSSQL_FIELD_WIDTHS[field_type] + 2  # datetimeoffset adds a time-zone offset
             return MSSQL_FIELD_WIDTHS[field_type]
     return 0
 

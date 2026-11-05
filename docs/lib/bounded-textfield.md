@@ -55,8 +55,8 @@ models deployable on SQL Server:
   `unique`, a `unique_together` entry, a `UniqueConstraint`, or an `Index`
   in an `ansible_base.*` app that is not a `BoundedTextField`. This keeps a
   future field from silently becoming un-deployable on SQL Server.
-- `ansible_base.E003` errors on a `sql_server_max_length` outside 1–4000,
-  the range `nvarchar` can hold.
+- `ansible_base.E003` errors on a `sql_server_max_length` that is not an
+  integer between 1 and 4000, the range `nvarchar` can hold.
 - `ansible_base.E004` errors when an index or unique constraint containing
   a `BoundedTextField` exceeds SQL Server's 1700-byte nonclustered
   index-key budget. `nvarchar` columns count 2 bytes per UTF-16 code unit,

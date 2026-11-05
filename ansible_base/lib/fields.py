@@ -49,10 +49,12 @@ class BoundedTextField(models.TextField):
 
     def check(self, **kwargs):
         errors = super().check(**kwargs)
-        if not 1 <= self.sql_server_max_length <= 4000:
+        bound = self.sql_server_max_length
+        # bool is an int subclass: True would pass the range test and emit nvarchar(True)
+        if not isinstance(bound, int) or isinstance(bound, bool) or not 1 <= bound <= 4000:
             errors.append(
                 checks.Error(
-                    f'sql_server_max_length must be between 1 and 4000, got {self.sql_server_max_length}',
+                    f'sql_server_max_length must be an integer between 1 and 4000, got {bound!r}',
                     hint='SQL Server nvarchar accepts at most 4000 characters.',
                     obj=self,
                     id='ansible_base.E003',

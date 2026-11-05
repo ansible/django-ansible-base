@@ -2,6 +2,7 @@ from unittest import mock
 
 from django.db import models
 from django.db.models.functions import Lower
+from django.test import override_settings
 
 from ansible_base.authentication.models.authenticator import Authenticator
 from ansible_base.lib.checks import _index_key_width, check_bounded_textfield_index_key_size, check_charfield_has_max_length, check_textfield_indexed_is_bounded
@@ -131,11 +132,55 @@ def test_index_key_width_counts_charfield_columns():
     assert _index_key_width(DABContentType._meta.get_field('service')) == 200
 
 
-def test_index_key_width_counts_datetime_field_as_eight_bytes():
-    # DateTimeField inherits DateField; the wider type must win so a key like
-    # BoundedTextField(848) + DateTimeField fails E004 at 1704 bytes, not passes at 1699
-    assert _index_key_width(models.DateTimeField()) == 8
+def test_index_key_width_matches_mssql_django_ddl():
+    # mssql-django 2.0.0 maps UUIDField to char(32) and, under USE_TZ (DAB's default),
+    # DateTimeField to datetimeoffset, which carries a 2-byte zone offset on top of datetime2.
+    # DateTimeField also inherits DateField; the mro walk must match it as itself (10, not 3).
+    assert _index_key_width(models.UUIDField()) == 32
+    assert _index_key_width(models.DateTimeField()) == 10
     assert _index_key_width(models.DateField()) == 3
+    with override_settings(USE_TZ=False):
+        assert _index_key_width(models.DateTimeField()) == 8
+
+
+def test_check_flags_bounded_textfield_plus_datetime_over_budget():
+    # BTF(846) = 1692 bytes + datetimeoffset(10) = 1702, over the 1700-byte budget;
+    # counting datetime2's 8 bytes let this key pass at exactly 1700
+    with mock.patch.object(RoleDefinition._meta, 'constraints', [models.UniqueConstraint(fields=['name', 'created'], name='test_datetimeoffset')]):
+        with mock.patch.object(RoleDefinition._meta.get_field('name'), 'sql_server_max_length', new=846):
+            errors = check_bounded_textfield_index_key_size(None)
+            assert [e.id for e in errors] == ['ansible_base.E004']
+            assert 'test_datetimeoffset' in errors[0].msg
+
+
+def test_check_ignores_invalid_bound_in_key_size():
+    # E003 reports invalid bounds like None; E004 must not crash while summing key widths
+    field = RoleDefinition._meta.get_field('name')
+    with mock.patch.object(field, 'sql_server_max_length', new=None):
+        assert check_bounded_textfield_index_key_size(None) == []
+
+
+def test_check_flags_root_f_index_on_plain_textfield():
+    # Django wraps positional index strings in F, and F has no flatten() — the
+    # reference-name walk must treat a root F as itself instead of crashing
+    with mock.patch.object(RoleDefinition._meta, 'indexes', [models.Index(models.F('description'), name='desc_f_idx')]):
+        errors = check_textfield_indexed_is_bounded(None)
+        assert [e.id for e in errors] == ['ansible_base.E002']
+
+
+def test_check_flags_root_f_unique_constraint_on_plain_textfield():
+    with mock.patch.object(RoleDefinition._meta, 'constraints', [models.UniqueConstraint(models.F('description'), name='uniq_desc_f')]):
+        errors = check_textfield_indexed_is_bounded(None)
+        assert [e.id for e in errors] == ['ansible_base.E002']
+
+
+def test_check_flags_root_f_expression_composite_key_over_budget():
+    index = models.Index(models.F('object_id'), models.F('parent_reference'), name='test_f_composite')
+    with mock.patch.object(ObjectRole._meta, 'indexes', [index]):
+        with mock.patch.object(ObjectRole._meta.get_field('object_id'), 'sql_server_max_length', new=450):
+            with mock.patch.object(ObjectRole._meta.get_field('parent_reference'), 'sql_server_max_length', new=450):
+                errors = check_bounded_textfield_index_key_size(None)
+                assert [e.id for e in errors] == ['ansible_base.E004']
 
 
 def test_check_ignores_consumer_apps_on_key_size():
