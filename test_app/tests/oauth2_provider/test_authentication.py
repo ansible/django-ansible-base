@@ -300,6 +300,20 @@ def test_oauth2_extract_body_handles_parse_error():
     assert result == (), f"Expected empty tuple when ParseError is raised, got {result!r}"
 
 
+def test_oauth2_extract_body_handles_wrapped_attribute_error():
+    """Regression test for DRF wrapping request attribute errors during parsing."""
+    from rest_framework.request import WrappedAttributeError
+
+    from ansible_base.oauth2_provider.authentication import OAuthLibCore
+
+    backend = OAuthLibCore.__new__(OAuthLibCore)
+    request = mock.MagicMock()
+    request.POST.items.side_effect = WrappedAttributeError("Request stream is unavailable.")
+
+    result = backend.extract_body(request)
+    assert result == (), f"Expected empty tuple when WrappedAttributeError is raised, got {result!r}"
+
+
 def test_oauth2_extract_body_returns_empty_for_streamless_request():
     """Regression test for synthetic requests without body/stream support."""
     from django.http import HttpRequest
