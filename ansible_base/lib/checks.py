@@ -75,24 +75,56 @@ def check_textfield_indexed_is_bounded(app_configs, **kwargs):
     return errors
 
 
-# SQL Server index keys are limited to 900 bytes (clustered) / 1700 bytes (nonclustered, 2016+).
-# The check enforces the clustered limit so a passing field is safe in any index Django might
-# create, with headroom for non-text columns that share a composite key.
-MSSQL_INDEX_KEY_BYTES = 900
+# SQL Server limits index keys to 1700 bytes for the nonclustered indexes Django creates
+# for Index, UniqueConstraint, and unique_together. (The 900-byte clustered limit governs
+# the primary key, which a BoundedTextField never is.) The budget is shared by every
+# column in a composite key, so the check counts them all, not just the bounded ones.
+MSSQL_INDEX_KEY_BYTES = 1700
 NVARCHAR_BYTES_PER_CODE_UNIT = 2
 
+# Storage widths, in bytes, of the fixed-width SQL Server column types that appear in indexes.
+MSSQL_FIELD_WIDTHS = {
+    models.BooleanField: 1,
+    models.SmallIntegerField: 2,
+    models.IntegerField: 4,
+    models.BigIntegerField: 8,
+    models.DateField: 3,
+    models.DateTimeField: 8,
+    models.TimeField: 5,
+    models.UUIDField: 16,
+}
 
-def _bounded_key_bytes(model, field_names):
-    "UTF-16 bytes of index key that the BoundedTextFields among field_names contribute."
-    total = 0
+
+def _index_key_width(field):
+    "Bytes of SQL Server index key that field's column occupies (0 for types not worth counting, e.g. plain TextField)."
+    if isinstance(field, BoundedTextField):
+        return NVARCHAR_BYTES_PER_CODE_UNIT * field.sql_server_max_length
+    if isinstance(field, models.CharField):
+        # mssql-django maps CharField to nvarchar(max_length)
+        return NVARCHAR_BYTES_PER_CODE_UNIT * (field.max_length or 0)
+    if isinstance(field, models.ForeignKey):
+        # a foreign key column mirrors the width of the target's primary key
+        return _index_key_width(field.target_field)
+    for width_type, width in MSSQL_FIELD_WIDTHS.items():
+        if isinstance(field, width_type):
+            return width
+    return 0
+
+
+def _index_key_fields(model, field_names):
+    "Resolve field_names to model fields, skipping names that do not resolve."
+    fields = []
     for name in field_names:
         try:
-            field = model._meta.get_field(name)
+            fields.append(model._meta.get_field(name))
         except FieldDoesNotExist:
             continue
-        if isinstance(field, BoundedTextField):
-            total += NVARCHAR_BYTES_PER_CODE_UNIT * field.sql_server_max_length
-    return total
+    return fields
+
+
+def _index_key_bytes(model, field_names):
+    "Bytes of SQL Server index key that the columns named in field_names occupy."
+    return sum(_index_key_width(field) for field in _index_key_fields(model, field_names))
 
 
 def _keyed_field_names(index_or_constraint):
@@ -104,7 +136,8 @@ def _keyed_field_names(index_or_constraint):
 
 @register()
 def check_bounded_textfield_index_key_size(app_configs, **kwargs):
-    "Error when indexed BoundedTextFields exceed SQL Server's index key-size budget; a bound within E003's range can still be undeployable."
+    "Error when an index or unique constraint containing a BoundedTextField exceeds SQL Server's index key-size budget."
+    " A bound within E003's range can still be undeployable."
     errors = []
     for model in django.apps.apps.get_models():
         if model._meta.proxy or model._meta.abstract:
@@ -115,13 +148,13 @@ def check_bounded_textfield_index_key_size(app_configs, **kwargs):
             if field.auto_created:
                 continue
             if isinstance(field, BoundedTextField) and (field.db_index or field.unique):
-                key_bytes = NVARCHAR_BYTES_PER_CODE_UNIT * field.sql_server_max_length
+                key_bytes = _index_key_width(field)
                 if key_bytes > MSSQL_INDEX_KEY_BYTES:
                     errors.append(
                         Error(
                             f'{model._meta.label}.{field.name} needs {key_bytes} bytes of SQL Server index key',
-                            hint=f"Lower sql_server_max_length on '{field.name}' in {model._meta.label} to 450 or less; "
-                            f"nvarchar takes 2 bytes per code unit and SQL Server index keys are limited to {MSSQL_INDEX_KEY_BYTES} bytes.",
+                            hint=f"Lower sql_server_max_length on '{field.name}' in {model._meta.label} to 850 or less; "
+                            f"nvarchar takes 2 bytes per code unit and SQL Server limits nonclustered index keys to {MSSQL_INDEX_KEY_BYTES} bytes.",
                             obj=model,
                             id='ansible_base.E004',
                         )
@@ -130,14 +163,17 @@ def check_bounded_textfield_index_key_size(app_configs, **kwargs):
         keys += [(constraint, _keyed_field_names(constraint)) for constraint in model._meta.constraints if isinstance(constraint, models.UniqueConstraint)]
         keys += [(index, _keyed_field_names(index)) for index in model._meta.indexes]
         for key, field_names in keys:
-            key_bytes = _bounded_key_bytes(model, field_names)
+            fields = _index_key_fields(model, field_names)
+            if not any(isinstance(field, BoundedTextField) for field in fields):
+                continue  # keys without a bounded column are E002's concern, not this check's
+            key_bytes = sum(_index_key_width(field) for field in fields)
             if key_bytes > MSSQL_INDEX_KEY_BYTES:
                 name = getattr(key, 'name', key)
                 errors.append(
                     Error(
                         f'{model._meta.label} key {name} needs {key_bytes} bytes of SQL Server index key',
                         hint=f"Lower the sql_server_max_length of the BoundedTextField columns in {name}; "
-                        f"SQL Server index keys are limited to {MSSQL_INDEX_KEY_BYTES} bytes, shared with any other columns in the key.",
+                        f"SQL Server limits nonclustered index keys to {MSSQL_INDEX_KEY_BYTES} bytes, shared by every column in the key.",
                         obj=model,
                         id='ansible_base.E004',
                     )

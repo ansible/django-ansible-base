@@ -36,31 +36,36 @@ deliberately:
    codenames use 100 for parity with Django's `Permission.codename`.
  - **Roomier** where the text is user-facing and unpredictable but still
    needs an index, e.g. names at 255.
- - Keep bounds on indexed fields at or under `450` to stay below every SQL
-   Server index key-size limit (900 bytes clustered, 1700 bytes nonclustered
-   on SQL Server 2016+), including in composite keys, which share the budget.
+ - Keep bounds on indexed fields at or under `850`: SQL Server limits
+   nonclustered index keys to 1700 bytes and `nvarchar` takes 2 bytes per
+   UTF-16 code unit, and the budget is shared by every column in a composite
+   key. Django creates only nonclustered secondary indexes and unique
+   constraints; the tighter 900-byte clustered limit governs the primary
+   key, which a `BoundedTextField` should never be.
  - Fields that are never indexed or made unique (descriptions, notes) should
    stay plain `TextField`; SQL Server gives them `nvarchar(max)`, which is
    unbounded and fine.
 
-### The `ansible_base.E002` system check
+### System checks
 
-DAB runs a system check (in `manage.py check`, therefore in CI) that raises
-an error for any `TextField` carrying `db_index`, `unique`, a
-`unique_together` entry, a `UniqueConstraint`, or an `Index` in an
-`ansible_base.*` app that is not a `BoundedTextField`. This keeps a future
-field from silently becoming un-deployable on SQL Server.
+DAB runs system checks (in `manage.py check`, therefore in CI) that keep
+models deployable on SQL Server:
 
-The check is scoped to DAB's own apps. Consumer applications (AWX, gateway,
-galaxy_ng) are deliberately unaffected — e.g. AWX's indexed-unique
+- `ansible_base.E002` errors on any `TextField` carrying `db_index`,
+  `unique`, a `unique_together` entry, a `UniqueConstraint`, or an `Index`
+  in an `ansible_base.*` app that is not a `BoundedTextField`. This keeps a
+  future field from silently becoming un-deployable on SQL Server.
+- `ansible_base.E003` errors on a `sql_server_max_length` outside 1–4000,
+  the range `nvarchar` can hold.
+- `ansible_base.E004` errors when an index or unique constraint containing
+  a `BoundedTextField` exceeds SQL Server's 1700-byte nonclustered
+  index-key budget. `nvarchar` columns count 2 bytes per UTF-16 code unit,
+  and every column in the key — bounded text, `CharField` (also `nvarchar`
+  on SQL Server), and the common fixed-width types — shares the budget.
+
+The checks are scoped to DAB's own apps. Consumer applications (AWX,
+gateway, galaxy_ng) are deliberately unaffected — e.g. AWX's indexed-unique
 `singleton_name` will not redden its builds — until they choose to adopt.
-
-The field itself is checked too: `ansible_base.E003` errors on a
-`sql_server_max_length` outside 1–4000, the range `nvarchar` can hold, and
-`ansible_base.E004` errors when an indexed or unique `BoundedTextField`'s
-key would exceed SQL Server's index key-size budget — 2 bytes per UTF-16
-code unit against a 900-byte limit, summed across the `BoundedTextField`
-columns of a composite index or constraint.
 
 ### Adoption path for components
 
