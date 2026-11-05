@@ -2,7 +2,7 @@
 
 django-ansible-base has can serve as an OAuth2 provider similar to how AWX can.
 
-OAuth2 is a means of doing token-based authentication. With this application install, users will be able to manage OAuth2 tokens as well as applications, a server-side representation of API clients used to generate tokens. With OAuth2, a user can authenticate by passing a token as part of the HTTP authentication header. The token can be scoped to have more restrictive permissions on top of the base RBAC permissions of the user used when creating the token.  Refer to [RFC 6749](https://tools.ietf.org/html/rfc6749) for more details of OAuth2 specification.
+OAuth2 is a means of doing token-based authentication. With this application install, users will be able to manage OAuth2 tokens as well as applications, a server-side representation of API clients used to generate tokens. With OAuth2, a user can authenticate by passing a token as part of the HTTP authentication header. The token can be scoped to have more restrictive permissions on top of the base RBAC permissions of the user used when creating the token. Refer to [RFC 6749](https://tools.ietf.org/html/rfc6749) for more details of OAuth2 specification.
 
 #@ Security (Permissions)
 
@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'ansible_base.oauth2_provider',
 ]
 ```
+
 ### URLs
 
 This feature includes URLs which you will get if you are using [dynamic urls](../Installation.md).
@@ -50,10 +51,12 @@ This feature includes URLs which you will get if you are using [dynamic urls](..
 If you want to manually add the URLs without dynamic urls, see the `oauth2_provider/urls.py` file. You will need to add variables at multiple locations within your apps API.
 
 ### Additional Settings
+
 Additional settings are required to enable OAuth2 for your rest endpoints.
 This will happen automatically if using [dynamic_settings](../Installation.md)
 
-To manually configure the settings in your application 
+To manually configure the settings in your application
+
 ```
 OAUTH2_PROVIDER = {
     'ACCESS_TOKEN_EXPIRE_SECONDS': 31536000000
@@ -117,6 +120,7 @@ To get started using OAuth2 tokens for accessing the browsable API using OAuth2,
     "scope": "write"
 }
 ```
+Optionally, you can include a `ttl` field (integer seconds, must not exceed the platform default `OAUTH2_PROVIDER.ACCESS_TOKEN_EXPIRE_SECONDS`) to shorten the access token's lifetime, e.g. `"ttl": 1800` to restrict the token's TTL to 30 mins. A `ttl` of `0` (or omitting the field) uses the platform default.
 This will return a `<token-value>` that you can use to authenticate with for future requests (this will not be shown again)
 
 3. Use the token to access a resource.  We will use `curl` to demonstrate this:
@@ -134,6 +138,17 @@ Similarly, using a token:
 ```
 curl -H "Authorization: Bearer <token-value>" -X DELETE https://<service>/api/tokens/<pk>/ -k
 ```
+
+### Overriding the Access-Token TTL
+
+`ttl` is an optional integer-seconds field on `POST /tokens/` that overrides the access token's
+lifetime.
+A `ttl` of `0` (same as omitting the field) uses the platform's default.
+`ttl` can only be set at token creation; it is rejected on `PATCH`/`PUT`.
+
+`ttl` affects only the access token: refresh tokens still follow `REFRESH_TOKEN_EXPIRE_SECONDS`,
+and the `/o/token/` grant flow is unaffected. Omitting `ttl` preserves the existing behavior
+(the access token lifetime is `ACCESS_TOKEN_EXPIRE_SECONDS`).
 
 
 ## OAuth2ScopePermission Check
@@ -278,7 +293,7 @@ that.
   cannot create any new applications.
 
 Tokens, on the other hand, are resources used to actually authenticate incoming requests and mask the
-permissions of the underlying user. Tokens can be created by POSTing to `/api/tokens/`
+permissions of the underlying user. Tokens can be created by POSTing to the `/api/tokens/`
 endpoint by providing `application` and `scope` fields to point to related application and specify
 token scope; or POSTing to `/api/applications/<pk>/tokens/` by providing only `scope`, while
 the parent application will be automatically linked.
