@@ -239,16 +239,15 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Audience"),
     )
 
-    # Min 60 / default 3600 come from the ANSTRAT-1611 P1 configuration schema.
+    # Min 0 (no cache) / default 3600 come from the ANSTRAT-1611 P1 configuration schema.
     JWKS_CACHE_TIMEOUT = IntegerField(
         help_text=_(
-            "How long to cache JWKS keys, in seconds. Minimum 60 to avoid hammering the "
-            "provider's JWKS endpoint. No maximum — longer TTLs are fine for stable IdPs; "
-            "token validation refreshes keys on signature failure so rotation still works."
+            "How long to cache JWKS keys, in seconds. Minimum 0 (cache disabled); this makes a JWKS call for every request. "
+            "No maximum — longer TTLs are fine for stable IdPs; token validation refreshes keys on signature failure so rotation still works."
         ),
         default=3600,
         allow_null=False,
-        validators=[MinValueValidator(60)],
+        validators=[MinValueValidator(0)],
         ui_field_label=_("JWKS Cache Timeout (seconds)"),
     )
 
@@ -455,6 +454,19 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     category = "api_auth"
     logger = logger
     configuration_encrypted_fields = []
+
+    def configuration_updated(
+        self,
+        *,
+        authenticator_id: int,
+        previous_configuration: dict,
+        previous_modified: object,
+        configuration: dict,
+        modified: object,
+    ) -> None:
+        """Invalidate superseded JWKS state when the cache policy changes."""
+        if previous_configuration.get("JWKS_CACHE_TIMEOUT", 3600) != configuration.get("JWKS_CACHE_TIMEOUT", 3600):
+            CachedJWKClient.invalidate_cache_namespace(f"authenticator:{authenticator_id}:{previous_modified.isoformat()}")
 
     def get_login_url(self, authenticator: Any) -> None:
         """Return no login URL because bearer authentication has no browser redirect flow."""
@@ -719,6 +731,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
 
         return CachedJWKClient(
             jwks_uri,
+            cache_namespace=f"authenticator:{self.database_instance.pk}:{self.database_instance.modified.isoformat()}",
             lifespan=configuration.get("JWKS_CACHE_TIMEOUT", 3600),
             timeout=configuration.get("JWKS_URL_TIMEOUT", DEFAULT_JWKS_URL_TIMEOUT),
             ssl_context=ssl_context,
