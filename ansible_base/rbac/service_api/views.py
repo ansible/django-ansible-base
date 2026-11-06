@@ -344,8 +344,6 @@ class BaseSerivceRoleAssignmentViewSet(
             for assignment in existing:
                 check_can_remove_assignment(request.user, assignment)
 
-            # Separate by assignment type (user vs team), not by object vs global.
-            # remove_assignments handles both object and global assignments.
             user_assignments = [a for a in existing if isinstance(a, RoleUserAssignment)]
             team_assignments = [a for a in existing if isinstance(a, RoleTeamAssignment)]
 

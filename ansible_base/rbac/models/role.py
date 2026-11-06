@@ -281,10 +281,17 @@ class RoleDefinition(CommonModel):
         object, so global assignments emit the same audit + bulk signals
         (dab_rbac_assignments_created/_pre_delete) as object assignments, and the enablement/
         content-type gates (validate_global_assignment) can't be bypassed. See AAP-90170.
+
+        The pipeline clears the singleton-permission cache, so no cache handling is needed here.
+
+        Returns:
+            On grant, the new or pre-existing assignment (the pipeline returns only newly-created
+            rows, so an existing one is fetched). Either way it carries the caller's role
+            definition and actor instances, as the old get_or_create path did.
+            On removal, the removed assignment, or None if there was none.
         """
         from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
 
-        # A None content object marks this as a global (singleton) assignment.
         perm = [(self, actor, None)]
         if actor._meta.model_name == 'user':
             cls = RoleUserAssignment
@@ -302,21 +309,14 @@ class RoleDefinition(CommonModel):
             if created:
                 assignment = created[0]
             else:
-                # Already existed: the pipeline returns only newly-created rows, so fetch it.
                 assignment = cls.objects.get(role_definition=self, object_role__isnull=True, **actor_filter)
-            # Reattach the caller's in-memory role definition and actor so the returned assignment
-            # preserves object identity (the old get_or_create path did) -- this matters for the
-            # fetched branch above, which returns DB-refetched instances.
             assignment.role_definition = self
             for field_name, obj in actor_filter.items():
                 setattr(assignment, field_name, obj)
         else:
-            # Capture the row for the return value before the pipeline deletes it.
             assignment = cls.objects.filter(role_definition=self, object_role__isnull=True, **actor_filter).first()
             bulk_remove_permissions(user_permissions=user_perms, team_permissions=team_perms)
 
-        # The bulk pipeline clears the in-memory singleton-permission cache for global assignments
-        # (users by instance, teams via the process-wide signal), so no cache handling is needed here.
         return assignment
 
     def give_permission(self, actor, content_object):

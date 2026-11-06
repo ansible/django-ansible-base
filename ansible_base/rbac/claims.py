@@ -440,15 +440,17 @@ def parse_ansible_ids_from_claims(
 
 
 def save_user_claims(user: Model, objects: dict, object_roles: dict, global_roles: list) -> None:
-    """
-    Apply RBAC permissions from claims data
+    """Apply RBAC permissions from claims data.
+
+    1. Resolve every desired grant into a (role_definition, user, content_object) triple.
+       Global roles use a None content object, so they need no separate pass (AAP-90170).
+    2. Grant all desired permissions, global and object, in one bulk_give_permissions call.
+    3. Remove stale managed-role assignments not in the desired set. The user already held
+       is attached to those rows so signal handlers reading assignment.user do not refetch it.
     """
 
     managed_roles = settings.ANSIBLE_BASE_JWT_MANAGED_ROLES
 
-    # Pass 1: resolve every desired grant into a (role_definition, user, content_object) triple.
-    # Global (singleton) roles are simply a None content object -- the bulk pipeline handles them
-    # alongside object roles in a single call (AAP-90170), so there is no separate global pass.
     desired_permissions = []
 
     for system_role_name in global_roles:
@@ -513,21 +515,15 @@ def save_user_claims(user: Model, objects: dict, object_roles: dict, global_role
                 desired_permissions.append((rd, user, obj))
                 logger.info(f"Granting user {user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
 
-    # Pass 2: bulk assign all desired permissions (global + object) in one call
     if desired_permissions:
         bulk_give_permissions(user_permissions=desired_permissions)
 
-    # Pass 3: remove stale assignments not in the desired set. Global assignments carry a null
-    # content object -> keyed as (rd.pk, None); remove_assignments deletes them the same as
-    # object assignments, so there is no separate global-removal branch.
     desired_keys = {(rd.pk, obj.pk if obj is not None else None) for rd, _user, obj in desired_permissions}
     stale_user_assignments = [
         assignment
         for assignment in RoleUserAssignment.objects.filter(user=user, role_definition__name__in=managed_roles).select_related('role_definition')
         if (assignment.role_definition_id, assignment.cache_id) not in desired_keys
     ]
-    # Every stale row belongs to this one user, which we already hold -- attach it so signal
-    # consumers reading assignment.user don't trigger a per-row refetch of what we have.
     for assignment in stale_user_assignments:
         assignment.user = user
     if stale_user_assignments:
