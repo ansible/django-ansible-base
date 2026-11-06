@@ -9,9 +9,14 @@ from ansible_base.authentication.authenticator_plugins._radiusauth import RADIUS
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
 from ansible_base.authentication.utils.claims import update_user_claims
+from ansible_base.authentication.utils.fips_compat import enable_protocol_md5
 from ansible_base.lib.serializers.fields import CharField, IntegerField
 
 logger = logging.getLogger(__name__)
+
+# RADIUS mandates MD5 for packet authenticators and password hiding
+# (RFC 2865); allow that protocol-mandated MD5 on FIPS-enabled systems.
+enable_protocol_md5()
 
 User = get_user_model()
 
