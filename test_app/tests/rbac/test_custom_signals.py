@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework.exceptions import ValidationError
 
 from ansible_base.rbac.models import RoleUserAssignment
@@ -280,6 +282,62 @@ class TestGlobalAssignmentSignals:
             mck.signal_handler.assert_not_called()
         finally:
             dab_rbac_assignments_pre_delete.disconnect(mck.signal_handler, dispatch_uid='test-global-noop-rm')
+
+    @pytest.mark.parametrize('actor_fixture,actor_field', [('rando', 'user'), ('team', 'team')])
+    def test_remove_global_returns_the_removed_assignment(self, request, actor_fixture, actor_field, global_inv_rd):
+        """remove_global_permission returns the exact row the pipeline deleted (the one sent to
+        pre_delete), carrying the caller's role definition and actor instances."""
+        actor = request.getfixturevalue(actor_fixture)
+        granted = global_inv_rd.give_global_permission(actor)
+
+        captured = []
+
+        def capture(sender, assignments, content_objects, **kwargs):
+            captured.extend(assignments)
+
+        dab_rbac_assignments_pre_delete.connect(capture, dispatch_uid='test-global-rm-return')
+        try:
+            removed = global_inv_rd.remove_global_permission(actor)
+        finally:
+            dab_rbac_assignments_pre_delete.disconnect(capture, dispatch_uid='test-global-rm-return')
+
+        assert removed.pk == granted.pk
+        assert captured == [removed] and captured[0] is removed
+        assert removed.role_definition is global_inv_rd
+        assert getattr(removed, actor_field) is actor
+        assert not type(removed).objects.filter(pk=granted.pk).exists()
+
+    def test_remove_global_nonexistent_returns_none(self, rando, global_inv_rd):
+        assert global_inv_rd.remove_global_permission(rando) is None
+
+    def test_remove_global_looks_up_assignment_once(self, rando, global_inv_rd):
+        """The removed row is the pipeline's own lookup result, not a second pre-fetch."""
+        global_inv_rd.give_global_permission(rando)
+        with CaptureQueriesContext(connection) as ctx:
+            global_inv_rd.remove_global_permission(rando)
+        lookups = [
+            q['sql'] for q in ctx.captured_queries if q['sql'].startswith('SELECT') and '"dab_rbac_roleuserassignment"."object_role_id" IS NULL' in q['sql']
+        ]
+        assert len(lookups) == 1, lookups
+
+    def test_bulk_remove_permissions_returns_removed_assignments(self, organization, rando, team, global_inv_rd, org_inv_rd):
+        bulk_give_permissions(
+            user_permissions=[(global_inv_rd, rando, None), (org_inv_rd, rando, organization)], team_permissions=[(global_inv_rd, team, None)]
+        )
+
+        removed = bulk_remove_permissions(
+            user_permissions=[(global_inv_rd, rando, None), (org_inv_rd, rando, organization)],
+            team_permissions=[(global_inv_rd, team, None)],
+        )
+
+        assert len(removed) == 3
+        assert {(type(a).__name__, a.role_definition_id, a.object_role_id is None) for a in removed} == {
+            ('RoleUserAssignment', global_inv_rd.pk, True),
+            ('RoleUserAssignment', org_inv_rd.pk, False),
+            ('RoleTeamAssignment', global_inv_rd.pk, True),
+        }
+        assert bulk_remove_permissions(user_permissions=[(global_inv_rd, rando, None)]) == []
+        assert bulk_remove_permissions() == []
 
     def test_pipeline_enforces_gates_for_list_callers(self, rando, global_inv_rd, inv_rd, settings):
         """The enablement/content-type gates must be enforced in the pipeline, not just the
