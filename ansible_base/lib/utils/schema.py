@@ -32,9 +32,14 @@ class DeprecationAutoSchemaMixin:
             or bool(getattr(view_class, 'deprecation', None))
         )
 
-    def get_extensions(self):
-        """Add the most specific deprecation detail to the existing schema extensions."""
-        extensions = super().get_extensions()
+    def get_operation(self, path, path_regex, path_prefix, method, registry):
+        """Add deprecation details after decorator-supplied operation extensions are resolved."""
+        operation = super().get_operation(path, path_regex, path_prefix, method, registry)
+        if operation is None:
+            return None
+
+        # extend_schema(extensions=...) bypasses the base get_extensions(), so add
+        # deprecation details to the assembled operation instead.
 
         action_method = self._get_action_method()
         deprecation_metadata = getattr(action_method, 'deprecation', None)
@@ -44,9 +49,9 @@ class DeprecationAutoSchemaMixin:
             deprecation_metadata = getattr(self.view, 'deprecation', None) or getattr(view_class, 'deprecation', None)
 
         if deprecation_metadata and deprecation_metadata.get('detail'):
-            extensions['x-api-deprecated-detail'] = deprecation_metadata['detail']
+            operation['x-api-deprecated-detail'] = deprecation_metadata['detail']
 
-        return extensions
+        return operation
 
 
 def _get_autoschema_base():

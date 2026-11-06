@@ -25,6 +25,7 @@ DEFAULT_SPECTACULAR_SETTINGS = {
         'ansible_base.api_documentation.postprocessing_hooks.add_x_ai_description',
         # Declares optional CleanText pattern fields in components.schemas (OpenAPI).
         'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components',
+        'ansible_base.lib.utils.schema.deprecated_fields_detail_hook',
     ],
 }
 DEFAULT_ANSIBLE_BASE_AUTH = "ansible_base.authentication.backend.AnsibleBaseAuth"
@@ -134,13 +135,17 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
             if key not in spectacular_settings:
                 spectacular_settings[key] = value
 
-        # Ensure CleanText OpenAPI components are registered even when a service
+        # Ensure these hooks are registered even when a service
         # overrides POSTPROCESSING_HOOKS (common in Controller/Gateway).
-        _clean_text_hook = 'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components'
+        _required_hooks = [
+            'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components',
+            'ansible_base.lib.utils.schema.deprecated_fields_detail_hook',
+        ]
         hooks = list(spectacular_settings.get('POSTPROCESSING_HOOKS', []))
-        if _clean_text_hook not in hooks:
-            hooks.append(_clean_text_hook)
-            spectacular_settings['POSTPROCESSING_HOOKS'] = hooks
+        for hook in _required_hooks:
+            if hook not in hooks:
+                hooks.append(hook)
+        spectacular_settings['POSTPROCESSING_HOOKS'] = hooks
 
     # General, factual, constant of all filters that ansible_base.rest_filters ships
     dab_data['ANSIBLE_BASE_ALL_REST_FILTERS'] = (
