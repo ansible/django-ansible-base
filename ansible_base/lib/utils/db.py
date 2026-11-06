@@ -11,6 +11,46 @@ from django.db.backends.postgresql.base import DatabaseWrapper as PsycopgDatabas
 from django.db.migrations.executor import MigrationExecutor
 
 logger = logging.getLogger(__name__)
+_MISSING_LOCK_ID = object()
+
+
+def _close_lock_connection(db_connection):
+    try:
+        db_connection.close()
+    except Exception:
+        logger.exception("Failed to close database connection after advisory lock release failed")
+
+
+def _close_lock_cursor(cursor):
+    try:
+        cursor.close()
+    except Exception:
+        logger.exception("Failed to close cursor during advisory lock cleanup")
+
+
+@contextmanager
+def _advisory_lock_scope(cursor, db_connection, acquired, release_lock):
+    """Release a session lock without replacing an exception from the protected body."""
+    try:
+        yield acquired
+    except BaseException:
+        if acquired:
+            try:
+                release_lock()
+            except Exception:
+                logger.exception("Failed to release advisory lock; discarding its database connection")
+                _close_lock_connection(db_connection)
+        _close_lock_cursor(cursor)
+        raise
+    else:
+        try:
+            if acquired:
+                release_lock()
+        except Exception:
+            _close_lock_connection(db_connection)
+            _close_lock_cursor(cursor)
+            raise
+        cursor.close()
 
 
 @contextmanager
@@ -104,71 +144,150 @@ def django_pglocks_advisory_lock(lock_id, shared=False, wait=True, using=None):
     acquire_params = (function_name,) + params
 
     command = base % acquire_params
-    cursor = connections[using].cursor()
-
-    cursor.execute(command)
-
-    if not wait:
-        acquired = cursor.fetchone()[0]
-    else:
-        acquired = True
+    db_connection = connections[using]
+    cursor = db_connection.cursor()
 
     try:
+        cursor.execute(command)
+
+        if not wait:
+            acquired = cursor.fetchone()[0]
+        else:
+            acquired = True
+    except BaseException:
+        _close_lock_cursor(cursor)
+        raise
+
+    release_params = (release_function_name,) + params
+    release_command = base % release_params
+
+    def release_lock():
+        cursor.execute(release_command)
+
+    with _advisory_lock_scope(cursor, db_connection, acquired, release_lock):
         yield acquired
-    finally:
-        if acquired:
-            release_params = (release_function_name,) + params
-
-            command = base % release_params
-            cursor.execute(command)
-
-        cursor.close()
 
 
 @contextmanager
-def advisory_lock(*args, lock_session_timeout_milliseconds=0, **kwargs):
-    """Context manager that wraps the pglocks advisory lock
+def _postgres_advisory_lock(db_connection, lock_id, shared, wait, using, lock_session_timeout_milliseconds):
+    """Acquire a PostgreSQL advisory lock and restore the caller's idle timeouts."""
+    idle_in_transaction_session_timeout = None
+    idle_session_timeout = None
+    if lock_session_timeout_milliseconds > 0:
+        with db_connection.cursor() as cursor:
+            idle_in_transaction_session_timeout = cursor.execute("SHOW idle_in_transaction_session_timeout").fetchone()[0]
+            idle_session_timeout = cursor.execute("SHOW idle_session_timeout").fetchone()[0]
+            cursor.execute(
+                "SET idle_in_transaction_session_timeout = %s",
+                (lock_session_timeout_milliseconds,),
+            )
+            cursor.execute("SET idle_session_timeout = %s", (lock_session_timeout_milliseconds,))
 
-    This obtains a named lock in postgres, idenfied by the args passed in
-    usually the lock identifier is a simple string.
-
-    @param: wait If True, block until the lock is obtained
-    @param: shared Whether or not the lock is shared
-    @param: lock_session_timeout_milliseconds Postgres-level timeout
-    @param: using django database identifier
-    """
     internal_error = False
-    if connection.vendor == "postgresql":
-        cur = None
-        idle_in_transaction_session_timeout = None
-        idle_session_timeout = None
-        if lock_session_timeout_milliseconds > 0:
-            with connection.cursor() as cur:
-                idle_in_transaction_session_timeout = cur.execute("SHOW idle_in_transaction_session_timeout").fetchone()[0]
-                idle_session_timeout = cur.execute("SHOW idle_session_timeout").fetchone()[0]
-                cur.execute("SET idle_in_transaction_session_timeout = %s", (lock_session_timeout_milliseconds,))
-                cur.execute("SET idle_session_timeout = %s", (lock_session_timeout_milliseconds,))
+    try:
+        lock_args = () if lock_id is _MISSING_LOCK_ID else (lock_id,)
+        with django_pglocks_advisory_lock(*lock_args, shared=shared, wait=wait, using=using) as acquired:
+            yield acquired
+    except OperationalError:
+        # Suspected case is that timeout happened due to the given timeout
+        # this is _expected_ to leave the connection in an unusable state, so dropping it is better
+        logger.info("Dropping connection due to suspected timeout inside advisory_lock")
+        db_connection.close_if_unusable_or_obsolete()
+        internal_error = True
+        raise
+    finally:
+        if not internal_error and lock_session_timeout_milliseconds > 0 and db_connection.connection is not None and not db_connection.closed_in_transaction:
+            with db_connection.cursor() as cursor:
+                cursor.execute(
+                    "SET idle_in_transaction_session_timeout = %s",
+                    (idle_in_transaction_session_timeout,),
+                )
+                cursor.execute("SET idle_session_timeout = %s", (idle_session_timeout,))
 
-        try:
-            with django_pglocks_advisory_lock(*args, **kwargs) as internal_lock:
-                yield internal_lock
-        except OperationalError:
-            # Suspected case is that timeout happened due to the given timeout
-            # this is _expected_ to leave the connection in an unusable state, so dropping it is better
-            logger.info('Dropping connection due to suspected timeout inside advisory_lock')
-            connection.close_if_unusable_or_obsolete()
-            internal_error = True
-            raise
-        finally:
-            if (not internal_error) and lock_session_timeout_milliseconds > 0:
-                with connection.cursor() as cur:
-                    cur.execute("SET idle_in_transaction_session_timeout = %s", (idle_in_transaction_session_timeout,))
-                    cur.execute("SET idle_session_timeout = %s", (idle_session_timeout,))
 
-    elif connection.vendor == "sqlite":
+@contextmanager
+def advisory_lock(
+    lock_id=_MISSING_LOCK_ID,
+    shared=False,
+    wait=True,
+    using=None,
+    *,
+    lock_session_timeout_milliseconds=0,
+):
+    """
+    Context manager for database advisory locks.
+
+    Supports PostgreSQL, MS SQL Server, and SQLite (no-op).
+    Obtains a named lock identified by lock_id.
+
+    Args:
+        lock_id: Lock identifier (usually a string, int, or tuple)
+        lock_session_timeout_milliseconds: Database-level timeout in milliseconds
+        shared: If True, allow shared locks
+        wait: If True, block until lock is obtained
+        using: Django database alias
+
+    Yields:
+        bool: True if lock acquired, False if not (when wait=False)
+
+    Raises:
+        RuntimeError: If database vendor is not supported
+        OperationalError: If lock operation fails
+
+    Examples:
+        # Exclusive lock
+        with advisory_lock('my_lock'):
+            # Critical section
+
+        # Shared lock with timeout
+        with advisory_lock('my_lock', shared=True, lock_session_timeout_milliseconds=5000) as acquired:
+            if acquired:
+                # Lock acquired
+                pass
+
+        # Try-lock (non-blocking)
+        with advisory_lock('my_lock', wait=False) as acquired:
+            if acquired:
+                # Got the lock
+                pass
+    """
+    using = using or DEFAULT_DB_ALIAS
+    db_connection = connections[using]
+
+    if db_connection.vendor == "postgresql":
+        with _postgres_advisory_lock(
+            db_connection,
+            lock_id,
+            shared,
+            wait,
+            using,
+            lock_session_timeout_milliseconds,
+        ) as acquired:
+            yield acquired
+
+    elif db_connection.vendor == "microsoft":
+        # MS SQL Server implementation using sp_getapplock
+        if lock_id is _MISSING_LOCK_ID:
+            raise ValueError("advisory_lock requires a lock identifier")
+
+        from ansible_base.lib.mssql.locks import mssql_advisory_lock_with_cleanup
+
+        with mssql_advisory_lock_with_cleanup(
+            db_connection,
+            lock_id,
+            shared,
+            wait,
+            using,
+            lock_session_timeout_milliseconds,
+        ) as acquired:
+            yield acquired
+
+    elif db_connection.vendor == "sqlite":
+        # SQLite no-op - no distributed locking needed
         yield True
+
     else:
-        raise RuntimeError(f'Advisory lock not implemented for database type {connection.vendor}')
+        raise RuntimeError(f"Advisory lock not implemented for database type {db_connection.vendor}")
 
 
 # Django settings.DATABASES['alias'] dictionary type
