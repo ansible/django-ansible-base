@@ -129,3 +129,107 @@ These APIs handle different concerns:
 |---|---|
 | Bulk permission assignment/removal | `bulk_give_permissions(...)` / `bulk_remove_permissions(...)` |
 | Bulk resource creation/deletion (e.g. org delete cascade) | `defer_rbac_computations` context manager |
+
+## Assignment Signals
+
+Every assignment created or removed through the pipeline — whether via
+`bulk_give_permissions` / `bulk_remove_permissions`, the lower-level
+`give_assignments` / `remove_assignments`, or the single-assignment
+`give_permission` / `remove_permission` helpers — emits one of two Django
+signals. Downstream systems (e.g. mirroring assignments into another RBAC
+system, or recording activity-stream entries) connect to these instead of
+listening to per-row model `post_save` / `post_delete`. This includes global
+(singleton) assignments, via a triple with a `None` content object or
+`give_global_permission` / `remove_global_permission`.
+
+These are the supported entry points. Writing assignment rows directly through
+the ORM (e.g. `RoleUserAssignment.objects.create(...)` or `.get_or_create(...)`)
+bypasses the pipeline and does **not** send either signal.
+
+```python
+from ansible_base.rbac.triggers import (
+    dab_rbac_assignments_created,
+    dab_rbac_assignments_pre_delete,
+)
+```
+
+Both signals fire **once per operation** (not once per row) and are sent with
+`sender=None`. `created` fires only when rows were actually inserted;
+idempotent re-grants of an existing assignment send nothing (equivalent to
+`post_save` with `created=True`). Likewise, `pre_delete` is not sent when there
+is nothing to remove. The keyword arguments are:
+
+| Argument | Type | Meaning |
+|---|---|---|
+| `assignments` | `list[RoleUserAssignment \| RoleTeamAssignment]` | The rows created (`created` signal) or about to be deleted (`pre_delete` signal). |
+| `content_objects` | `dict[(content_type_id, object_id), instance]` | Pre-fetched content objects for object-scoped assignments. |
+
+Connect handlers with a `dispatch_uid` and no sender filter:
+
+```python
+dab_rbac_assignments_created.connect(my_handler, dispatch_uid='myapp_created')
+dab_rbac_assignments_pre_delete.connect(my_handler, dispatch_uid='myapp_pre_delete')
+```
+
+### Ordering relative to recomputation
+
+The two signals sit on opposite sides of recomputation, matching their tenses,
+all within the same transaction:
+
+- `dab_rbac_assignments_created` — fires **after** `RoleEvaluation` is
+  recomputed. State is fully settled: the assignment rows exist *and*
+  `has_obj_perm` / `accessible_objects` already reflect them, so a handler can
+  query effective permissions inline and see accurate results.
+- `dab_rbac_assignments_pre_delete` — fires **before** the rows are deleted
+  (they are still readable in the handler) and therefore before recomputation.
+  This is by design: consumers must be able to read the soon-to-be-removed rows
+  and resolve their content objects — critical for cascade deletes where the
+  content object itself is also going away. At this point `RoleEvaluation` still
+  reflects the **pre-removal** state; a handler needing the post-removal
+  permission state must defer (e.g. `transaction.on_commit`).
+
+The asymmetry is intentional. Creation is additive, so a single post-recompute
+`created` signal carries both the new rows and the settled evaluations at once.
+Deletion is destructive, so those two moments are in conflict: the rows (and
+their content objects) are only readable *before* the delete, while fresh
+evaluations only exist *after* recompute. `pre_delete` deliberately chooses the
+data-rich moment.
+
+If a consumer ever needs the post-removal *settled* state (fresh
+`RoleEvaluation` after recompute), the reserved extension point is a new,
+additive signal named `dab_rbac_assignments_deleted` (past tense, mirroring
+`created`) — not an overload of `pre_delete`. There is deliberately no
+`pre_create` signal: it would be redundant (validation is internal and these
+signals do not veto) and could not carry the uniform `AssignmentBase` payload,
+since no rows exist yet at that point.
+
+### `content_objects` population
+
+`content_objects` is a lookup keyed by `(content_type_id, object_id)`. It is
+fully populated on the `bulk_give_permissions` / `bulk_remove_permissions` paths
+(the in-memory objects come straight from the input triples, no re-fetch). On
+the lower-level `give_assignments` / `remove_assignments` paths it may be empty
+or partial. Look content objects up with
+`content_objects.get((assignment.content_type_id, assignment.object_id))`; a
+missing key means it was not provided, and the handler should fall back to
+`assignment.content_object`. That fallback is a per-row query: the content
+object is never pre-loaded onto the assignment rows, and only travels through
+this dict.
+
+### Global (singleton) assignments
+
+Global assignments travel through the same signals, mixed in with
+object-scoped ones. For a global assignment, `assignment.object_role`,
+`assignment.content_type_id`, and `assignment.object_id` are all `None`, and it
+has no entry in `content_objects`. Handlers **must** treat `object_role` as
+possibly `None` and must not dereference `assignment.object_role.content_object`
+unconditionally.
+
+### Reentrancy on removal
+
+Unlike the old per-row `post_delete`, `dab_rbac_assignments_pre_delete` fires
+while the rows **still exist**. A handler that mirrors a removal into another
+system (e.g. editing an old-RBAC M2M) can trigger a reverse sync that calls
+`remove_permission` again, which re-finds the not-yet-deleted row and recurses
+indefinitely. Consumers doing this kind of mirroring **must** guard against
+reentrancy.
