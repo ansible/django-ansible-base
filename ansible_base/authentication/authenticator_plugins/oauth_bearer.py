@@ -718,6 +718,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
 
         return CachedJWKClient(
             jwks_uri,
+            cache_namespace=f"authenticator:{self.database_instance.pk}:{self.database_instance.modified.isoformat()}",
             lifespan=configuration.get("JWKS_CACHE_TIMEOUT", 3600),
             timeout=configuration.get("JWKS_URL_TIMEOUT", DEFAULT_JWKS_URL_TIMEOUT),
             ssl_context=ssl_context,

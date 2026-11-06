@@ -34,14 +34,19 @@ class CachedJWKClient(PyJWKClient):
 
     forced_refresh_cooldown = DEFAULT_JWKS_REFRESH_COOLDOWN_SECONDS
 
-    def __init__(self, uri: str, **kwargs: Any) -> None:
-        """Initialize a client whose JWKS cache is owned exclusively by Django's shared cache."""
+    def __init__(self, uri: str, cache_namespace: str | None = None, **kwargs: Any) -> None:
+        """Initialize a client whose JWKS cache is owned exclusively by Django's shared cache.
+
+        ``cache_namespace`` lets callers scope cached key material to their own
+        persisted configuration version. When omitted, the URI preserves the
+        historical provider-shared cache behavior for direct callers.
+        """
         # PyJWT's per-instance cache writes the raw response before DAB can
         # validate it. Keep all JWKS caching in the shared Django cache below.
         kwargs["cache_jwk_set"] = False
         super().__init__(uri, **kwargs)
         self.cache_timeout = kwargs.get("lifespan", 300)
-        self._cache_namespace = hashlib.sha256(uri.encode()).hexdigest()
+        self._cache_namespace = hashlib.sha256((cache_namespace or uri).encode()).hexdigest()
         self.forced_refresh_cooldown = self._configured_refresh_cooldown()
         # A fetch lease must outlive the originating HTTP request. Followers
         # use the same explicit JWKS timeout as the fetch owner, rather than

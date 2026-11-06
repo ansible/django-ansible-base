@@ -115,6 +115,7 @@ def test_oauth_bearer_plugin_validates_token_and_updates_claims(oauth_bearer_aut
 
     jwk_client.assert_called_once_with(
         oauth_bearer_authenticator.configuration["JWKS_URI"],
+        cache_namespace=f"authenticator:{oauth_bearer_authenticator.pk}:{oauth_bearer_authenticator.modified.isoformat()}",
         lifespan=oauth_bearer_authenticator.configuration["JWKS_CACHE_TIMEOUT"],
         timeout=oauth_bearer_authenticator.configuration["JWKS_URL_TIMEOUT"],
         ssl_context=None,
@@ -219,7 +220,13 @@ def test_oauth_bearer_plugin_defaults_missing_optional_configuration_for_existin
     assert decode_token.call_args.kwargs["algorithms"] == ["RS256"]
     assert decode_token.call_args.kwargs["audience"] == configuration["AUDIENCE"]
     assert decode_token.call_args.kwargs["issuer"] == configuration["ISSUER_URL"]
-    jwk_client.assert_called_once_with(configuration["JWKS_URI"], lifespan=3600, timeout=5, ssl_context=None)
+    jwk_client.assert_called_once_with(
+        configuration["JWKS_URI"],
+        cache_namespace=f"authenticator:{oauth_bearer_authenticator.pk}:{oauth_bearer_authenticator.modified.isoformat()}",
+        lifespan=3600,
+        timeout=5,
+        ssl_context=None,
+    )
     update_claims.assert_called_once_with(user, oauth_bearer_authenticator, ["operators"], attrs=claims)
 
 

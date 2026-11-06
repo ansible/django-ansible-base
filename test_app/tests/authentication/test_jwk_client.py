@@ -139,6 +139,23 @@ def test_cached_jwk_client_reuses_jwk_set_across_instances():
     fetch_data.assert_called_once_with()
 
 
+def test_cached_jwk_client_does_not_reuse_jwk_set_when_cache_namespace_changes():
+    uri = "https://issuer.example.com/keys"
+    first_client = CachedJWKClient(uri, cache_namespace="authenticator:1:version-one")
+    second_client = CachedJWKClient(uri, cache_namespace="authenticator:1:version-two")
+    document = {"keys": []}
+
+    with (
+        patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=document) as fetch_data,
+        patch("ansible_base.authentication.jwk_client.PyJWKSet.from_dict", return_value=Mock()),
+    ):
+        first_client.get_jwk_set()
+        second_client.get_jwk_set()
+
+    assert first_client._cache_namespace != second_client._cache_namespace
+    assert fetch_data.call_count == 2
+
+
 def test_cached_jwk_client_with_zero_lifespan_ignores_existing_jwk_set_cache():
     uri = "https://issuer.example.com/keys"
     cached_client = CachedJWKClient(uri, lifespan=123)

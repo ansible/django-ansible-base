@@ -102,6 +102,8 @@ an external identity; changing it can create a different local association.
 JWKS are cached for `JWKS_CACHE_TIMEOUT` seconds (default 3600). Set the value to
 `0` to disable caching and fetch JWKS for every request; existing shared-cache
 entries are ignored while caching is disabled.
+JWKS caches are scoped to an authenticator and its saved configuration version,
+so changing an authenticator's cache timeout starts a fresh cache lifecycle.
 On a signature failure, the authenticator can refresh the provider key set
 once to handle key rotation. `JWKS_URL_TIMEOUT` controls JWKS requests and
 `USERINFO_URL_TIMEOUT` controls UserInfo requests. `VERIFY_SSL` should remain
