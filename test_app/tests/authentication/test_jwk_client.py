@@ -210,6 +210,7 @@ def test_cached_jwk_client_with_zero_lifespan_does_not_use_cache_during_key_refr
 
 def test_cached_jwk_client_with_zero_lifespan_rejects_an_unknown_key_without_cache_access():
     client = CachedJWKClient("https://issuer.example.com/keys", lifespan=0)
+    token = _token()
 
     with (
         patch("ansible_base.authentication.jwk_client.cache.get") as cache_get,
@@ -218,7 +219,7 @@ def test_cached_jwk_client_with_zero_lifespan_rejects_an_unknown_key_without_cac
         patch.object(client, "get_signing_keys", return_value=[]),
     ):
         with pytest.raises(PyJWKClientError, match="Unable to find a signing key"):
-            client.refresh_signing_key_from_jwt(_token())
+            client.refresh_signing_key_from_jwt(token)
 
     cache_get.assert_not_called()
     cache_delete.assert_not_called()
