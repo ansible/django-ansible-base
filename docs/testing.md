@@ -28,6 +28,8 @@ tox will automatically create/start and stop/destroy the postgres container.  If
 
 To run tests against MS SQL Server instead of PostgreSQL, use the dedicated MS SQL tox environments. Tox-docker starts and removes the SQL Server test container automatically.
 
+**Status:** `py312-mssql-check` is green. The full `py312-mssql` suite runs but is not yet green on SQL Server — bulk-write support is the remaining AAP-98732 work (see the [SQL Server compatibility guide](mssql-compatibility-guide.md)).
+
 For consumer setup, database collation, ODBC installation, and `BoundedTextField` requirements, see the [SQL Server compatibility and migration guide](mssql-compatibility-guide.md).
 
 ```bash

@@ -1,8 +1,12 @@
 import pytest
 
-pytest.importorskip("mssql")
-
-from ansible_base.backends.mssql.base import DatabaseOperations, DatabaseWrapper  # noqa: E402
+try:
+    from ansible_base.backends.mssql.base import DatabaseOperations, DatabaseWrapper  # noqa: E402
+except Exception as error:
+    # mssql.base imports pyodbc, which needs the OS-level unixODBC libraries and the
+    # Microsoft ODBC driver; a missing driver raises ImproperlyConfigured, which
+    # importorskip does not catch. Skip instead of erroring at collection time.
+    pytest.skip(f"MS SQL backend unavailable: {error}", allow_module_level=True)
 
 
 def test_compiler_module_routes_to_compat_compiler():

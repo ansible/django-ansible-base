@@ -222,7 +222,10 @@ def advisory_lock(
 
     Args:
         lock_id: Lock identifier (usually a string, int, or tuple)
-        lock_session_timeout_milliseconds: Database-level timeout in milliseconds
+        lock_session_timeout_milliseconds: Database-level timeout in milliseconds.
+            On PostgreSQL this is an idle-session guard while the lock is held.
+            On SQL Server it is instead the lock acquisition timeout (sp_getapplock
+            @LockTimeout) and is ignored when wait=False.
         shared: If True, allow shared locks
         wait: If True, block until lock is obtained
         using: Django database alias

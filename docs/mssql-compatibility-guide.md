@@ -2,6 +2,8 @@
 
 django-ansible-base supports Microsoft SQL Server through the `ansible_base.backends.mssql` database engine, built on [mssql-django](https://github.com/microsoft/mssql-django). PostgreSQL remains the reference backend: every feature is developed and tested against PostgreSQL first, and the SQL Server support exists so that AAP components can run on either database. This guide covers the dependencies, collation, field, and backend behavior to review when deploying an application that uses DAB with SQL Server.
 
+**Current status:** the backend, its DDL, and the development environment are complete — every Django migration applies cleanly on SQL Server. The remaining gap is bulk-write data paths (tracked under AAP-98732): a first `manage.py migrate` exits non-zero *after* applying all migrations, because the `resource_registry` post-migrate backfill uses `bulk_create(ignore_conflicts=True)`, which mssql-django does not support (a second run succeeds with nothing to apply). Until the follow-up work lands, `DB_BACKEND=mssql ./test_app/scripts/bootstrap.sh` stops at that migrate step and the `py312-mssql` tox suite is not green.
+
 ## Python dependencies and ODBC driver
 
 The SQL Server Python dependencies are in the optional `mssql` extra. Install them with `pip install 'django-ansible-base[mssql]'` (or include `mssql` alongside the other extras your application uses). The `all` extra includes the SQL Server dependencies.
@@ -53,7 +55,7 @@ Consumer applications should apply the same rule to their own models: use `Bound
 ## Other backend behavior
 
 - The backend's compiler normalizes generated select aliases (`AS Col1` → `AS col1`) so sliced prefetch queries keep working under the case-sensitive collation; Django's outer `QUALIFY` wrapper references the lowercase form while mssql-django emits uppercase. This is a candidate for upstreaming to mssql-django.
-- SQL Server stores `JSONField` values as `nvarchar(max)`. DAB omits the `ISJSON` check constraint so encrypted JSON values, which are ciphertext rather than valid JSON, can be stored.
+- SQL Server stores `JSONField` values as `nvarchar(max)`. DAB omits the `ISJSON` check constraint on JSONField columns — for every JSONField, not only encrypted ones — so encrypted JSON values, which are ciphertext rather than valid JSON, can be stored.
 
 ## Where the SQL Server code lives
 
@@ -68,8 +70,9 @@ All SQL Server-specific code in DAB lives in two contained packages:
 
 Application code uses the standard Django ORM — there is no `*_db_safe` parallel API to adopt. A small number of operations are not transparent on SQL Server, and are named here so developers know the boundary:
 
-- `bulk_create(..., ignore_conflicts=True)` raises `NotSupportedError` on SQL Server (mssql-django does not implement it). Support for bulk writes on SQL Server arrives with the remaining MS SQL work in this series.
+- `bulk_create(..., ignore_conflicts=True)` raises `NotSupportedError` on SQL Server (mssql-django does not implement it); DAB's own first-run `migrate` currently hits this in the `resource_registry` backfill (see Current status above). The remaining AAP-98732 work makes bulk writes transparent on SQL Server.
 - `__regex`/`__iregex` lookups rely on a database function SQL Server does not install by default.
+- `lock_session_timeout_milliseconds` means something different on SQL Server: on PostgreSQL it is an idle-session guard while the lock is held; on SQL Server it becomes the lock *acquisition* timeout (`sp_getapplock`'s `@LockTimeout`) and is ignored when `wait=False`. Callers that rely on the idle guard together with `wait=False` do not get that protection on SQL Server.
 - Very large `pk__in` lists can exceed SQL Server's ~2100 query-parameter limit and need chunking; this cannot be made transparent and will remain a named, contained helper.
 
 If the list of non-transparent operations grows beyond a handful, the design is revisited rather than extended.
