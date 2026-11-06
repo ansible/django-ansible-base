@@ -54,6 +54,31 @@ def test_cached_jwk_client_caches_signing_key_by_uri_and_kid():
     from_dict.assert_called_once_with(signing_key._jwk_data)
 
 
+def test_cached_jwk_client_with_zero_lifespan_ignores_existing_signing_key_cache():
+    uri = "https://issuer.example.com/keys"
+    cached_client = CachedJWKClient(uri, lifespan=123)
+    no_cache_client = CachedJWKClient(uri, lifespan=0)
+    token = _token()
+    cached_key = {"kty": "RSA", "kid": "key-id"}
+    fetched_key = Mock(_jwk_data={"kty": "RSA", "kid": "key-id"})
+    cache.set(cached_client._signing_key_cache_key("key-id"), cached_key, timeout=cached_client.cache_timeout)
+
+    with (
+        patch("ansible_base.authentication.jwk_client.cache.get") as cache_get,
+        patch("ansible_base.authentication.jwk_client.cache.set") as cache_set,
+        patch(
+            "ansible_base.authentication.jwk_client.PyJWKClient.get_signing_key_from_jwt",
+            return_value=fetched_key,
+        ) as get_signing_key,
+    ):
+        assert no_cache_client.get_signing_key_from_jwt(token) is fetched_key
+
+    cache_get.assert_not_called()
+    cache_set.assert_not_called()
+    get_signing_key.assert_called_once_with(token)
+    assert cache.get(cached_client._signing_key_cache_key("key-id")) == cached_key
+
+
 def test_cached_jwk_client_rejects_tokens_without_a_kid():
     client = CachedJWKClient("https://issuer.example.com/keys")
     token = jwt.encode({"sub": "subject"}, "not-used", algorithm="HS256")
@@ -70,6 +95,14 @@ def test_cached_jwk_client_uses_jwks_timeout_for_fetch_coordination(timeout, exp
 
     assert client.fetch_wait_seconds == expected_wait
     assert client.fetch_lease_seconds == expected_lease
+
+
+def test_cached_jwk_client_invalidates_known_entries_for_a_cache_namespace():
+    with patch("ansible_base.authentication.jwk_client.cache.delete_many") as delete_many:
+        CachedJWKClient.invalidate_cache_namespace("authenticator:7:version-one")
+
+    namespace = hashlib.sha256(b"authenticator:7:version-one").hexdigest()
+    delete_many.assert_called_once_with((f"jwk_set:{namespace}", f"jwks_refresh:{namespace}", f"jwks_fetch:{namespace}"))
 
 
 def test_cached_jwk_client_discards_invalid_cached_jwk_and_refetches():
@@ -112,6 +145,85 @@ def test_cached_jwk_client_reuses_jwk_set_across_instances():
         assert second_client.get_jwk_set() is jwk_set
 
     fetch_data.assert_called_once_with()
+
+
+def test_cached_jwk_client_does_not_reuse_jwk_set_when_cache_namespace_changes():
+    uri = "https://issuer.example.com/keys"
+    first_client = CachedJWKClient(uri, cache_namespace="authenticator:1:version-one")
+    second_client = CachedJWKClient(uri, cache_namespace="authenticator:1:version-two")
+    document = {"keys": []}
+
+    with (
+        patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=document) as fetch_data,
+        patch("ansible_base.authentication.jwk_client.PyJWKSet.from_dict", return_value=Mock()),
+    ):
+        first_client.get_jwk_set()
+        second_client.get_jwk_set()
+
+    assert first_client._cache_namespace != second_client._cache_namespace
+    assert fetch_data.call_count == 2
+
+
+def test_cached_jwk_client_with_zero_lifespan_ignores_existing_jwk_set_cache():
+    uri = "https://issuer.example.com/keys"
+    cached_client = CachedJWKClient(uri, lifespan=123)
+    no_cache_client = CachedJWKClient(uri, lifespan=0)
+    cached_document = _jwk_document("cached-key")
+    fetched_document = _jwk_document("fetched-key")
+    cache.set(cached_client._jwk_set_cache_key, cached_document, timeout=cached_client.cache_timeout)
+
+    with (
+        patch("ansible_base.authentication.jwk_client.cache.get") as cache_get,
+        patch("ansible_base.authentication.jwk_client.cache.add") as cache_add,
+        patch("ansible_base.authentication.jwk_client.cache.set") as cache_set,
+        patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=fetched_document) as fetch_data,
+    ):
+        jwk_set = no_cache_client.get_jwk_set()
+
+    cache_get.assert_not_called()
+    cache_add.assert_not_called()
+    cache_set.assert_not_called()
+    fetch_data.assert_called_once_with()
+    assert [key.key_id for key in jwk_set.keys] == ["fetched-key"]
+    assert cache.get(cached_client._jwk_set_cache_key) == cached_document
+
+
+def test_cached_jwk_client_with_zero_lifespan_does_not_use_cache_during_key_refresh():
+    client = CachedJWKClient("https://issuer.example.com/keys", lifespan=0)
+    signing_key = Mock(_jwk_data={"kty": "RSA", "kid": "key-id"})
+
+    with (
+        patch("ansible_base.authentication.jwk_client.cache.get") as cache_get,
+        patch("ansible_base.authentication.jwk_client.cache.delete") as cache_delete,
+        patch("ansible_base.authentication.jwk_client.cache.set") as cache_set,
+        patch.object(client, "get_signing_keys", return_value=[signing_key]) as get_signing_keys,
+        patch.object(client, "match_kid", return_value=signing_key) as match_kid,
+    ):
+        assert client.refresh_signing_key_from_jwt(_token()) is signing_key
+
+    cache_get.assert_not_called()
+    cache_delete.assert_not_called()
+    cache_set.assert_not_called()
+    get_signing_keys.assert_called_once_with(refresh=True)
+    match_kid.assert_called_once_with([signing_key], "key-id")
+
+
+def test_cached_jwk_client_with_zero_lifespan_rejects_an_unknown_key_without_cache_access():
+    client = CachedJWKClient("https://issuer.example.com/keys", lifespan=0)
+    token = _token()
+
+    with (
+        patch("ansible_base.authentication.jwk_client.cache.get") as cache_get,
+        patch("ansible_base.authentication.jwk_client.cache.delete") as cache_delete,
+        patch("ansible_base.authentication.jwk_client.cache.set") as cache_set,
+        patch.object(client, "get_signing_keys", return_value=[]),
+    ):
+        with pytest.raises(PyJWKClientError, match="Unable to find a signing key"):
+            client.refresh_signing_key_from_jwt(token)
+
+    cache_get.assert_not_called()
+    cache_delete.assert_not_called()
+    cache_set.assert_not_called()
 
 
 def test_cached_jwk_client_only_caches_a_parser_validated_jwk_set():

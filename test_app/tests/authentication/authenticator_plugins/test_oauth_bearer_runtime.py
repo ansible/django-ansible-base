@@ -37,6 +37,37 @@ def _social_auth_settings():
     return {"SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL": settings.SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL}
 
 
+def test_oauth_bearer_plugin_invalidates_previous_jwks_namespace_when_cache_timeout_changes():
+    plugin = AuthenticatorPlugin()
+    previous_modified = datetime(2026, 11, 6, 12, 0, tzinfo=timezone.utc)
+
+    with patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient.invalidate_cache_namespace") as invalidate:
+        plugin.configuration_updated(
+            authenticator_id=7,
+            previous_configuration={"JWKS_CACHE_TIMEOUT": 3600},
+            previous_modified=previous_modified,
+            configuration={"JWKS_CACHE_TIMEOUT": 0},
+            modified=datetime(2026, 11, 6, 12, 1, tzinfo=timezone.utc),
+        )
+
+    invalidate.assert_called_once_with("authenticator:7:2026-11-06T12:00:00+00:00")
+
+
+def test_oauth_bearer_plugin_keeps_jwks_namespace_when_cache_timeout_is_unchanged():
+    plugin = AuthenticatorPlugin()
+
+    with patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient.invalidate_cache_namespace") as invalidate:
+        plugin.configuration_updated(
+            authenticator_id=7,
+            previous_configuration={"JWKS_CACHE_TIMEOUT": 300},
+            previous_modified=datetime(2026, 11, 6, 12, 0, tzinfo=timezone.utc),
+            configuration={"JWKS_CACHE_TIMEOUT": 300},
+            modified=datetime(2026, 11, 6, 12, 1, tzinfo=timezone.utc),
+        )
+
+    invalidate.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("user_field", "claim_key", "claims", "expected"),
     [
@@ -115,6 +146,7 @@ def test_oauth_bearer_plugin_validates_token_and_updates_claims(oauth_bearer_aut
 
     jwk_client.assert_called_once_with(
         oauth_bearer_authenticator.configuration["JWKS_URI"],
+        cache_namespace=f"authenticator:{oauth_bearer_authenticator.pk}:{oauth_bearer_authenticator.modified.isoformat()}",
         lifespan=oauth_bearer_authenticator.configuration["JWKS_CACHE_TIMEOUT"],
         timeout=oauth_bearer_authenticator.configuration["JWKS_URL_TIMEOUT"],
         ssl_context=None,
@@ -219,7 +251,13 @@ def test_oauth_bearer_plugin_defaults_missing_optional_configuration_for_existin
     assert decode_token.call_args.kwargs["algorithms"] == ["RS256"]
     assert decode_token.call_args.kwargs["audience"] == configuration["AUDIENCE"]
     assert decode_token.call_args.kwargs["issuer"] == configuration["ISSUER_URL"]
-    jwk_client.assert_called_once_with(configuration["JWKS_URI"], lifespan=3600, timeout=5, ssl_context=None)
+    jwk_client.assert_called_once_with(
+        configuration["JWKS_URI"],
+        cache_namespace=f"authenticator:{oauth_bearer_authenticator.pk}:{oauth_bearer_authenticator.modified.isoformat()}",
+        lifespan=3600,
+        timeout=5,
+        ssl_context=None,
+    )
     update_claims.assert_called_once_with(user, oauth_bearer_authenticator, ["operators"], attrs=claims)
 
 

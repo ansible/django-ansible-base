@@ -106,6 +106,22 @@ class AbstractAuthenticatorPlugin:
     def update_settings(self, database_authenticator: Authenticator) -> None:
         self.settings = database_authenticator.configuration
 
+    def configuration_updated(
+        self,
+        *,
+        authenticator_id: int,
+        previous_configuration: dict,
+        previous_modified: object,
+        configuration: dict,
+        modified: object,
+    ) -> None:
+        """React to a committed authenticator configuration change.
+
+        Subclasses may invalidate configuration-dependent shared state here.
+        The model invokes this hook only after the surrounding transaction
+        commits, so callbacks never observe rolled-back configuration.
+        """
+
     def update_if_needed(self, database_authenticator: Authenticator) -> None:
         if not self.database_instance or self.database_instance.modified != database_authenticator.modified:
             if self.database_instance:

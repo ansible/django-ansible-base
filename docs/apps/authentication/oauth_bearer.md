@@ -32,7 +32,7 @@ the following settings:
 | `USERINFO_URL_TIMEOUT` | No | UserInfo request timeout in seconds; defaults to 30. |
 | `JWT_CLOCK_SKEW_TOLERANCE_SECONDS` | No | Expiration, not-before, and issued-at tolerance in seconds; defaults to 0 and permits 0 through 300. |
 | `ALLOWED_ALGORITHMS` | No | Accepted asymmetric signing algorithms; defaults to `RS256`. |
-| `JWKS_CACHE_TIMEOUT` | No | JWKS cache lifetime in seconds; defaults to 3600 and has a minimum of 60. |
+| `JWKS_CACHE_TIMEOUT` | No | JWKS cache lifetime in seconds; defaults to 3600. Set to 0 to disable caching. |
 | `GROUPS_CLAIM` | No | Group-membership claim used by authenticator maps; defaults to `groups`. |
 | `USERINFO_URL` | No | Supplemental profile and group-claim endpoint. |
 | `EMAIL_KEY`, `FIRST_NAME_KEY`, `LAST_NAME_KEY`, `USERNAME_KEY` | No | Optional mappings from validated claims to local user fields. |
@@ -99,7 +99,11 @@ an external identity; changing it can create a different local association.
 
 ## JWKS and availability
 
-JWKS are cached for `JWKS_CACHE_TIMEOUT` seconds (default 3600; minimum 60).
+JWKS are cached for `JWKS_CACHE_TIMEOUT` seconds (default 3600). Set the value to
+`0` to disable caching and fetch JWKS for every request; existing shared-cache
+entries are ignored while caching is disabled.
+JWKS caches are scoped to an authenticator and its saved configuration version,
+so changing an authenticator's cache timeout starts a fresh cache lifecycle.
 On a signature failure, the authenticator can refresh the provider key set
 once to handle key rotation. `JWKS_URL_TIMEOUT` controls JWKS requests and
 `USERINFO_URL_TIMEOUT` controls UserInfo requests. `VERIFY_SSL` should remain
