@@ -246,8 +246,9 @@ def test_cached_jwk_client_refetches_after_the_cached_jwk_set_expires():
 
     with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=document) as fetch_data:
         assert [key.key_id for key in client.get_jwk_set().keys] == ["key-id"]
-        time.sleep(1.1)
-        assert cache.get(client._jwk_set_cache_key) is None
+        # Advance only the cache backend's clock past the entry's lifespan.
+        with patch("django.core.cache.backends.locmem.time.time", return_value=time.time() + 2):
+            assert cache.get(client._jwk_set_cache_key) is None
         assert [key.key_id for key in client.get_jwk_set().keys] == ["key-id"]
 
     assert fetch_data.call_count == 2
