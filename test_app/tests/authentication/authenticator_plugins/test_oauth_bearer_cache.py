@@ -11,7 +11,6 @@ from jwt.exceptions import PyJWKClientConnectionError
 
 from ansible_base.authentication.authenticator_plugins.oauth_bearer import AuthenticatorPlugin
 from ansible_base.authentication.bearer_authentication import BearerTokenValidationError
-from ansible_base.authentication.jwk_client import CachedJWKClient
 
 PLUGIN = "ansible_base.authentication.authenticator_plugins.oauth_bearer"
 JWK_CLIENT = "ansible_base.authentication.jwk_client.PyJWKClient"
@@ -59,7 +58,9 @@ def test_authenticate_populates_the_cache(oauth_bearer_authenticator):
     with patch(f"{JWK_CLIENT}.fetch_data", return_value={"keys": [jwk]}):
         assert _authenticate(plugin, _token(oauth_bearer_authenticator.configuration, key, "k1")) is not None
 
-    assert cache.get(CachedJWKClient(oauth_bearer_authenticator.configuration["JWKS_URI"])._jwk_set_cache_key) == {"keys": [jwk]}
+    configuration = oauth_bearer_authenticator.configuration
+    jwk_client = plugin._build_jwk_client(configuration["JWKS_URI"], configuration)
+    assert cache.get(jwk_client._jwk_set_cache_key) == {"keys": [jwk]}
 
 
 @pytest.mark.django_db
