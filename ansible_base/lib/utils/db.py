@@ -196,13 +196,25 @@ def _postgres_advisory_lock(db_connection, lock_id, shared, wait, using, lock_se
         internal_error = True
         raise
     finally:
-        if not internal_error and lock_session_timeout_milliseconds > 0 and db_connection.connection is not None and not db_connection.closed_in_transaction:
-            with db_connection.cursor() as cursor:
-                cursor.execute(
-                    "SET idle_in_transaction_session_timeout = %s",
-                    (idle_in_transaction_session_timeout,),
-                )
-                cursor.execute("SET idle_session_timeout = %s", (idle_session_timeout,))
+        # Restore the caller's timeouts even after an OperationalError: if the connection
+        # survived close_if_unusable_or_obsolete, leaving the short lock timeout in place
+        # would let the server kill the session as soon as it goes idle.
+        if lock_session_timeout_milliseconds > 0 and db_connection.connection is not None and not db_connection.closed_in_transaction:
+            try:
+                with db_connection.cursor() as cursor:
+                    cursor.execute(
+                        "SET idle_in_transaction_session_timeout = %s",
+                        (idle_in_transaction_session_timeout,),
+                    )
+                    cursor.execute("SET idle_session_timeout = %s", (idle_session_timeout,))
+            except Exception:
+                if internal_error:
+                    # The connection is already suspect; discard it rather than replace
+                    # the original OperationalError with a restore failure.
+                    logger.exception("Failed to restore idle timeouts after advisory_lock error; discarding the database connection")
+                    _close_lock_connection(db_connection)
+                else:
+                    raise
 
 
 @contextmanager

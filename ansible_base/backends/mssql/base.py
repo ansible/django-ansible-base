@@ -39,13 +39,8 @@ class DatabaseWrapper(MSSQLDatabaseWrapper):
 
     ops_class = DatabaseOperations
 
-    # Override to remove ISJSON constraint from JSONField
-    # This allows storing encrypted data in JSONField columns
-    # (encrypted data is a string, not valid JSON, so would fail ISJSON check)
-    positive_field_constraint = '[%(column)s] >= 0'
-    data_type_check_constraints = {
-        # 'JSONField': '(ISJSON ("%(column)s") = 1)',  # Removed - breaks encrypted JSONFields
-        'PositiveIntegerField': positive_field_constraint,
-        'PositiveSmallIntegerField': positive_field_constraint,
-        'PositiveBigIntegerField': positive_field_constraint,
-    }
+    # Inherit mssql-django's check constraints, dropping only JSONField's ISJSON:
+    # DAB stores encrypted (non-JSON) ciphertext in JSONField columns, which ISJSON rejects.
+    # Deriving from the upstream mapping keeps any constraints mssql-django adds in
+    # future versions instead of pinning a copy of the current ones.
+    data_type_check_constraints = {key: value for key, value in MSSQLDatabaseWrapper.data_type_check_constraints.items() if key != 'JSONField'}

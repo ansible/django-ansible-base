@@ -1,6 +1,6 @@
 import threading
 import time
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import psycopg
 import pytest
@@ -260,6 +260,56 @@ def test_postgres_advisory_lock_closes_using_alias_after_operational_error(monke
 
     replica_connection.close_if_unusable_or_obsolete.assert_called_once()
     default_connection.close_if_unusable_or_obsolete.assert_not_called()
+
+
+def test_postgres_advisory_lock_restores_timeouts_after_operational_error(monkeypatch):
+    """An OperationalError that leaves the connection usable must still restore the caller's idle timeouts.
+
+    Otherwise the connection keeps the short lock timeout and postgres kills it
+    as soon as it goes idle.
+    """
+    replica_connection = MagicMock(vendor='postgresql')
+    # close_if_unusable_or_obsolete is a Mock, so the connection survives it
+    replica_connection.connection = Mock()
+    replica_connection.closed_in_transaction = False
+    cursor = MagicMock()
+    cursor.execute.return_value.fetchone.return_value = ('original_timeout',)
+    replica_connection.cursor.return_value.__enter__.return_value = cursor
+    monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+    body_error = OperationalError('body failed')
+
+    with pytest.raises(OperationalError, match='body failed'):
+        with db._postgres_advisory_lock(replica_connection, 'lock', False, True, 'replica', 5000):
+            raise body_error
+
+    replica_connection.close_if_unusable_or_obsolete.assert_called_once()
+    set_timeout_calls = [call for call in cursor.execute.call_args_list if call.args[0] == 'SET idle_session_timeout = %s']
+    # once to apply the lock timeout, once to restore the caller's value in the finally block
+    assert len(set_timeout_calls) == 2
+    assert set_timeout_calls[1].args == ('SET idle_session_timeout = %s', ('original_timeout',))
+
+
+def test_postgres_advisory_lock_restore_failure_after_operational_error_closes_connection(monkeypatch):
+    """If restoring the timeouts fails on a connection that already saw an OperationalError, discard it.
+
+    The original exception must reach the caller, not the restore failure.
+    """
+    replica_connection = MagicMock(vendor='postgresql')
+    replica_connection.connection = Mock()
+    replica_connection.closed_in_transaction = False
+    cursor = MagicMock()
+    ok = MagicMock()
+    ok.fetchone.return_value = ('original_timeout',)
+    # SHOW, SHOW, SET, SET succeed; the restore SET fails
+    cursor.execute.side_effect = [ok, ok, ok, ok, OperationalError('restore failed')]
+    replica_connection.cursor.return_value.__enter__.return_value = cursor
+    monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+
+    with pytest.raises(OperationalError, match='body failed'):
+        with db._postgres_advisory_lock(replica_connection, 'lock', False, True, 'replica', 5000):
+            raise OperationalError('body failed')
+
+    replica_connection.close.assert_called_once()
 
 
 def test_postgres_lock_release_error_preserves_body_exception_and_closes_connection(monkeypatch):

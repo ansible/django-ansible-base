@@ -15,8 +15,12 @@ def test_compiler_module_routes_to_compat_compiler():
 
 def test_data_type_check_constraints_omit_isjson():
     "Encrypted JSONField values are ciphertext, not valid JSON; ISJSON would reject them."
+    import mssql.base as upstream
+
+    expected = {key: value for key, value in upstream.DatabaseWrapper.data_type_check_constraints.items() if key != "JSONField"}
+    # the mapping is derived from mssql-django's, so new upstream constraints carry over
+    assert DatabaseWrapper.data_type_check_constraints == expected
     assert "JSONField" not in DatabaseWrapper.data_type_check_constraints
-    assert "[%(column)s] >= 0" in DatabaseWrapper.data_type_check_constraints.values()
 
 
 def test_no_schema_editor_or_cursor_overrides():
