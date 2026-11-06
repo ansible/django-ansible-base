@@ -284,21 +284,21 @@ class RoleDefinition(CommonModel):
         """
         from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
 
+        # A None content object marks this as a global (singleton) assignment.
+        perm = [(self, actor, None)]
         if actor._meta.model_name == 'user':
             cls = RoleUserAssignment
             actor_filter = {'user': actor}
-            is_user = True
+            user_perms, team_perms = perm, []
         elif isinstance(actor, permission_registry.team_model):
             cls = RoleTeamAssignment
             actor_filter = {'team': actor}
-            is_user = False
+            user_perms, team_perms = [], perm
         else:
             raise RuntimeError(f'Cannot {giving and "give" or "remove"} permission for {actor}, must be a user or team')
 
-        # A None content object marks this as a global (singleton) assignment.
-        perm = [(self, actor, None)]
         if giving:
-            created = bulk_give_permissions(user_permissions=perm if is_user else [], team_permissions=[] if is_user else perm)
+            created = bulk_give_permissions(user_permissions=user_perms, team_permissions=team_perms)
             if created:
                 assignment = created[0]
             else:
@@ -313,7 +313,7 @@ class RoleDefinition(CommonModel):
         else:
             # Capture the row for the return value before the pipeline deletes it.
             assignment = cls.objects.filter(role_definition=self, object_role__isnull=True, **actor_filter).first()
-            bulk_remove_permissions(user_permissions=perm if is_user else [], team_permissions=[] if is_user else perm)
+            bulk_remove_permissions(user_permissions=user_perms, team_permissions=team_perms)
 
         # The bulk pipeline clears the in-memory singleton-permission cache for global assignments
         # (users by instance, teams via the process-wide signal), so no cache handling is needed here.
