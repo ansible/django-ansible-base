@@ -30,6 +30,23 @@ def test_oauth2_bearer_get_user_correct(unauthenticated_api_client, oauth2_admin
     assert response.data["username"] == oauth2_admin_access_token[0].user.username
 
 
+def test_existing_pat_still_authenticates_after_pat_creation_is_disabled(user_api_client, unauthenticated_api_client, user, settings):
+    """The local PAT creation setting gates new tokens only; issued tokens keep working (TC-9 item 6)."""
+    settings.allow_local_pat_creation = True
+    created = user_api_client.post(get_relative_url("token-list"), {"scope": "read"})
+    assert created.status_code == 201
+
+    settings.allow_local_pat_creation = False
+    response = unauthenticated_api_client.get(
+        get_relative_url("user-me"),
+        headers={"Authorization": f"Bearer {created.data['token']}"},
+    )
+
+    assert settings.allow_local_pat_creation is False
+    assert response.status_code == 200
+    assert response.data["username"] == user.username
+
+
 @pytest.mark.parametrize("prefix", ["Bearer", "Token", "bearer", "token", "BEARER", "TOKEN"])
 def test_oauth2_token_prefix_variants(unauthenticated_api_client, oauth2_admin_access_token, animal, prefix):
     """
