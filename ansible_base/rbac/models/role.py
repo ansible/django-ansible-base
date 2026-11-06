@@ -268,6 +268,20 @@ class RoleDefinition(CommonModel):
             return models.Q(pk__in=[])
         return reduce(operator.or_, conditions)
 
+    @staticmethod
+    def _grant_with_retry(grant, model, description):
+        """Run grant() and return its assignment, retrying once if it returns None.
+
+        grant() returns the new row, or the pre-existing one it fetches after a no-op insert.
+        It returns None only when that pre-existing row was removed concurrently between the
+        insert and the fetch; granting again then creates it. A second None means it keeps
+        being removed, which is raised as model.DoesNotExist.
+        """
+        assignment = grant() or grant()
+        if assignment is None:
+            raise model.DoesNotExist(f'{description} was removed concurrently while granting it')
+        return assignment
+
     def give_global_permission(self, actor):
         return self.give_or_remove_global_permission(actor, giving=True)
 
@@ -287,7 +301,9 @@ class RoleDefinition(CommonModel):
         Returns:
             On grant, the new or pre-existing assignment (the pipeline returns only newly-created
             rows, so an existing one is fetched). Either way it carries the caller's role
-            definition and actor instances, as the old get_or_create path did.
+            definition and actor instances, as the old get_or_create path did. If the existing
+            row is removed concurrently between the no-op insert and the fetch, the grant is
+            retried once.
             On removal, the removed assignment, or None if there was none.
         """
         from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
@@ -305,11 +321,14 @@ class RoleDefinition(CommonModel):
             raise RuntimeError(f'Cannot {giving and "give" or "remove"} permission for {actor}, must be a user or team')
 
         if giving:
-            created = bulk_give_permissions(user_permissions=user_perms, team_permissions=team_perms)
-            if created:
-                assignment = created[0]
-            else:
-                assignment = cls.objects.get(role_definition=self, object_role__isnull=True, **actor_filter)
+
+            def grant():
+                created = bulk_give_permissions(user_permissions=user_perms, team_permissions=team_perms)
+                if created:
+                    return created[0]
+                return cls.objects.filter(role_definition=self, object_role__isnull=True, **actor_filter).first()
+
+            assignment = self._grant_with_retry(grant, cls, f'Global assignment of {self} to {actor}')
             assignment.role_definition = self
             for field_name, obj in actor_filter.items():
                 setattr(assignment, field_name, obj)
@@ -325,26 +344,28 @@ class RoleDefinition(CommonModel):
         Returns the existing assignment if there already was one. The bulk pipeline returns
         only the rows it inserted (INSERT ... ON CONFLICT DO NOTHING reports nothing about the
         rows it skips), so the existing one is fetched here; this path is a single row, so the
-        lookup that does not scale in bulk is fine. content_type/object_id are resolved the same
-        way the pipeline stores them: object_id is a normalized string, so a raw non-integer pk
-        (e.g. a UUID) would not match.
+        lookup that does not scale in bulk is fine. If that row is removed concurrently between
+        the no-op insert and the fetch, the grant is retried once. content_type/object_id are
+        resolved the same way the pipeline stores them: object_id is a normalized string, so a
+        raw non-integer pk (e.g. a UUID) would not match.
         """
         from ansible_base.rbac.pipeline import _resolve_content_object, bulk_give_permissions
 
         is_user = actor._meta.model_name == 'user'
         perm = [(self, actor, content_object)]
-        assignments = bulk_give_permissions(
-            user_permissions=perm if is_user else [],
-            team_permissions=[] if is_user else perm,
-        )
-        if assignments:
-            return assignments[0]
-        content_type, object_id, _ = _resolve_content_object(content_object)
         if is_user:
-            qs = RoleUserAssignment.objects.filter(user=actor)
+            model, user_perms, team_perms, actor_filter = RoleUserAssignment, perm, [], {'user': actor}
         else:
-            qs = RoleTeamAssignment.objects.filter(team=actor)
-        return qs.get(role_definition=self, content_type=content_type, object_id=object_id)
+            model, user_perms, team_perms, actor_filter = RoleTeamAssignment, [], perm, {'team': actor}
+
+        def grant():
+            assignments = bulk_give_permissions(user_permissions=user_perms, team_permissions=team_perms)
+            if assignments:
+                return assignments[0]
+            content_type, object_id, _ = _resolve_content_object(content_object)
+            return model.objects.filter(role_definition=self, content_type=content_type, object_id=object_id, **actor_filter).first()
+
+        return self._grant_with_retry(grant, model, f'Assignment of {self} to {actor} on {content_object}')
 
     def remove_permission(self, actor, content_object):
         from ansible_base.rbac.pipeline import bulk_remove_permissions
