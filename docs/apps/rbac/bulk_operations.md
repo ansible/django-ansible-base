@@ -138,7 +138,13 @@ Every assignment created or removed through the pipeline — whether via
 `give_permission` / `remove_permission` helpers — emits one of two Django
 signals. Downstream systems (e.g. mirroring assignments into another RBAC
 system, or recording activity-stream entries) connect to these instead of
-listening to per-row model `post_save` / `post_delete`.
+listening to per-row model `post_save` / `post_delete`. This includes global
+(singleton) assignments, via a triple with a `None` content object or
+`give_global_permission` / `remove_global_permission`.
+
+These are the supported entry points. Writing assignment rows directly through
+the ORM (e.g. `RoleUserAssignment.objects.create(...)` or `.get_or_create(...)`)
+bypasses the pipeline and does **not** send either signal.
 
 ```python
 from ansible_base.rbac.triggers import (
@@ -148,7 +154,10 @@ from ansible_base.rbac.triggers import (
 ```
 
 Both signals fire **once per operation** (not once per row) and are sent with
-`sender=None`. The keyword arguments are:
+`sender=None`. `created` fires only when rows were actually inserted;
+idempotent re-grants of an existing assignment send nothing (equivalent to
+`post_save` with `created=True`). Likewise, `pre_delete` is not sent when there
+is nothing to remove. The keyword arguments are:
 
 | Argument | Type | Meaning |
 |---|---|---|
@@ -200,8 +209,27 @@ since no rows exist yet at that point.
 fully populated on the `bulk_give_permissions` / `bulk_remove_permissions` paths
 (the in-memory objects come straight from the input triples, no re-fetch). On
 the lower-level `give_assignments` / `remove_assignments` paths it may be empty
-or partial — a handler that needs the content object for an assignment not
-present in the dict must fetch it itself (falling back to
-`assignment.content_object` for a per-row lookup). The generic-foreign-key
-`content_object` is never carried on the assignment rows themselves; it travels
-only through this dict.
+or partial. Look content objects up with
+`content_objects.get((assignment.content_type_id, assignment.object_id))`; a
+missing key means it was not provided, and the handler should fall back to
+`assignment.content_object`. That fallback is a per-row query: the content
+object is never pre-loaded onto the assignment rows, and only travels through
+this dict.
+
+### Global (singleton) assignments
+
+Global assignments travel through the same signals, mixed in with
+object-scoped ones. For a global assignment, `assignment.object_role`,
+`assignment.content_type_id`, and `assignment.object_id` are all `None`, and it
+has no entry in `content_objects`. Handlers **must** treat `object_role` as
+possibly `None` and must not dereference `assignment.object_role.content_object`
+unconditionally.
+
+### Reentrancy on removal
+
+Unlike the old per-row `post_delete`, `dab_rbac_assignments_pre_delete` fires
+while the rows **still exist**. A handler that mirrors a removal into another
+system (e.g. editing an old-RBAC M2M) can trigger a reverse sync that calls
+`remove_permission` again, which re-finds the not-yet-deleted row and recurses
+indefinitely. Consumers doing this kind of mirroring **must** guard against
+reentrancy.
