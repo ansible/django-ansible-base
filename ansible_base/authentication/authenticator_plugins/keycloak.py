@@ -53,6 +53,7 @@ class KeycloakConfiguration(BaseAuthenticatorConfiguration):
 class AuthenticatorPlugin(SocialAuthMixin, KeycloakOAuth2, AbstractAuthenticatorPlugin):  # type: ignore[override]
     configuration_class = KeycloakConfiguration
     type = "keycloak"
+    display_name = _("Keycloak")
     logger = logger
     category = "sso"
     configuration_encrypted_fields = ['SECRET']

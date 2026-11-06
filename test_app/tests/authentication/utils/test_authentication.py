@@ -1,3 +1,5 @@
+from unittest import mock
+
 import pytest
 from django.conf import settings
 from django.test import override_settings
@@ -82,8 +84,9 @@ class TestAuthenticationUtilsAuthentication:
             AuthenticatorUser.objects.create(uid=random_user.username, user=random_user, provider=local_authenticator)
         elif related_authenticator in ['ldap', 'multiple']:
             AuthenticatorUser.objects.create(uid=random_user.username, user=random_user, provider=ldap_authenticator)
-        # Use different log levels based on the scenario
-        log_level = 'warning' if related_authenticator == 'ldap' else 'info'
+        # Existing authenticator links are a routine request path; only a
+        # conflicting provider association deserves warning-level logging.
+        log_level = 'warning' if related_authenticator == 'ldap' else 'debug' if related_authenticator else 'info'
         with expected_log(self.logger, log_level, info_message):
             new_username = authentication.determine_username_from_uid(uid=uid, email="", authenticator=local_authenticator)
             if expected_username:
@@ -108,6 +111,18 @@ class TestAuthenticationUtilsAuthentication:
         new_username = authentication.determine_username_from_uid(uid="existing-user", email="", authenticator=local_authenticator)
         assert new_username != "existing-user"
         assert new_username.startswith("existing-user")  # It should be "existing-user" followed by a hash
+
+    def test_determine_username_from_uid_logs_email_link_to_existing_user(self, ldap_authenticator):
+        User.objects.create(username="existing-user", email="existing-user@example.com")
+
+        with mock.patch("ansible_base.authentication.utils.authentication.log_auth_event") as audit_log:
+            username = authentication.determine_username_from_uid(uid="new-uid", email="existing-user@example.com", authenticator=ldap_authenticator)
+
+        audit_log.assert_called_once_with(
+            f"Authenticator {ldap_authenticator.name} is linking user new-uid to existing user existing-user via email existing-user@example.com"
+        )
+
+        assert username == "existing-user"
 
     def test_username_collision_scenario(self, admin_user, admin_api_client, saml_authenticator):
         # We are going to play around with two uids
@@ -156,6 +171,20 @@ class TestAuthenticationUtilsAuthentication:
         # Verify the state of AuthenticatorUser entries
         assert AuthenticatorUser.objects.filter(uid=user1_uid, user__username=user2_uid).exists(), "Missing renamed user"
         assert AuthenticatorUser.objects.filter(uid=user2_uid, user__username=user2_user.username).exists(), "Missing newly created user"
+
+    def test_get_or_create_authenticator_user_uses_configured_username(self, local_authenticator):
+        user, authenticator_user, created = authentication.get_or_create_authenticator_user(
+            uid="stable-subject",
+            email="",
+            authenticator=local_authenticator,
+            user_details={},
+            extra_data={},
+            username="preferred-name",
+        )
+
+        assert created is True
+        assert user.username == "preferred-name"
+        assert authenticator_user.uid == "stable-subject"
 
     @pytest.mark.parametrize(
         "auth_fixture",
