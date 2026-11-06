@@ -7,6 +7,8 @@ from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from ansible_base.lib.serializers.validators import validate_mssql_object_id, validate_mssql_parent_reference
+
 from ..api.fields import ActorAnsibleIdField
 from ..models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ..policies import check_content_obj_permission
@@ -95,17 +97,16 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
             return str(object_role.parent_reference)
         return ''
 
-    def validate(self, attrs):
-        """The object_id vs ansible_id is the only dual-write case, where we have to accept either
-
-        So this does the mutual validation to assure we have sufficient data.
-        """
+    def _normalize_parent_reference(self, attrs):
         parent_reference = self._current_input_data.get('parent_reference', '')
         if parent_reference is None:
             parent_reference = ''
         if not isinstance(parent_reference, str):
             raise serializers.ValidationError({'parent_reference': 'Must be a string.'})
         attrs['parent_reference'] = parent_reference
+        return parent_reference
+
+    def _validate_assignment_target(self, attrs):
         rd = attrs['role_definition']
         has_object_id = 'object_id' in attrs and attrs['object_id']
         has_object_ansible_id = 'object_ansible_id' in attrs and attrs['object_ansible_id']
@@ -121,6 +122,21 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
             if has_object_id or has_object_ansible_id:
                 raise serializers.ValidationError("Can not provide either 'object_id' or 'object_ansible_id' for system role")
 
+    def _validate_mssql_text_fields(self, attrs, parent_reference):
+        for field_name, validator, value in (
+            ('object_id', validate_mssql_object_id, attrs.get('object_id')),
+            ('parent_reference', validate_mssql_parent_reference, parent_reference),
+        ):
+            try:
+                validator(value)
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError({field_name: exc.messages}) from exc
+
+    def validate(self, attrs):
+        """Validate the target identifiers and parent reference for an assignment."""
+        parent_reference = self._normalize_parent_reference(attrs)
+        self._validate_assignment_target(attrs)
+        self._validate_mssql_text_fields(attrs, parent_reference)
         return super().validate(attrs)
 
     def to_internal_value(self, data):

@@ -1,5 +1,8 @@
 import logging
 
+from django.core.exceptions import FieldDoesNotExist
+from django.core.validators import MaxLengthValidator
+from django.db import connection
 from django.db.models.fields import NOT_PROVIDED
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
@@ -12,6 +15,7 @@ from ansible_base.lib.serializers.mixins import EmailAdminOnlyMixin, UsernameAdm
 from ansible_base.lib.serializers.validation import ValidationSerializerMixin
 from ansible_base.lib.utils import models
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.mssql import get_mssql_constrained_textfield_max_length
 
 logger = logging.getLogger('ansible_base.lib.serializers.common')
 
@@ -23,6 +27,35 @@ class AbstractCommonModelSerializer(ValidationSerializerMixin, serializers.Model
 
     class Meta:
         fields = ['id', 'url', 'related', 'summary_fields']
+
+    def get_fields(self):
+        fields = super().get_fields()
+        model = getattr(self.Meta, 'model', None)
+        if connection.vendor != 'microsoft' or model is None:
+            return fields
+
+        for serializer_name, serializer_field in fields.items():
+            if not isinstance(serializer_field, serializers.CharField):
+                continue
+            source = getattr(serializer_field, 'source', None) or serializer_name
+            if source == '*' or '.' in source:
+                continue
+            try:
+                model_field = model._meta.get_field(source)
+            except FieldDoesNotExist:
+                continue
+
+            max_length = get_mssql_constrained_textfield_max_length(model_field, model)
+            if max_length is None:
+                continue
+
+            if serializer_field.max_length is not None:
+                max_length = min(max_length, serializer_field.max_length)
+            serializer_field.max_length = max_length
+            other_validators = [validator for validator in serializer_field.validators if not isinstance(validator, MaxLengthValidator)]
+            serializer_field.validators = [MaxLengthValidator(max_length), *other_validators]
+
+        return fields
 
     def __init__(self, instance=None, data=empty, **kwargs):
         # pre-populate the form with the defaults from the model

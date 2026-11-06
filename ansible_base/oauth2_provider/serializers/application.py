@@ -7,6 +7,7 @@ from rest_framework import serializers
 
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 from ansible_base.lib.serializers.mixins import CleanTextMixin
+from ansible_base.lib.serializers.validators import validate_mssql_description
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.oauth2_provider.models import OAuth2Application
 
@@ -35,6 +36,11 @@ class OAuth2ApplicationSerializer(CleanTextMixin, NamedCommonModelSerializer):
             'skip_authorization': {'label': _('Skip Authorization')},
             'algorithm': {'allow_blank': False, 'label': _('Algorithm')},
         }
+
+    def validate_description(self, value):
+        """Validate description field length for SQL Server compatibility."""
+        validate_mssql_description(value)
+        return value
 
     def _get_client_secret(self, obj):
         request = self.context.get('request', None)

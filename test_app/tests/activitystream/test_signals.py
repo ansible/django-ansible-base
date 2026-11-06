@@ -8,6 +8,7 @@ import ansible_base.activitystream.signals as signals
 from ansible_base.activitystream import no_activity_stream
 from ansible_base.activitystream.models import Entry
 from ansible_base.activitystream.models.entry import AuditableModel
+from ansible_base.lib.utils.db import bulk_create_db_safe
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from test_app.models import Animal, City, SecretColor
 
@@ -135,16 +136,15 @@ def test_activitystream_m2m_forward_bulk(django_assert_max_num_queries, django_u
     """
     # Create a bunch of users
     user_objs = [django_user_model(username=str(i)) for i in range(100)]
-    users = django_user_model.objects.bulk_create(user_objs)
+    users = bulk_create_db_safe(django_user_model, user_objs, ignore_conflicts=False)
 
-    # Setting this to 20 in case some real queries are added in the future.
-    # Really as long as it's less than 100 it means we're doing the right thing.
-    # In practice it's closer to 5.
     with django_assert_max_num_queries(20) as captured:
         animal.people_friends.add(*users)
 
-    inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT')])
-    assert inserts == 2  # 1 for the assocations, 1 for the activity stream entries
+    inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT') or q['sql'].startswith('SET NOCOUNT ON INSERT')])
+    # One M2M through-table insert and one bulk activity-stream insert.
+    expected_inserts = 2
+    assert inserts == expected_inserts
 
     entries = animal.activity_stream_entries.all()
     assert len(entries) == 101  # create + 100 associates
@@ -159,10 +159,10 @@ def test_activitystream_m2m_forward_bulk(django_assert_max_num_queries, django_u
     with django_assert_max_num_queries(20) as captured:
         animal.people_friends.remove(*users)
 
-    disassoc_inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT')])
-    # Only one insert (for activity stream entries)
-    # Even though django_assert_max_num_queries is a context manager the earlier inserts still seem to count
-    assert disassoc_inserts == inserts + 1
+    disassoc_inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT') or q['sql'].startswith('SET NOCOUNT ON INSERT')])
+    # The captured query list includes the two earlier inserts from the add.
+    expected_disassoc_inserts = 1
+    assert disassoc_inserts == expected_inserts + expected_disassoc_inserts
 
 
 def test_activitystream_m2m_reverse_bulk(django_assert_max_num_queries, django_user_model, user):
@@ -171,16 +171,15 @@ def test_activitystream_m2m_reverse_bulk(django_assert_max_num_queries, django_u
     """
     # Create a bunch of animals
     animal_objs = [Animal(name=str(i)) for i in range(100)]
-    animals = Animal.objects.bulk_create(animal_objs)
+    animals = bulk_create_db_safe(Animal, animal_objs, ignore_conflicts=False)
 
-    # Setting this to 20 in case some real queries are added in the future.
-    # Really as long as it's less than 100 it means we're doing the right thing.
-    # In practice it's closer to 5.
     with django_assert_max_num_queries(20) as captured:
         user.animal_friends.add(*animals)
 
-    inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT')])
-    assert inserts == 2  # 1 for the assocations, 1 for the activity stream entries
+    inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT') or q['sql'].startswith('SET NOCOUNT ON INSERT')])
+    # One M2M through-table insert and one bulk activity-stream insert.
+    expected_inserts = 2
+    assert inserts == expected_inserts
 
     user_entries = user.activity_stream_entries.all()
     assert len(user_entries) == 1  # The entries are always on the forward relation, so the user only has their creation entry
@@ -197,10 +196,10 @@ def test_activitystream_m2m_reverse_bulk(django_assert_max_num_queries, django_u
     with django_assert_max_num_queries(20) as captured:
         user.animal_friends.remove(*animals)
 
-    disassoc_inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT')])
-    # Only one insert (for activity stream entries)
-    # Even though django_assert_max_num_queries is a context manager the earlier inserts still seem to count
-    assert disassoc_inserts == inserts + 1
+    disassoc_inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT') or q['sql'].startswith('SET NOCOUNT ON INSERT')])
+    # The captured query list includes the two earlier inserts from the add.
+    expected_disassoc_inserts = 1
+    assert disassoc_inserts == expected_inserts + expected_disassoc_inserts
     for animal in animals:
         entries = animal.activity_stream_entries.all()
         assert len(entries) == 2  # associate, disassociate

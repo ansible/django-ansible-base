@@ -1,5 +1,6 @@
 import threading
 import time
+from unittest.mock import Mock
 
 import psycopg
 import pytest
@@ -8,6 +9,7 @@ from django.db import connection
 from django.db.utils import OperationalError
 from django.test import override_settings
 
+from ansible_base.lib.utils import db
 from ansible_base.lib.utils.db import (
     advisory_lock,
     get_pg_notify_params,
@@ -31,7 +33,14 @@ class SkipIfSqlite:
             pytest.skip('Advisory lock is not written for sqlite')
 
 
-class TestPGNotifyConnection(SkipIfSqlite):
+class SkipIfNotPostgreSQL:
+    @pytest.fixture(autouse=True)
+    def skip_if_not_postgresql(self):
+        if connection.vendor != 'postgresql':
+            pytest.skip('PostgreSQL-specific functionality')
+
+
+class TestPGNotifyConnection(SkipIfNotPostgreSQL):
     TEST_DATABASE_DICT = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -191,7 +200,7 @@ class TestAdvisoryLock(SkipIfSqlite):
 # Special transaction=True parameter is used, because we do not want in normal test transactions
 # because dropping the connection would break the transaction context, erroring at end of test
 @pytest.mark.django_db(transaction=True)
-class TestAdvisoryLockPostgresErrors(SkipIfSqlite):
+class TestAdvisoryLockPostgresErrors(SkipIfNotPostgreSQL):
     """Tests related to connection management and the advisory_lock"""
 
     def kick_connection(self):
@@ -236,3 +245,33 @@ class TestAdvisoryLockPostgresErrors(SkipIfSqlite):
         # consuming input failed: terminating connection due to idle-session timeout server closed the connection unexpectedly
         with connection.cursor() as cursor:
             cursor.execute('SELECT 1')
+
+
+def test_postgres_advisory_lock_closes_using_alias_after_operational_error(monkeypatch):
+    default_connection = Mock(vendor='postgresql')
+    replica_connection = Mock(vendor='postgresql')
+    monkeypatch.setattr(db, 'connection', default_connection)
+    monkeypatch.setattr(db, 'connections', {'default': default_connection, 'replica': replica_connection})
+    body_error = OperationalError('body failed')
+
+    with pytest.raises(OperationalError, match='body failed'):
+        with db.advisory_lock('lock', using='replica'):
+            raise body_error
+
+    replica_connection.close_if_unusable_or_obsolete.assert_called_once()
+    default_connection.close_if_unusable_or_obsolete.assert_not_called()
+
+
+def test_postgres_lock_release_error_preserves_body_exception_and_closes_connection(monkeypatch):
+    replica_connection = Mock()
+    cursor = replica_connection.cursor.return_value
+    cursor.execute.side_effect = [None, OperationalError('release failed')]
+    monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+    body_error = RuntimeError('body failed')
+
+    with pytest.raises(RuntimeError, match='body failed'):
+        with db.django_pglocks_advisory_lock('lock', using='replica'):
+            raise body_error
+
+    replica_connection.close.assert_called_once()
+    cursor.close.assert_called_once()

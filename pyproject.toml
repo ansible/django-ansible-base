@@ -45,6 +45,7 @@ optional-dependencies.all = { file = [
     "requirements/requirements_resource_registry.in",
     "requirements/requirements_feature_flags.in",
     "requirements/requirements_observability.in",
+    "requirements/requirements_mssql.in",
 ] }
 optional-dependencies.activitystream = { file = [ "requirements/requirements_activitystream.in" ] }
 optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.in" ] }
@@ -59,6 +60,7 @@ optional-dependencies.oauth2_provider = { file = [ "requirements/requirements_oa
 optional-dependencies.resource_registry = { file = [ "requirements/requirements_resource_registry.in" ] }
 optional-dependencies.feature_flags = { file = [ "requirements/requirements_feature_flags.in" ] }
 optional-dependencies.observability = { file = [ "requirements/requirements_observability.in" ] }
+optional-dependencies.mssql = { file = [ "requirements/requirements_mssql.in" ] }
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
@@ -102,8 +104,11 @@ legacy_tox_ini = """
         py312-sqlite
         py312-in-files
         py312-query-count-scale
+        py312-mssql-check
+        py312-mssql
     labels =
         test = py312-check, py312, py312-sqlite, py312-in-files
+        mssql = py312-mssql-check, py312-mssql
         lint = flake8, black, isort, mypy
 
     [testenv]
@@ -163,10 +168,34 @@ legacy_tox_ini = """
     commands = pytest --color=yes --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS} {posargs}
     docker = db
 
+    # MS SQL Server test environments
+    # Auto-start MS SQL Server container via docker (similar to PostgreSQL environments)
+
+    [testenv:py312-mssql]
+    setenv =
+        DB_BACKEND = mssql
+    docker = mssql-db
+
+    [testenv:py312-mssql-check]
+    deps =
+        -r{toxinidir}/requirements/requirements_all.txt
+        -r{toxinidir}/requirements/requirements_dev.txt
+    setenv =
+        DB_BACKEND = mssql
+    commands =
+        python3 manage.py check
+        python3 manage.py makemigrations --check
+    docker = mssql-db
+
     [docker:db]
     dockerfile = {toxinidir}/tools/dev_postgres/Dockerfile
     expose =
         DB_PORT=5432/tcp
+
+    [docker:mssql-db]
+    dockerfile = {toxinidir}/tools/dev_mssql/Dockerfile
+    expose =
+        DB_PORT=1433/tcp
 
     [testenv:flake8]
     deps =

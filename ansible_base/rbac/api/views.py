@@ -4,7 +4,7 @@ from typing import Type
 
 from django.apps import apps
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import transaction
+from django.db import DEFAULT_DB_ALIAS, connections, transaction
 from django.db.models import Model, Q
 from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
@@ -158,6 +158,17 @@ class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     def perform_destroy(self, instance):
         self._error_if_managed(instance)
+
+        using = instance._state.db or DEFAULT_DB_ALIAS
+        if connections[using].vendor == 'microsoft':
+            from ansible_base.rbac.caching import delete_object_roles
+            from ansible_base.rbac.models import ObjectRole
+
+            with transaction.atomic(using=using):
+                RoleDefinition.objects.using(using).select_for_update().get(pk=instance.pk)
+                delete_object_roles(ObjectRole.objects.using(using).filter(role_definition=instance))
+                return super().perform_destroy(instance)
+
         return super().perform_destroy(instance)
 
     def dispatch(self, request, *args, **kwargs):
