@@ -53,6 +53,21 @@ def test_oauth_bearer_plugin_invalidates_previous_jwks_namespace_when_cache_time
     invalidate.assert_called_once_with("authenticator:7:2026-11-06T12:00:00+00:00")
 
 
+def test_oauth_bearer_plugin_keeps_jwks_namespace_when_cache_timeout_is_unchanged():
+    plugin = AuthenticatorPlugin()
+
+    with patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient.invalidate_cache_namespace") as invalidate:
+        plugin.configuration_updated(
+            authenticator_id=7,
+            previous_configuration={"JWKS_CACHE_TIMEOUT": 300},
+            previous_modified=datetime(2026, 11, 6, 12, 0, tzinfo=timezone.utc),
+            configuration={"JWKS_CACHE_TIMEOUT": 300},
+            modified=datetime(2026, 11, 6, 12, 1, tzinfo=timezone.utc),
+        )
+
+    invalidate.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("user_field", "claim_key", "claims", "expected"),
     [

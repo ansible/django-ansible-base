@@ -188,6 +188,43 @@ def test_cached_jwk_client_with_zero_lifespan_ignores_existing_jwk_set_cache():
     assert cache.get(cached_client._jwk_set_cache_key) == cached_document
 
 
+def test_cached_jwk_client_with_zero_lifespan_does_not_use_cache_during_key_refresh():
+    client = CachedJWKClient("https://issuer.example.com/keys", lifespan=0)
+    signing_key = Mock(_jwk_data={"kty": "RSA", "kid": "key-id"})
+
+    with (
+        patch("ansible_base.authentication.jwk_client.cache.get") as cache_get,
+        patch("ansible_base.authentication.jwk_client.cache.delete") as cache_delete,
+        patch("ansible_base.authentication.jwk_client.cache.set") as cache_set,
+        patch.object(client, "get_signing_keys", return_value=[signing_key]) as get_signing_keys,
+        patch.object(client, "match_kid", return_value=signing_key) as match_kid,
+    ):
+        assert client.refresh_signing_key_from_jwt(_token()) is signing_key
+
+    cache_get.assert_not_called()
+    cache_delete.assert_not_called()
+    cache_set.assert_not_called()
+    get_signing_keys.assert_called_once_with(refresh=True)
+    match_kid.assert_called_once_with([signing_key], "key-id")
+
+
+def test_cached_jwk_client_with_zero_lifespan_rejects_an_unknown_key_without_cache_access():
+    client = CachedJWKClient("https://issuer.example.com/keys", lifespan=0)
+
+    with (
+        patch("ansible_base.authentication.jwk_client.cache.get") as cache_get,
+        patch("ansible_base.authentication.jwk_client.cache.delete") as cache_delete,
+        patch("ansible_base.authentication.jwk_client.cache.set") as cache_set,
+        patch.object(client, "get_signing_keys", return_value=[]),
+    ):
+        with pytest.raises(PyJWKClientError, match="Unable to find a signing key"):
+            client.refresh_signing_key_from_jwt(_token())
+
+    cache_get.assert_not_called()
+    cache_delete.assert_not_called()
+    cache_set.assert_not_called()
+
+
 def test_cached_jwk_client_only_caches_a_parser_validated_jwk_set():
     client = CachedJWKClient("https://issuer.example.com/keys")
     document = _jwk_document()

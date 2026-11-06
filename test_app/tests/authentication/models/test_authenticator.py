@@ -95,3 +95,21 @@ def test_authenticator_save_notifies_plugin_after_a_configuration_change(oauth_b
         configuration=oauth_bearer_authenticator.configuration,
         modified=oauth_bearer_authenticator.modified,
     )
+
+
+@pytest.mark.django_db
+def test_authenticator_save_does_not_notify_for_unchanged_encrypted_configuration(ldap_authenticator):
+    """Encryption must not make an unchanged configuration appear modified."""
+    plugin = mock.Mock(configuration_encrypted_fields=["BIND_PASSWORD"])
+    # Django's normal update flow retrieves the stored authenticator first,
+    # which decrypts its configuration in Authenticator.from_db().
+    ldap_authenticator = Authenticator.objects.get(pk=ldap_authenticator.pk)
+
+    with (
+        patch("ansible_base.authentication.models.authenticator.get_authenticator_plugin", return_value=plugin),
+        transaction.atomic(),
+        TestCase.captureOnCommitCallbacks(execute=True),
+    ):
+        ldap_authenticator.save()
+
+    plugin.configuration_updated.assert_not_called()

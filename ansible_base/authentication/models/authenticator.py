@@ -67,9 +67,18 @@ class Authenticator(UniqueNamedCommonModel):  # type: ignore[django-manager-miss
 
         # Here we are going to allow an exception to raise because what else can we do at this point?
         authenticator = get_authenticator_plugin(self.type)
-        previous = None
+        previous_configuration = None
+        previous_modified = None
         if not self._state.adding:
-            previous = type(self).objects.filter(pk=self.pk).values("configuration", "modified").first()
+            # Retrieve a model rather than raw JSON so encrypted configuration
+            # values are decrypted by from_db before comparison. Encryption is
+            # non-deterministic, therefore comparing the database ciphertext to
+            # the value about to be encrypted would mark every save as changed.
+            previous = type(self).objects.get(pk=self.pk)
+            previous_configuration = deepcopy(previous.configuration)
+            previous_modified = previous.modified
+
+        configuration = deepcopy(self.configuration)
 
         if not self.category:
             self.category = authenticator.category
@@ -82,12 +91,12 @@ class Authenticator(UniqueNamedCommonModel):  # type: ignore[django-manager-miss
             self.slug = generate_authenticator_slug()
         super().save(*args, **kwargs)
 
-        if previous and previous["configuration"] != self.configuration:
+        if previous_configuration is not None and previous_configuration != configuration:
             callback_kwargs = {
                 "authenticator_id": self.pk,
-                "previous_configuration": deepcopy(previous["configuration"]),
-                "previous_modified": previous["modified"],
-                "configuration": deepcopy(self.configuration),
+                "previous_configuration": previous_configuration,
+                "previous_modified": previous_modified,
+                "configuration": configuration,
                 "modified": self.modified,
             }
             transaction.on_commit(lambda: authenticator.configuration_updated(**callback_kwargs))
