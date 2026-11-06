@@ -3,6 +3,8 @@ from unittest.mock import Mock, patch
 
 import jwt
 import pytest
+from django.contrib.auth import get_user_model
+from django.contrib.contenttypes.models import ContentType
 
 from ansible_base.activitystream.models import Entry
 from ansible_base.authentication.authenticator_plugins.oauth_bearer import AuthenticatorPlugin
@@ -65,6 +67,12 @@ def test_external_login_provisions_by_email_without_activity_stream(oauth_bearer
     assert authenticator_user.user.is_superuser is False
     assert authenticator_user.user.is_staff is False
     # The local user is audited; the AuthenticatorUser link itself is not.
+    user_entries = Entry.objects.filter(
+        content_type=ContentType.objects.get_for_model(get_user_model()),
+        object_id=str(authenticator_user.user.pk),
+    )
+    # Later updates (last_login) follow the create; the provision itself must be recorded.
+    assert user_entries.filter(operation="create").exists()
     assert "authenticatoruser" not in set(Entry.objects.values_list("content_type__model", flat=True))
 
 
