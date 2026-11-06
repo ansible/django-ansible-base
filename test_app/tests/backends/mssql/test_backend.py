@@ -29,3 +29,31 @@ def test_no_schema_editor_or_cursor_overrides():
 
     assert DatabaseWrapper.SchemaEditorClass is upstream.DatabaseWrapper.SchemaEditorClass
     assert "create_cursor" not in DatabaseWrapper.__dict__
+
+
+def _wrapper_with_stubbed_init(monkeypatch, settings_dict):
+    """Build a DatabaseWrapper whose parent init_connection_state records the OPTIONS it sees."""
+    import mssql.base as upstream
+
+    seen = {}
+    monkeypatch.setattr(upstream.DatabaseWrapper, "init_connection_state", lambda self: seen.update(self.settings_dict["OPTIONS"]))
+    wrapper = DatabaseWrapper(settings_dict, alias="default")
+    return wrapper, seen
+
+
+def test_return_rows_bulk_insert_defaults_on(monkeypatch):
+    "bulk_create() populates PKs on PostgreSQL; the backend defaults SQL Server to the same behavior."
+    wrapper, seen = _wrapper_with_stubbed_init(monkeypatch, {"OPTIONS": {}})
+
+    wrapper.init_connection_state()
+
+    assert seen["return_rows_bulk_insert"] is True
+
+
+def test_return_rows_bulk_insert_explicit_opt_out(monkeypatch):
+    "A deployment with triggers on managed tables can still turn the option off."
+    wrapper, seen = _wrapper_with_stubbed_init(monkeypatch, {"OPTIONS": {"return_rows_bulk_insert": False}})
+
+    wrapper.init_connection_state()
+
+    assert seen["return_rows_bulk_insert"] is False

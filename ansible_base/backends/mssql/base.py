@@ -44,3 +44,12 @@ class DatabaseWrapper(MSSQLDatabaseWrapper):
     # Deriving from the upstream mapping keeps any constraints mssql-django adds in
     # future versions instead of pinning a copy of the current ones.
     data_type_check_constraints = {key: value for key, value in MSSQLDatabaseWrapper.data_type_check_constraints.items() if key != 'JSONField'}
+
+    def init_connection_state(self):
+        # mssql-django leaves return_rows_bulk_insert off by default because OUTPUT
+        # without INTO fails on tables with enabled triggers (mssql-django #130).
+        # DAB's schema carries no triggers, and PostgreSQL (the reference backend)
+        # populates bulk_create() primary keys, so default the option on here.
+        # An explicit OPTIONS['return_rows_bulk_insert'] = False still opts out.
+        self.settings_dict.setdefault('OPTIONS', {}).setdefault('return_rows_bulk_insert', True)
+        super().init_connection_state()
