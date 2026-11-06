@@ -1,28 +1,51 @@
-"""Tests for SQL Server query compilation under a case-sensitive collation."""
-
 import pytest
-from django.db import connections
-from django.db.models.fields.related_descriptors import _filter_prefetch_queryset
 
-from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Application
+try:
+    import mssql.compiler as mssql_compiler
+
+    from ansible_base.backends.mssql.compiler import SQLCompiler  # noqa: E402
+except Exception as error:
+    # mssql.compiler imports pyodbc, which needs the OS-level unixODBC libraries and the
+    # Microsoft ODBC driver; a missing driver raises ImproperlyConfigured, which
+    # importorskip does not catch. Skip instead of erroring at collection time.
+    pytest.skip(f"MS SQL backend unavailable: {error}", allow_module_level=True)
 
 
-def test_sliced_prefetch_select_aliases_match_case_sensitive_references(monkeypatch):
-    connection = connections["default"]
-    if connection.vendor != "microsoft":
-        pytest.skip("This SQL alias compatibility case applies to SQL Server.")
+def _compiler_with_canned_parent_sql(monkeypatch, canned_sql):
+    """Build a SQLCompiler whose parent as_sql returns canned SQL, isolating the alias fix."""
 
-    # SQL compilation only needs the server version for OFFSET support. Avoid
-    # opening a connection so this regression test can check the emitted SQL.
-    monkeypatch.setitem(connection.__dict__, "sql_server_version", 2022)
-    monkeypatch.setitem(connection.__dict__, "to_azure_sql_db", False)
+    def fake_as_sql(self, with_limits=True, with_col_aliases=False):
+        return canned_sql, []
 
-    queryset = OAuth2AccessToken.objects.order_by("id")[:10]
-    queryset = _filter_prefetch_queryset(queryset, "application", [OAuth2Application(pk=40)])
-    sql, _ = queryset.query.get_compiler(using=connection.alias).as_sql()
+    monkeypatch.setattr(mssql_compiler.SQLCompiler, 'as_sql', fake_as_sql)
+    return SQLCompiler.__new__(SQLCompiler)
 
-    # Django's outer QUALIFY wrapper references lowercase aliases. The inner
-    # mssql-django compiler emits uppercase aliases unless normalized here.
-    assert " AS Col1" not in sql
-    assert " AS col1" in sql
-    assert "[col1]" in sql
+
+def test_as_sql_normalizes_col_aliases(monkeypatch):
+    "Generated aliases must be lowercase to match Django's QUALIFY wrapper under CS collations."
+    compiler = _compiler_with_canned_parent_sql(monkeypatch, 'SELECT [a] AS Col1, [b] AS Col2 FROM [t]')
+
+    sql, params = compiler.as_sql(with_col_aliases=True)
+
+    assert sql == 'SELECT [a] AS col1, [b] AS col2 FROM [t]'
+    assert params == []
+
+
+def test_as_sql_leaves_sql_alone_without_col_aliases(monkeypatch):
+    "The rewrite only applies when Django asked for column aliases (sliced prefetch queries)."
+    canned_sql = 'SELECT [a] AS Col1 FROM [t]'
+    compiler = _compiler_with_canned_parent_sql(monkeypatch, canned_sql)
+
+    sql, _ = compiler.as_sql(with_col_aliases=False)
+
+    assert sql == canned_sql
+
+
+def test_reexported_compilers_match_upstream():
+    "The remaining compilers are re-exports; the backend only overrides the select compiler."
+    import ansible_base.backends.mssql.compiler as dab_compiler
+
+    assert dab_compiler.SQLAggregateCompiler is mssql_compiler.SQLAggregateCompiler
+    assert dab_compiler.SQLDeleteCompiler is mssql_compiler.SQLDeleteCompiler
+    assert dab_compiler.SQLInsertCompiler is mssql_compiler.SQLInsertCompiler
+    assert dab_compiler.SQLUpdateCompiler is mssql_compiler.SQLUpdateCompiler

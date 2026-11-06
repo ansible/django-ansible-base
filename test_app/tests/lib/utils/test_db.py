@@ -304,12 +304,64 @@ def test_postgres_advisory_lock_restore_failure_after_operational_error_closes_c
     cursor.execute.side_effect = [ok, ok, ok, ok, OperationalError('restore failed')]
     replica_connection.cursor.return_value.__enter__.return_value = cursor
     monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+    body_error = OperationalError('body failed')
 
     with pytest.raises(OperationalError, match='body failed'):
         with db._postgres_advisory_lock(replica_connection, 'lock', False, True, 'replica', 5000):
-            raise OperationalError('body failed')
+            raise body_error
 
     replica_connection.close.assert_called_once()
+
+
+def test_postgres_advisory_lock_restore_failure_without_internal_error_raises(monkeypatch):
+    """A restore failure on an otherwise-healthy connection propagates as its own error."""
+    replica_connection = MagicMock(vendor='postgresql')
+    replica_connection.connection = Mock()
+    replica_connection.closed_in_transaction = False
+    cursor = MagicMock()
+    ok = MagicMock()
+    ok.fetchone.return_value = ('original_timeout',)
+    # SHOW, SHOW, SET, SET succeed; the restore SET fails
+    cursor.execute.side_effect = [ok, ok, ok, ok, OperationalError('restore failed')]
+    replica_connection.cursor.return_value.__enter__.return_value = cursor
+    monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+    body_error = RuntimeError('body failed')
+
+    with pytest.raises(OperationalError, match='restore failed'):
+        with db._postgres_advisory_lock(replica_connection, 'lock', False, True, 'replica', 5000):
+            raise body_error
+
+    replica_connection.close.assert_not_called()
+
+
+def test_pglocks_acquisition_failure_closes_cursor(monkeypatch):
+    replica_connection = Mock(vendor='postgresql')
+    cursor = replica_connection.cursor.return_value
+    cursor.execute.side_effect = OperationalError('acquire failed')
+    monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+
+    with pytest.raises(OperationalError, match='acquire failed'):
+        with db.django_pglocks_advisory_lock('lock', using='replica'):
+            pass
+
+    cursor.close.assert_called_once()
+
+
+def test_advisory_lock_sqlite_is_noop(monkeypatch):
+    sqlite_connection = Mock(vendor='sqlite')
+    monkeypatch.setattr(db, 'connections', {'default': sqlite_connection})
+
+    with db.advisory_lock('lock') as acquired:
+        assert acquired is True
+
+
+def test_advisory_lock_unsupported_vendor_raises(monkeypatch):
+    other_connection = Mock(vendor='oracle')
+    monkeypatch.setattr(db, 'connections', {'default': other_connection})
+
+    with pytest.raises(RuntimeError, match='Advisory lock not implemented for database type oracle'):
+        with db.advisory_lock('lock'):
+            pass
 
 
 def test_postgres_lock_release_error_preserves_body_exception_and_closes_connection(monkeypatch):
