@@ -239,16 +239,15 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Audience"),
     )
 
-    # Min 60 / default 3600 come from the ANSTRAT-1611 P1 configuration schema.
+    # Min 0 (no cache) / default 3600 come from the ANSTRAT-1611 P1 configuration schema.
     JWKS_CACHE_TIMEOUT = IntegerField(
         help_text=_(
-            "How long to cache JWKS keys, in seconds. Minimum 60 to avoid hammering the "
-            "provider's JWKS endpoint. No maximum — longer TTLs are fine for stable IdPs; "
-            "token validation refreshes keys on signature failure so rotation still works."
+            "How long to cache JWKS keys, in seconds. Minimum 0 (cache disabled); this makes a JWKS call for every request. "
+            "No maximum — longer TTLs are fine for stable IdPs; token validation refreshes keys on signature failure so rotation still works."
         ),
         default=3600,
         allow_null=False,
-        validators=[MinValueValidator(60)],
+        validators=[MinValueValidator(0)],
         ui_field_label=_("JWKS Cache Timeout (seconds)"),
     )
 

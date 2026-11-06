@@ -96,7 +96,8 @@ class CachedJWKClient(PyJWKClient):
         """Fetch, validate, and cache a JWKS document while holding the fetch lease."""
         document = super().fetch_data()
         jwk_set = self._parse_jwk_set(document)
-        cache.set(self._jwk_set_cache_key, document, timeout=self.cache_timeout)
+        if self.cache_timeout > 0:
+            cache.set(self._jwk_set_cache_key, document, timeout=self.cache_timeout)
         return jwk_set
 
     def _acquire_fetch_lock(self, use_locks: bool) -> str:
@@ -149,7 +150,7 @@ class CachedJWKClient(PyJWKClient):
 
     def get_jwk_set(self, refresh: bool = False) -> PyJWKSet:
         """Override PyJWT JWKS lookup to share provider keys and refresh coordination through Django's cache."""
-        use_locks = self.forced_refresh_cooldown > 0
+        use_locks = self.cache_timeout > 0 and self.forced_refresh_cooldown > 0
         deadline = time.monotonic() + self.fetch_wait_seconds
         need_to_acquire_refresh_lock = refresh
         retry_count = 0
@@ -161,7 +162,7 @@ class CachedJWKClient(PyJWKClient):
                     # completes to throttle them.
                     self._set_refresh_lock(use_locks)
                     need_to_acquire_refresh_lock = False
-                if not refresh and (document := cache.get(self._jwk_set_cache_key)) is not None:
+                if self.cache_timeout > 0 and not refresh and (document := cache.get(self._jwk_set_cache_key)) is not None:
                     return self._parse_jwk_set(document)
                 return self._fetch_jwk_set_with_fetch_lock(use_locks)
             except _JWKSRetry as retry:
@@ -184,17 +185,19 @@ class CachedJWKClient(PyJWKClient):
             raise PyJWKClientError("JWT header is missing kid")
 
         cache_key = self._signing_key_cache_key(kid)
-        cached_jwk = cache.get(cache_key)
-        if cached_jwk is not None:
-            try:
-                return PyJWK.from_dict(cached_jwk)
-            except (AttributeError, PyJWKError):
-                cache.delete(cache_key)
+        if self.cache_timeout > 0:
+            cached_jwk = cache.get(cache_key)
+            if cached_jwk is not None:
+                try:
+                    return PyJWK.from_dict(cached_jwk)
+                except (AttributeError, PyJWKError):
+                    cache.delete(cache_key)
 
         signing_key = super().get_signing_key_from_jwt(token)
         # PyJWT exposes no public JWK serializer; cache its original JSON-safe
         # JWK data rather than the non-serializable cryptography key object.
-        cache.set(cache_key, signing_key._jwk_data, timeout=self.cache_timeout)
+        if self.cache_timeout > 0:
+            cache.set(cache_key, signing_key._jwk_data, timeout=self.cache_timeout)
         return signing_key
 
     def refresh_signing_key_from_jwt(self, token: str) -> PyJWK:
@@ -207,13 +210,15 @@ class CachedJWKClient(PyJWKClient):
         if not kid:
             raise PyJWKClientError("JWT header is missing kid")
 
-        if self.forced_refresh_cooldown > 0 and cache.get(self._refresh_lock_key) is not None:
+        if self.cache_timeout > 0 and self.forced_refresh_cooldown > 0 and cache.get(self._refresh_lock_key) is not None:
             raise PyJWKClientError("JWKS refresh is on cooldown")
 
-        cache.delete(self._signing_key_cache_key(kid))
+        if self.cache_timeout > 0:
+            cache.delete(self._signing_key_cache_key(kid))
         signing_keys = self.get_signing_keys(refresh=True)
         signing_key = self.match_kid(signing_keys, kid)
         if not signing_key:
             raise PyJWKClientError(f"Unable to find a signing key that matches: {kid}")
-        cache.set(self._signing_key_cache_key(kid), signing_key._jwk_data, timeout=self.cache_timeout)
+        if self.cache_timeout > 0:
+            cache.set(self._signing_key_cache_key(kid), signing_key._jwk_data, timeout=self.cache_timeout)
         return signing_key
