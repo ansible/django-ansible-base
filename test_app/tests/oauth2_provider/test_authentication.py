@@ -1,10 +1,12 @@
 from datetime import datetime, timedelta, timezone
 from unittest import mock
+from unittest.mock import Mock
 
 import pytest
 from oauthlib.common import generate_token
 
 from ansible_base.activitystream.models import Entry
+from ansible_base.authentication.bearer_authentication import get_api_authentication_backends
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken
 
@@ -43,6 +45,55 @@ def test_existing_pat_still_authenticates_after_pat_creation_is_disabled(user_ap
     )
 
     assert settings.allow_local_pat_creation is False
+    assert response.status_code == 200
+    assert response.data["username"] == user.username
+
+
+@pytest.mark.django_db
+def test_oauth2_application_token_authenticates_after_pat_creation_is_disabled(oauth2_admin_access_token, unauthenticated_api_client, settings):
+    """The setting gates local PATs only; tokens issued to an OAuth2 application keep working (TC-9 item 8)."""
+    settings.allow_local_pat_creation = False
+    response = unauthenticated_api_client.get(
+        get_relative_url("user-me"),
+        headers={"Authorization": f"Bearer {oauth2_admin_access_token[1]}"},
+    )
+
+    assert response.status_code == 200
+    assert response.data["username"] == oauth2_admin_access_token[0].user.username
+
+
+@pytest.mark.django_db
+def test_external_oauth_token_authenticates_after_pat_creation_is_disabled(oauth_bearer_authenticator, unauthenticated_api_client, user, settings):
+    """The setting gates local PATs only; external OAuth tokens keep working (TC-9 item 7)."""
+    settings.allow_local_pat_creation = False
+    claims = {
+        "iss": oauth_bearer_authenticator.configuration["ISSUER_URL"],
+        "aud": oauth_bearer_authenticator.configuration["AUDIENCE"],
+        "sub": "subject",
+        "email": user.username,
+        "scope": "read",
+        "exp": datetime.now(tz=timezone.utc) + timedelta(minutes=5),
+    }
+
+    get_api_authentication_backends.cache_clear()
+    try:
+        with (
+            mock.patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient") as jwk_client,
+            mock.patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.decode", side_effect=[claims, claims]),
+            mock.patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.get_or_create_authenticator_user", return_value=(user, Mock(), True)),
+            mock.patch(
+                "ansible_base.authentication.authenticator_plugins.oauth_bearer.update_user_claims",
+                side_effect=lambda authenticated_user, *_args, **_kwargs: authenticated_user,
+            ),
+        ):
+            jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
+            response = unauthenticated_api_client.get(
+                get_relative_url("user-me"),
+                headers={"Authorization": "Bearer external-token"},
+            )
+    finally:
+        get_api_authentication_backends.cache_clear()
+
     assert response.status_code == 200
     assert response.data["username"] == user.username
 
