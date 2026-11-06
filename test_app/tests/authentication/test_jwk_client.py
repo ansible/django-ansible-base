@@ -97,6 +97,14 @@ def test_cached_jwk_client_uses_jwks_timeout_for_fetch_coordination(timeout, exp
     assert client.fetch_lease_seconds == expected_lease
 
 
+def test_cached_jwk_client_invalidates_known_entries_for_a_cache_namespace():
+    with patch("ansible_base.authentication.jwk_client.cache.delete_many") as delete_many:
+        CachedJWKClient.invalidate_cache_namespace("authenticator:7:version-one")
+
+    namespace = hashlib.sha256(b"authenticator:7:version-one").hexdigest()
+    delete_many.assert_called_once_with((f"jwk_set:{namespace}", f"jwks_refresh:{namespace}", f"jwks_fetch:{namespace}"))
+
+
 def test_cached_jwk_client_discards_invalid_cached_jwk_and_refetches():
     client = CachedJWKClient("https://issuer.example.com/keys")
     token = _token()

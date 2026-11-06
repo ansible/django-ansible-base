@@ -1,6 +1,8 @@
 import logging
+from copy import deepcopy
 
 from cryptography.fernet import InvalidToken
+from django.db import transaction
 from django.db.models import SET_NULL, ForeignKey, JSONField, fields
 
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
@@ -65,6 +67,9 @@ class Authenticator(UniqueNamedCommonModel):  # type: ignore[django-manager-miss
 
         # Here we are going to allow an exception to raise because what else can we do at this point?
         authenticator = get_authenticator_plugin(self.type)
+        previous = None
+        if not self._state.adding:
+            previous = type(self).objects.filter(pk=self.pk).values("configuration", "modified").first()
 
         if not self.category:
             self.category = authenticator.category
@@ -76,6 +81,16 @@ class Authenticator(UniqueNamedCommonModel):  # type: ignore[django-manager-miss
         if not self.slug:
             self.slug = generate_authenticator_slug()
         super().save(*args, **kwargs)
+
+        if previous and previous["configuration"] != self.configuration:
+            callback_kwargs = {
+                "authenticator_id": self.pk,
+                "previous_configuration": deepcopy(previous["configuration"]),
+                "previous_modified": previous["modified"],
+                "configuration": deepcopy(self.configuration),
+                "modified": self.modified,
+            }
+            transaction.on_commit(lambda: authenticator.configuration_updated(**callback_kwargs))
 
     def __str__(self):
         return self.name

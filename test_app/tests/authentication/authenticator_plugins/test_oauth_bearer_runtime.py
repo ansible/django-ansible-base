@@ -37,6 +37,22 @@ def _social_auth_settings():
     return {"SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL": settings.SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL}
 
 
+def test_oauth_bearer_plugin_invalidates_previous_jwks_namespace_when_cache_timeout_changes():
+    plugin = AuthenticatorPlugin()
+    previous_modified = datetime(2026, 11, 6, 12, 0, tzinfo=timezone.utc)
+
+    with patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient.invalidate_cache_namespace") as invalidate:
+        plugin.configuration_updated(
+            authenticator_id=7,
+            previous_configuration={"JWKS_CACHE_TIMEOUT": 3600},
+            previous_modified=previous_modified,
+            configuration={"JWKS_CACHE_TIMEOUT": 0},
+            modified=datetime(2026, 11, 6, 12, 1, tzinfo=timezone.utc),
+        )
+
+    invalidate.assert_called_once_with("authenticator:7:2026-11-06T12:00:00+00:00")
+
+
 @pytest.mark.parametrize(
     ("user_field", "claim_key", "claims", "expected"),
     [

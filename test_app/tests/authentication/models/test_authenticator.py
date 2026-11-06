@@ -1,8 +1,11 @@
 import logging
+from copy import deepcopy
 from unittest import mock
 from unittest.mock import patch
 
 import pytest
+from django.db import transaction
+from django.test import TestCase
 
 from ansible_base.authentication.models import Authenticator
 
@@ -69,3 +72,26 @@ def test_authenticator_from_db_invalid_token_logs_and_reraises(ldap_authenticato
     assert critical_records, "Expected at least one CRITICAL log record"
     assert any("SECRET_KEY" in r.message for r in critical_records), "Expected CRITICAL log to mention SECRET_KEY"
     assert any(ldap_authenticator.name in r.message for r in critical_records), "Expected CRITICAL log to include the authenticator name"
+
+
+@pytest.mark.django_db
+def test_authenticator_save_notifies_plugin_after_a_configuration_change(oauth_bearer_authenticator):
+    previous_configuration = deepcopy(oauth_bearer_authenticator.configuration)
+    previous_modified = oauth_bearer_authenticator.modified
+    plugin = mock.Mock(configuration_encrypted_fields=[])
+    oauth_bearer_authenticator.configuration["JWKS_CACHE_TIMEOUT"] = 0
+
+    with (
+        patch("ansible_base.authentication.models.authenticator.get_authenticator_plugin", return_value=plugin),
+        transaction.atomic(),
+        TestCase.captureOnCommitCallbacks(execute=True),
+    ):
+        oauth_bearer_authenticator.save()
+
+    plugin.configuration_updated.assert_called_once_with(
+        authenticator_id=oauth_bearer_authenticator.pk,
+        previous_configuration=previous_configuration,
+        previous_modified=previous_modified,
+        configuration=oauth_bearer_authenticator.configuration,
+        modified=oauth_bearer_authenticator.modified,
+    )

@@ -82,6 +82,17 @@ class CachedJWKClient(PyJWKClient):
         """Return the short-lived lock used while one request fetches a JWKS document."""
         return f"jwks_fetch:{self._cache_namespace}"
 
+    @classmethod
+    def invalidate_cache_namespace(cls, cache_namespace: str) -> None:
+        """Delete known shared-cache entries for a superseded namespace.
+
+        Individual signing-key cache entries cannot be enumerated because their
+        key IDs are hashed. They are made unreachable by the caller switching
+        to a new namespace and expire according to their original TTL.
+        """
+        namespace = hashlib.sha256(cache_namespace.encode()).hexdigest()
+        cache.delete_many((f"jwk_set:{namespace}", f"jwks_refresh:{namespace}", f"jwks_fetch:{namespace}"))
+
     def _signing_key_cache_key(self, kid: str) -> str:
         """Return a cache key that safely scopes an individual signing key to this URI."""
         cache_identifier = hashlib.sha256(kid.encode()).hexdigest()

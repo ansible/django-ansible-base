@@ -455,6 +455,19 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     logger = logger
     configuration_encrypted_fields = []
 
+    def configuration_updated(
+        self,
+        *,
+        authenticator_id: int,
+        previous_configuration: dict,
+        previous_modified: object,
+        configuration: dict,
+        modified: object,
+    ) -> None:
+        """Invalidate superseded JWKS state when the cache policy changes."""
+        if previous_configuration.get("JWKS_CACHE_TIMEOUT", 3600) != configuration.get("JWKS_CACHE_TIMEOUT", 3600):
+            CachedJWKClient.invalidate_cache_namespace(f"authenticator:{authenticator_id}:{previous_modified.isoformat()}")
+
     def get_login_url(self, authenticator: Any) -> None:
         """Return no login URL because bearer authentication has no browser redirect flow."""
         return None
