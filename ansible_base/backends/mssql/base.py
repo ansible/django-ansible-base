@@ -5,8 +5,21 @@ Extends mssql-django with a case-sensitive-collation compiler fix and
 ISJSON check-constraint omission for encrypted JSONField values.
 """
 
+import logging
+
 from mssql.base import DatabaseWrapper as MSSQLDatabaseWrapper
 from mssql.operations import DatabaseOperations as MSSQLDatabaseOperations
+
+logger = logging.getLogger(__name__)
+
+# The collation DAB is developed and tested against; a case-insensitive collation
+# makes values differing only in case compare equal, breaking unique constraints
+# and exact lookups. See docs/mssql-compatibility-guide.md.
+REQUIRED_COLLATION = "Latin1_General_100_CS_AS"
+
+# Database collation is fixed at CREATE DATABASE time and cannot drift within a
+# process, so the misconfiguration warning is emitted once per alias.
+_collation_warning_emitted = set()
 
 
 class DatabaseOperations(MSSQLDatabaseOperations):
@@ -53,3 +66,31 @@ class DatabaseWrapper(MSSQLDatabaseWrapper):
         # An explicit OPTIONS['return_rows_bulk_insert'] = False still opts out.
         self.settings_dict.setdefault('OPTIONS', {}).setdefault('return_rows_bulk_insert', True)
         super().init_connection_state()
+        self._check_database_collation()
+
+    def _check_database_collation(self):
+        """
+        Warn when a customer-provided database was not created with the tested collation.
+
+        Local dev and test databases are provisioned with REQUIRED_COLLATION, but a
+        bring-your-own database created elsewhere (installer, RDS, manual DBA setup)
+        defaults to the server's case-insensitive collation. That silently changes
+        equality semantics for every string comparison, so surface it at connect
+        time rather than waiting for corrupted unique constraints.
+        """
+        cursor = self.create_cursor()
+        cursor.execute("SELECT CONVERT(NVARCHAR(128), DATABASEPROPERTYEX(DB_NAME(), 'Collation'))")
+        collation = cursor.fetchone()[0]
+        if collation != REQUIRED_COLLATION and self.alias not in _collation_warning_emitted:
+            _collation_warning_emitted.add(self.alias)
+            logger.warning(
+                "Database %r (alias %r) uses collation %s, but DAB requires %s; "
+                "a case-insensitive collation makes values that differ only in case compare equal, "
+                "breaking unique constraints and exact lookups. Recreate the database with "
+                "CREATE DATABASE ... COLLATE %s before applying migrations.",
+                self.settings_dict.get('NAME'),
+                self.alias,
+                collation,
+                REQUIRED_COLLATION,
+                REQUIRED_COLLATION,
+            )

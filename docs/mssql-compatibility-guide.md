@@ -44,6 +44,8 @@ Set the collation on each application database explicitly; a server-level defaul
 
 Use the tested `Latin1_General_100_CS_AS` name as written. Do not add `_SC` or `_UTF8` with the current DAB SQL Server schema: SQL Server rejects the legacy `text`/`ntext` operations used by this stack with those collation flags.
 
+The backend checks the collation when it first connects and logs a warning if the database does not use `Latin1_General_100_CS_AS` (once per process per database alias). The warning is advisory: provision the database correctly rather than relying on the check, and treat a warning as a sign that equality semantics differ from what DAB is tested with.
+
 ## `BoundedTextField` for indexed text columns
 
 SQL Server maps an unconstrained Django `TextField` to `nvarchar(max)`, which cannot be used as an index or unique key. DAB's answer is the `BoundedTextField` model field: a `TextField` that declares a `sql_server_max_length`, becomes `nvarchar(N)` on SQL Server, and behaves exactly like a plain `TextField` on PostgreSQL. There is no schema-editor magic and no hidden conversion — the migration files say what the columns are.
