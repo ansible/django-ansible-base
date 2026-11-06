@@ -47,7 +47,10 @@ class TestOAuth2CreateCommand:
 
         hashed_token = hash_string(generated_token, hasher=hashlib.sha256, algo="sha256")
         assert OAuth2AccessToken.objects.filter(user=random_user, token=hashed_token).count() == 1
-        assert OAuth2AccessToken.objects.get(user=random_user, token=hashed_token).scope == 'write'
+        created_token = OAuth2AccessToken.objects.get(user=random_user, token=hashed_token)
+        assert created_token.scope == 'write'
+        # A command-issued token is a personal token, not bound to an OAuth2 application (TC-9 item 13).
+        assert created_token.application is None
 
         url = get_relative_url("user-me")
         response = unauthenticated_api_client.get(
