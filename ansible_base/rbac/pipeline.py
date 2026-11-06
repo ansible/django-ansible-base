@@ -725,8 +725,8 @@ def bulk_remove_permissions(
     user_permissions: Sequence[PermissionTriple] = (),
     team_permissions: Sequence[PermissionTriple] = (),
     fetch_batch_size: int = _FIND_ASSIGNMENTS_BATCH_SIZE,
-) -> None:
-    """Bulk-remove multiple role assignments.
+) -> list[AssignmentBase]:
+    """Bulk-remove multiple role assignments and return the ones removed.
 
     user_permissions: sequence of (role_definition, user, content_object) triples
     team_permissions: sequence of (role_definition, team, content_object) triples
@@ -739,9 +739,12 @@ def bulk_remove_permissions(
     The in-memory singleton cache of the caller's user instances is cleared here for global
     removals, because remove_assignments only sees DB-fetched rows. Global team removals are
     handled by the process-wide clear in remove_assignments.
+
+    The returned assignments are the rows that were found, passed to
+    dab_rbac_assignments_pre_delete, and deleted; their PKs refer to rows that no longer exist.
     """
     if not user_permissions and not team_permissions:
-        return
+        return []
 
     user_resolved, user_content_objects = _resolve_triples(user_permissions)
     team_resolved, team_content_objects = _resolve_triples(team_permissions)
@@ -757,3 +760,4 @@ def bulk_remove_permissions(
     user_found = _find_assignments_chunked(user_resolved, lookup, RoleUserAssignment, 'user_id', batch_size=fetch_batch_size)
     team_found = _find_assignments_chunked(team_resolved, lookup, RoleTeamAssignment, 'team_id', batch_size=fetch_batch_size)
     remove_assignments(user_assignments=user_found, team_assignments=team_found, content_objects=content_objects)
+    return [*user_found, *team_found]

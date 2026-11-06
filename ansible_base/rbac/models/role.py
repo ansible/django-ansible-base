@@ -314,8 +314,8 @@ class RoleDefinition(CommonModel):
             for field_name, obj in actor_filter.items():
                 setattr(assignment, field_name, obj)
         else:
-            assignment = cls.objects.filter(role_definition=self, object_role__isnull=True, **actor_filter).first()
-            bulk_remove_permissions(user_permissions=user_perms, team_permissions=team_perms)
+            removed = bulk_remove_permissions(user_permissions=user_perms, team_permissions=team_perms)
+            assignment = removed[0] if removed else None
 
         return assignment
 
