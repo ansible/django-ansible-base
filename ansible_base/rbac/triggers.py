@@ -15,6 +15,7 @@ from ansible_base.rbac.caching import (
     cleanup_orphaned_object_roles,
     compute_team_member_roles,
     defer_rbac_state,
+    delete_object_roles,
     object_roles_for_parents,
     recompute_all_role_evaluations,
     recompute_role_evaluations,
@@ -473,7 +474,7 @@ def rbac_post_delete_remove_object_roles(instance: Model, *args, **kwargs) -> No
         return
 
     ct = permission_registry.content_type_model.objects.get_for_model(instance)
-    deleted_count, _ = ObjectRole.objects.filter(content_type=ct, object_id=instance.pk).delete()
+    deleted_count, _ = delete_object_roles(ObjectRole.objects.filter(content_type=ct, object_id=instance.pk))
 
     parent_field_name = permission_registry.get_parent_fd_name(instance)
     if parent_field_name:

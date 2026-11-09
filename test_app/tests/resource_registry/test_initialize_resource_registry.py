@@ -2,7 +2,10 @@ from unittest import mock
 
 import pytest
 from django.core.management import call_command
+from django.db import connection
 
+from ansible_base.rbac.models import DABContentType
+from ansible_base.rbac.remote import get_local_resource_prefix
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.registry import get_registry
 
@@ -114,3 +117,35 @@ def test_sync_reraises_unexpected_integrity_error():
     ):
         with pytest.raises(IntegrityError, match="simulated"):
             _sync_resource_types(registry, ResourceType, ContentType)
+
+
+@pytest.mark.django_db
+@pytest.mark.skipif(connection.vendor != 'microsoft', reason='SQL Server parameter limit regression test')
+def test_backfill_assignment_resource_id_update_chunks_sql_server_parameters():
+    """Backfill updates must split 1000 resource IDs below SQL Server's parameter limit."""
+    from uuid import UUID
+
+    from ansible_base.lib.utils.mssql import SQL_SERVER_MAX_QUERY_PARAMETERS
+    from ansible_base.resource_registry.apps import _update_assignment_resource_ids
+
+    content_type = DABContentType.objects.create(
+        service=get_local_resource_prefix(),
+        app_label='test_app',
+        model='backfill_parameter_limit',
+    )
+    resource_ids = {str(object_id): UUID(int=object_id + 1) for object_id in range(1000)}
+    update_parameter_counts = []
+
+    def record_update_parameters(execute, sql, params, many, context):
+        if 'UPDATE [DAB_RBAC_ROLEUSERASSIGNMENT]' in sql.upper() or 'UPDATE [DAB_RBAC_ROLETEAMASSIGNMENT]' in sql.upper():
+            parameter_count = len(params or ())
+            update_parameter_counts.append(parameter_count)
+            if parameter_count > SQL_SERVER_MAX_QUERY_PARAMETERS:
+                return 0
+        return execute(sql, params, many, context)
+
+    with connection.execute_wrapper(record_update_parameters):
+        _update_assignment_resource_ids(content_type, resource_ids)
+
+    assert all(count <= SQL_SERVER_MAX_QUERY_PARAMETERS for count in update_parameter_counts)
+    assert len(update_parameter_counts) > 2

@@ -1,0 +1,3 @@
+# SQL Server backend runtime requirements (ANSTRAT-1887)
+mssql-django>=1.4
+pyodbc>=5.0.0

@@ -10,11 +10,14 @@ from django.db import connection, models
 from django.db.models import Q
 from django.db.models.signals import post_save
 
+from ansible_base.lib.utils.db import bulk_create_db_safe
 from ansible_base.lib.utils.models import current_user_or_system_user
+from ansible_base.lib.utils.mssql import SQL_SERVER_MAX_QUERY_PARAMETERS, SQL_SERVER_QUERY_PARAMETER_HEADROOM
 from ansible_base.rbac.caching import (
     bulk_ancestor_roles,
     compute_team_member_roles,
     defer_rbac_state,
+    delete_object_roles,
     recompute_role_evaluations,
 )
 from ansible_base.rbac.models.content_type import DABContentType
@@ -38,6 +41,9 @@ class ResolvedAssignment(NamedTuple):
 ContentObject = Union[models.Model, RemoteObject]
 PermissionTriple = tuple[RoleDefinition, models.Model, ContentObject]
 ObjectRoleLookup = dict[tuple[int, str], ObjectRole]
+
+PARAMETERS_PER_PAIR_FILTER = 2
+SQL_SERVER_PAIR_FILTER_BATCH_SIZE = (SQL_SERVER_MAX_QUERY_PARAMETERS - SQL_SERVER_QUERY_PARAMETER_HEADROOM) // PARAMETERS_PER_PAIR_FILTER
 
 
 def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABContentType, str, str]:
@@ -150,7 +156,8 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
             lookup[(rd_id, obj_role.object_id)] = obj_role
         missing = [oid for oid in object_ids if (rd_id, oid) not in lookup]
         if missing:
-            ObjectRole.objects.bulk_create(
+            bulk_create_db_safe(
+                ObjectRole,
                 [
                     ObjectRole(
                         role_definition_id=rd_id,
@@ -161,6 +168,7 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
                     for oid in missing
                 ],
                 ignore_conflicts=True,
+                return_ids=False,
             )
             # Re-fetch to get PKs — bulk_create(ignore_conflicts=True) doesn't populate them.
             # unique_together on (role_definition, content_type, object_id) guarantees one row per oid.
@@ -182,12 +190,14 @@ def _audit_log_created(db_assignments: list[AssignmentBase], existing_pks: set[i
             _store_activitystream_entry(None, assignment, 'create')
 
 
-def _pair_filter(assignments: list[AssignmentBase], actor_field: str) -> Q:
-    """Build a Q filter matching exact (actor, object_role) pairs — no cross-product."""
-    q = Q()
-    for a in assignments:
-        q |= Q(**{actor_field: getattr(a, actor_field), 'object_role': a.object_role})
-    return q
+def _pair_filter_chunks(pairs: Sequence[tuple[object, object]], first_field: str, second_field: str):
+    """Build OR filters for exact pairs, respecting SQL Server's parameter limit."""
+    chunk_size = SQL_SERVER_PAIR_FILTER_BATCH_SIZE if connection.vendor == 'microsoft' else max(len(pairs), 1)
+    for start in range(0, len(pairs), chunk_size):
+        query_filter = Q()
+        for first_value, second_value in pairs[start : start + chunk_size]:
+            query_filter |= Q(**{first_field: first_value, second_field: second_value})
+        yield query_filter
 
 
 def _fire_post_save(db_assignments: list[AssignmentBase], existing_pks: set[int]) -> None:
@@ -195,6 +205,65 @@ def _fire_post_save(db_assignments: list[AssignmentBase], existing_pks: set[int]
     for assignment in db_assignments:
         if assignment.pk not in existing_pks:
             post_save.send(sender=type(assignment), instance=assignment, created=True, raw=False, using='default', update_fields=None)
+
+
+def _build_assignment_objects(
+    resolved: list[ResolvedAssignment],
+    assignment_model,
+    actor_field: str,
+    lookup: ObjectRoleLookup,
+    object_ansible_ids: dict[tuple[str, str, str], str],
+    created_by,
+) -> list[AssignmentBase]:
+    assignments = []
+    for item in resolved:
+        object_role = lookup[(item.role_definition.pk, item.object_id)]
+        assignments.append(
+            assignment_model(
+                **{
+                    actor_field: item.actor,
+                    'object_role': object_role,
+                    'role_definition': item.role_definition,
+                    'content_type': item.content_type,
+                    'object_id': item.object_id,
+                    'object_ansible_id': object_ansible_ids.get((item.content_type.app_label, item.content_type.model, item.object_id)),
+                    'created_by': created_by,
+                }
+            )
+        )
+    return assignments
+
+
+def _assignment_query_filters(assignments: list[AssignmentBase], actor_field: str) -> list[Q]:
+    pairs = [(getattr(assignment, actor_field), assignment.object_role) for assignment in assignments]
+    return list(_pair_filter_chunks(pairs, actor_field, 'object_role'))
+
+
+def _create_assignment_batch(
+    assignment_model,
+    assignments: list[AssignmentBase],
+    actor_field: str,
+    fire_signals_on_create: bool,
+    ignore_conflicts: bool,
+) -> list[AssignmentBase]:
+    if not assignments:
+        return []
+
+    query_filters = _assignment_query_filters(assignments, actor_field)
+    existing_pks = set()
+    for query_filter in query_filters:
+        existing_pks.update(assignment_model.objects.filter(query_filter).values_list('pk', flat=True))
+
+    bulk_create_db_safe(assignment_model, assignments, ignore_conflicts=ignore_conflicts, return_ids=False)
+
+    created = []
+    for query_filter in query_filters:
+        created.extend(assignment_model.objects.filter(query_filter))
+    if fire_signals_on_create:
+        _fire_post_save(created, existing_pks)
+    else:
+        _audit_log_created(created, existing_pks)
+    return created
 
 
 def _create_assignments(
@@ -209,55 +278,12 @@ def _create_assignments(
     created_by = current_user_or_system_user()
     all_assignments: list[AssignmentBase] = []
 
-    user_assignments = []
-    for ra in user_resolved:
-        obj_role = lookup[(ra.role_definition.pk, ra.object_id)]
-        user_assignments.append(
-            RoleUserAssignment(
-                user=ra.actor,
-                object_role=obj_role,
-                role_definition=ra.role_definition,
-                content_type=ra.content_type,
-                object_id=ra.object_id,
-                object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)),
-                created_by=created_by,
-            )
-        )
-    if user_assignments:
-        pair_q = _pair_filter(user_assignments, 'user')
-        existing_user_pks = set(RoleUserAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleUserAssignment.objects.bulk_create(user_assignments, ignore_conflicts=ignore_conflicts)
-        db_users = list(RoleUserAssignment.objects.filter(pair_q))
-        all_assignments.extend(db_users)
-        if fire_signals_on_create:
-            _fire_post_save(db_users, existing_user_pks)
-        else:
-            _audit_log_created(db_users, existing_user_pks)
-
-    team_assignments = []
-    for ra in team_resolved:
-        obj_role = lookup[(ra.role_definition.pk, ra.object_id)]
-        team_assignments.append(
-            RoleTeamAssignment(
-                team=ra.actor,
-                object_role=obj_role,
-                role_definition=ra.role_definition,
-                content_type=ra.content_type,
-                object_id=ra.object_id,
-                object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)),
-                created_by=created_by,
-            )
-        )
-    if team_assignments:
-        pair_q = _pair_filter(team_assignments, 'team')
-        existing_team_pks = set(RoleTeamAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleTeamAssignment.objects.bulk_create(team_assignments, ignore_conflicts=ignore_conflicts)
-        db_teams = list(RoleTeamAssignment.objects.filter(pair_q))
-        all_assignments.extend(db_teams)
-        if fire_signals_on_create:
-            _fire_post_save(db_teams, existing_team_pks)
-        else:
-            _audit_log_created(db_teams, existing_team_pks)
+    for resolved, assignment_model, actor_field in (
+        (user_resolved, RoleUserAssignment, 'user'),
+        (team_resolved, RoleTeamAssignment, 'team'),
+    ):
+        objects = _build_assignment_objects(resolved, assignment_model, actor_field, lookup, object_ansible_ids, created_by)
+        all_assignments.extend(_create_assignment_batch(assignment_model, objects, actor_field, fire_signals_on_create, ignore_conflicts))
 
     return all_assignments
 
@@ -330,14 +356,20 @@ def _find_assignments(
     actor_field: str,
 ) -> list[AssignmentBase]:
     """Find existing assignments matching resolved triples via the ObjectRole lookup."""
-    q = Q()
+    # Build list of (object_role_id, actor_pk) pairs
+    pairs = []
     for ra in resolved:
         obj_role = lookup.get((ra.role_definition.pk, ra.object_id))
         if obj_role is not None:
-            q |= Q(object_role_id=obj_role.pk, **{actor_field: ra.actor.pk})
-    if not q:
+            pairs.append((obj_role.pk, ra.actor.pk))
+
+    if not pairs:
         return []
-    return list(model.objects.filter(q))
+
+    results = []
+    for query_filter in _pair_filter_chunks(pairs, 'object_role_id', actor_field):
+        results.extend(model.objects.filter(query_filter))
+    return results
 
 
 def _recompute_after_remove(
@@ -362,7 +394,7 @@ def _recompute_after_remove(
         surviving_object_roles = ObjectRole.objects.filter(pk__in=[o.pk for o in object_roles_to_update])
         recompute_role_evaluations(surviving_object_roles)
 
-    ObjectRole.objects.filter(id__in=object_role_ids, users__isnull=True, teams__isnull=True).delete()
+    delete_object_roles(ObjectRole.objects.filter(id__in=object_role_ids, users__isnull=True, teams__isnull=True))
 
 
 def remove_assignments(

@@ -29,6 +29,16 @@ def test_organization_model_unique():
         Organization.objects.create(name="acme", description="Second ACME Corp.")
 
 
+@pytest.mark.parametrize(("name", "variant"), [("Acme", "acme"), ("cafe", "café")], ids=["case", "accent"])
+@pytest.mark.django_db
+def test_organization_name_comparison_is_case_and_accent_sensitive(name, variant):
+    Organization.objects.create(name=name)
+
+    assert not Organization.objects.filter(name=variant).exists()
+
+    Organization.objects.create(name=variant)
+
+
 @pytest.mark.django_db
 def test_organization_model_teams():
     org = Organization.objects.create(name="acme")
