@@ -79,10 +79,11 @@ def test_expired_token_logs_reason_without_the_token_value(oauth_bearer_authenti
     plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
     token = "expired-token-value"
     claims = _routing_claims(oauth_bearer_authenticator.configuration)
+    signing_errors = [claims, ExpiredSignatureError("expired")]
 
     with caplog.at_level(logging.DEBUG, logger=PLUGIN_LOGGER):
         with pytest.raises(BearerTokenValidationError) as exc:
-            _plugin_authenticate(plugin, token, [claims, ExpiredSignatureError("expired")])
+            _plugin_authenticate(plugin, token, signing_errors)
 
     assert exc.value.reason == "expired"
     assert f"token expired for authenticator {oauth_bearer_authenticator.name}" in caplog.text
@@ -95,10 +96,11 @@ def test_invalid_signature_logs_troubleshooting_context_without_the_token_value(
     plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
     token = "unsigned-token-value"
     claims = _routing_claims(oauth_bearer_authenticator.configuration)
+    signing_errors = [claims, InvalidSignatureError("bad signature")]
 
     with caplog.at_level(logging.DEBUG, logger=PLUGIN_LOGGER):
         with pytest.raises(BearerTokenValidationError) as exc:
-            _plugin_authenticate(plugin, token, [claims, InvalidSignatureError("bad signature")])
+            _plugin_authenticate(plugin, token, signing_errors)
 
     assert exc.value.reason == "invalid"
     assert f"signature failed for authenticator {oauth_bearer_authenticator.name}" in caplog.text

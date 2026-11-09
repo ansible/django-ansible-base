@@ -126,10 +126,12 @@ def test_first_failure_wins_deterministically_across_providers():
         patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict([(1, first), (2, second)])),
         patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
     ):
+        request = Mock(headers={"Authorization": "Bearer external-token"})
+        authenticator = BearerAuthentication()
         details = set()
         for _ in range(3):
             with pytest.raises(BearerAuthenticationFailed) as failure:
-                BearerAuthentication().authenticate(Mock(headers={"Authorization": "Bearer external-token"}))
+                authenticator.authenticate(request)
             details.add(str(failure.value.detail))
 
     assert details == {"Bearer token has expired."}

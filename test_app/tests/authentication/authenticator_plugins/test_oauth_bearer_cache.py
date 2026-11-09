@@ -91,13 +91,14 @@ def test_removed_key_rejects_old_tokens_and_accepts_the_current_key(oauth_bearer
     new_key, new_jwk = _keypair("new")
     configuration = oauth_bearer_authenticator.configuration
     plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    removed_key_token = _token(configuration, old_key, "old")
 
     with patch(f"{JWK_CLIENT}.fetch_data", side_effect=[{"keys": [old_jwk]}, {"keys": [new_jwk]}, {"keys": [new_jwk]}]):
-        assert _authenticate(plugin, _token(configuration, old_key, "old")) is not None
+        assert _authenticate(plugin, removed_key_token) is not None
 
         cache.clear()
         with pytest.raises(BearerTokenValidationError):
-            _authenticate(plugin, _token(configuration, old_key, "old"))
+            _authenticate(plugin, removed_key_token)
 
         assert _authenticate(plugin, _token(configuration, new_key, "new")) is not None
 
