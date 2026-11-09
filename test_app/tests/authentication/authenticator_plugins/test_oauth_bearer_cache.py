@@ -117,3 +117,19 @@ def test_repeated_invalid_signatures_refresh_at_most_once(oauth_bearer_authentic
                 _authenticate(plugin, token)
 
     assert fetch_data.call_count <= 2
+
+
+@pytest.mark.django_db
+def test_jwks_cache_hit_rate_exceeds_95_percent_after_warmup(oauth_bearer_authenticator):
+    """After warmup, repeated logins are served from the JWKS cache instead of the provider (TC-5 item 16)."""
+    key, jwk = _keypair("k1")
+    token = _token(oauth_bearer_authenticator.configuration, key, "k1")
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+
+    with patch(f"{JWK_CLIENT}.fetch_data", return_value={"keys": [jwk]}) as fetch_data:
+        assert _authenticate(plugin, token) is not None
+        for _ in range(100):
+            assert _authenticate(plugin, token) is not None
+
+    # One fetch for 101 logins is a 99% hit rate; the plan asks for more than 95%.
+    assert fetch_data.call_count == 1

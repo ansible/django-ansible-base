@@ -99,3 +99,28 @@ def test_reenabled_external_provider_and_local_oauth_coexist(oauth_bearer_authen
 
     assert _external_login(unauthenticated_api_client, oauth_bearer_authenticator).status_code == 200
     assert _local_login(unauthenticated_api_client, oauth2_admin_access_token[1]).status_code == 200
+
+
+@pytest.mark.django_db
+def test_disabled_provider_stays_disabled_after_a_process_restart(oauth_bearer_authenticator, unauthenticated_api_client):
+    """The toggle is stored on the authenticator row, so a restarted process reloads it disabled and never validates its tokens (TC-12 item 9)."""
+    oauth_bearer_authenticator.enabled = False
+    oauth_bearer_authenticator.save()
+
+    # Dropping the dispatcher cache stands in for a Gateway restart: the next
+    # request reloads the authenticator set from the database.
+    get_api_authentication_backends.cache_clear()
+    try:
+        with (
+            patch(f"{PLUGIN}.CachedJWKClient") as jwk_client,
+            patch(f"{PLUGIN}.decode", side_effect=lambda _token, **_kwargs: _claims(oauth_bearer_authenticator.configuration)),
+        ):
+            response = unauthenticated_api_client.get(get_relative_url("user-me"), headers={"Authorization": "Bearer external-token"})
+    finally:
+        get_api_authentication_backends.cache_clear()
+
+    assert response.status_code == 401
+    jwk_client.assert_not_called()
+    reloaded = Authenticator.objects.get(pk=oauth_bearer_authenticator.pk)
+    assert reloaded.enabled is False
+    assert reloaded.configuration["AUDIENCE"] == oauth_bearer_authenticator.configuration["AUDIENCE"]
