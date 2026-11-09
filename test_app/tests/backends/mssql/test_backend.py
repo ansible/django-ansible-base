@@ -69,7 +69,7 @@ def test_return_rows_bulk_insert_explicit_opt_out(monkeypatch):
 
 def test_warns_on_unexpected_database_collation(monkeypatch, caplog):
     "A BYO database provisioned elsewhere can carry the wrong collation; warn once per alias."
-    mssql_base._collation_warning_emitted.clear()
+    mssql_base._collation_checked.clear()
     wrapper, _ = _wrapper_with_stubbed_init(monkeypatch, {"OPTIONS": {}}, collation="SQL_Latin1_General_CP1_CI_AS")
 
     with caplog.at_level(logging.WARNING):
@@ -87,10 +87,30 @@ def test_warns_on_unexpected_database_collation(monkeypatch, caplog):
 
 
 def test_no_collation_warning_when_collation_matches(monkeypatch, caplog):
-    mssql_base._collation_warning_emitted.clear()
+    mssql_base._collation_checked.clear()
     wrapper, _ = _wrapper_with_stubbed_init(monkeypatch, {"OPTIONS": {}})
 
     with caplog.at_level(logging.WARNING):
         wrapper.init_connection_state()
 
     assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+def test_collation_checked_once_per_alias(monkeypatch):
+    "The DATABASEPROPERTYEX query runs on the first connection only; collation cannot change under a live process."
+    mssql_base._collation_checked.clear()
+    wrapper, cursor_factory = _wrapper_with_stubbed_init(monkeypatch, {"OPTIONS": {}})
+    calls = []
+
+    def counting_create_cursor():
+        calls.append(1)
+        cursor = MagicMock()
+        cursor.fetchone.return_value = ("Latin1_General_100_CS_AS",)
+        return cursor
+
+    monkeypatch.setattr(wrapper, "create_cursor", counting_create_cursor)
+
+    wrapper.init_connection_state()
+    wrapper.init_connection_state()
+
+    assert len(calls) == 1

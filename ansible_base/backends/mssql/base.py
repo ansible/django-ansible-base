@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 REQUIRED_COLLATION = "Latin1_General_100_CS_AS"
 
 # Database collation is fixed at CREATE DATABASE time and cannot drift within a
-# process, so the misconfiguration warning is emitted once per alias.
-_collation_warning_emitted = set()
+# process, so it is queried once per alias, on the first connection.
+_collation_checked = set()
 
 
 class DatabaseOperations(MSSQLDatabaseOperations):
@@ -78,11 +78,13 @@ class DatabaseWrapper(MSSQLDatabaseWrapper):
         equality semantics for every string comparison, so surface it at connect
         time rather than waiting for corrupted unique constraints.
         """
+        if self.alias in _collation_checked:
+            return
+        _collation_checked.add(self.alias)
         cursor = self.create_cursor()
         cursor.execute("SELECT CONVERT(NVARCHAR(128), DATABASEPROPERTYEX(DB_NAME(), 'Collation'))")
-        collation = cursor.fetchone()[0]
-        if collation != REQUIRED_COLLATION and self.alias not in _collation_warning_emitted:
-            _collation_warning_emitted.add(self.alias)
+        row = cursor.fetchone()
+        if row is not None and row[0] != REQUIRED_COLLATION:
             logger.warning(
                 "Database %r (alias %r) uses collation %s, but DAB requires %s; "
                 "a case-insensitive collation makes values that differ only in case compare equal, "
@@ -90,7 +92,7 @@ class DatabaseWrapper(MSSQLDatabaseWrapper):
                 "CREATE DATABASE ... COLLATE %s before applying migrations.",
                 self.settings_dict.get('NAME'),
                 self.alias,
-                collation,
+                row[0],
                 REQUIRED_COLLATION,
                 REQUIRED_COLLATION,
             )

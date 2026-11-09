@@ -16,6 +16,12 @@ def convert_lock_id_to_resource_name(lock_id):
     PostgreSQL accepts integers, tuples of integers, or strings.
     MS SQL Server requires nvarchar resource names (max 255 chars).
 
+    String lock ids keep a readable (truncated) prefix plus a crc32 digest of
+    the full string: plain truncation would make distinct lock ids share a
+    lock, and an unhashed string could collide with the int/tuple forms below.
+    This mirrors the PostgreSQL path, which hashes the whole string while
+    using integer ids as-is.
+
     Args:
         lock_id: int, str, or tuple/list of ints
 
@@ -26,8 +32,8 @@ def convert_lock_id_to_resource_name(lock_id):
         ValueError: If tuple/list has wrong length or non-integer elements
     """
     if isinstance(lock_id, str):
-        # Already a string - truncate to 255 chars if needed
-        return lock_id[:255]
+        digest = str(crc32(lock_id.encode("utf-8")))
+        return lock_id[: 255 - len(digest)] + digest
     elif isinstance(lock_id, int):
         return f"dab_lock_{lock_id}"
     elif isinstance(lock_id, (list, tuple)):
@@ -79,11 +85,8 @@ def mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_m
     else:
         timeout = -1  # Wait indefinitely
 
-    # Ensure connection is properly established for this thread
+    # conn.cursor() establishes the connection for this thread if needed
     conn = connections[using]
-    if conn.connection is None:
-        conn.ensure_connection()
-
     cursor = conn.cursor()
     acquired = False
 
@@ -96,18 +99,20 @@ def mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_m
         # -3 = deadlock victim
         # -999 = parameter validation or other error
         # SQL Server sp_getapplock: execute and fetch result in separate steps
-        # Using SET NOCOUNT ON to suppress row count messages that can interfere with result retrieval
+        # (no SET NOCOUNT here: it is a session-level setting and would leak onto the
+        # pooled connection, where it breaks row counts for Django's update()/delete())
         # SQL Server application locks are visible across connections regardless of LockOwner
         # Use 'Session' as default - 'Transaction' requires an active transaction
         sql = """
-            SET NOCOUNT ON;
             DECLARE @result int;
             EXEC @result = sp_getapplock @Resource=%s, @LockMode=%s, @LockTimeout=%s, @LockOwner='Session';
             SELECT @result AS lock_result;
         """
         cursor.execute(sql, [resource_name, lock_mode, timeout])
         row = cursor.fetchone()
-        result = row[0] if row else -999
+        if row is None:
+            raise OperationalError(f"MS SQL sp_getapplock returned no result for resource {resource_name}")
+        result = row[0]
 
         if result >= 0:
             # Lock acquired (0 or 1)

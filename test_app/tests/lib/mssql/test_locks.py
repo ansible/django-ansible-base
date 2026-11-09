@@ -2,11 +2,12 @@ import importlib
 import sys
 from contextlib import contextmanager
 from types import SimpleNamespace
+from unittest import skipUnless
 from unittest.mock import Mock
 from zlib import crc32
 
 import pytest
-from django.db import OperationalError
+from django.db import OperationalError, connection
 
 from ansible_base.lib.mssql import locks
 from ansible_base.lib.utils import db
@@ -35,8 +36,6 @@ def test_modules_import_without_pyodbc(monkeypatch):
 @pytest.mark.parametrize(
     ("lock_id", "expected"),
     [
-        ("short_name", "short_name"),
-        ("x" * 260, "x" * 255),
         (12, "dab_lock_12"),
         ([1, 2], "dab_lock_1_2"),
         ((3, 4), "dab_lock_3_4"),
@@ -44,6 +43,30 @@ def test_modules_import_without_pyodbc(monkeypatch):
 )
 def test_convert_lock_id_to_sql_server_resource_name(lock_id, expected):
     assert locks.convert_lock_id_to_resource_name(lock_id) == expected
+
+
+def test_string_lock_ids_get_hash_suffix():
+    "The whole string is hashed, the way the PostgreSQL path does, so no plain truncation."
+    digest = str(crc32(b"short_name"))
+
+    assert locks.convert_lock_id_to_resource_name("short_name") == "short_name" + digest
+
+
+def test_long_lock_ids_stay_unique_and_within_255_chars():
+    "Lock ids sharing a 255-character prefix must still map to distinct resource names."
+    base = "c" * 300
+
+    name_a = locks.convert_lock_id_to_resource_name(base + "x")
+    name_b = locks.convert_lock_id_to_resource_name(base + "y")
+
+    assert len(name_a) <= 255
+    assert len(name_b) <= 255
+    assert name_a != name_b
+
+
+def test_string_and_int_lock_ids_never_collide():
+    "On PostgreSQL a string lock id is hashed while an int is used as-is; match that separation."
+    assert locks.convert_lock_id_to_resource_name("dab_lock_5") != locks.convert_lock_id_to_resource_name(5)
 
 
 def test_convert_lock_id_hashes_other_types():
@@ -65,7 +88,6 @@ def test_mssql_advisory_lock_acquires_and_releases(monkeypatch):
     with locks.mssql_advisory_lock((12, 34), shared=True, lock_session_timeout_milliseconds=500, using="replica") as acquired:
         assert acquired is True
 
-    connection.ensure_connection.assert_called_once()
     assert cursor.execute.call_count == 2
     assert cursor.execute.call_args_list[0].args[1] == ["dab_lock_12_34", "Shared", 500]
     assert cursor.execute.call_args_list[1].args[1] == ["dab_lock_12_34"]
@@ -79,7 +101,7 @@ def test_mssql_advisory_lock_timeout_returns_not_acquired_when_not_waiting(monke
         assert acquired is False
 
     assert cursor.execute.call_count == 1
-    assert cursor.execute.call_args.args[1] == ["lock", "Exclusive", 0]
+    assert cursor.execute.call_args.args[1] == ["lock" + str(crc32(b"lock")), "Exclusive", 0]
 
 
 def test_mssql_advisory_lock_timeout_raises_when_waiting(monkeypatch):
@@ -91,16 +113,28 @@ def test_mssql_advisory_lock_timeout_raises_when_waiting(monkeypatch):
             pass
 
     assert cursor.execute.call_count == 1
-    assert cursor.execute.call_args.args[1] == ["lock", "Exclusive", 500]
+    assert cursor.execute.call_args.args[1] == ["lock" + str(crc32(b"lock")), "Exclusive", 500]
     cursor.close.assert_called_once()
 
 
-@pytest.mark.parametrize(("row", "code"), [(None, -999), ((-3,), -3)])
-def test_mssql_advisory_lock_raises_for_failed_acquisition(monkeypatch, row, code):
-    _, cursor = make_mssql_connection(monkeypatch, row)
+def test_mssql_advisory_lock_raises_when_no_result_row(monkeypatch):
+    "A missing result row is an unexpected protocol failure, not a lock-acquisition code."
+    _, cursor = make_mssql_connection(monkeypatch, None)
     lock_context = locks.mssql_advisory_lock("lock")
 
-    with pytest.raises(OperationalError, match=str(code)):
+    with pytest.raises(OperationalError, match="returned no result"):
+        with lock_context:
+            pass
+
+    cursor.close.assert_called_once()
+    assert cursor.execute.call_count == 1
+
+
+def test_mssql_advisory_lock_raises_for_failed_acquisition(monkeypatch):
+    _, cursor = make_mssql_connection(monkeypatch, (-3,))
+    lock_context = locks.mssql_advisory_lock("lock")
+
+    with pytest.raises(OperationalError, match="-3"):
         with lock_context:
             pass
 
@@ -249,3 +283,29 @@ def test_advisory_lock_requires_lock_id_for_mssql(monkeypatch):
     with pytest.raises(ValueError, match="lock identifier"):
         with db.advisory_lock():
             pass
+
+
+@skipUnless(connection.vendor == "microsoft", "MS SQL Server only")
+@pytest.mark.django_db
+def test_advisory_lock_live_contention_between_sessions():
+    """Acquire through the full dispatch path against a real SQL Server, and verify a
+    second session cannot take the same resource while it is held."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    results = {}
+
+    def try_lock_from_second_session():
+        # Django opens a per-thread connection, i.e. a separate SQL Server session
+        with db.advisory_lock("live-contention-probe", wait=False) as acquired:
+            results["second_session"] = acquired
+
+    with db.advisory_lock("live-contention-probe") as acquired:
+        assert acquired is True
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(try_lock_from_second_session).result()
+
+    assert results["second_session"] is False
+
+    # after release the resource is available again
+    with db.advisory_lock("live-contention-probe", wait=False) as reacquired:
+        assert reacquired is True

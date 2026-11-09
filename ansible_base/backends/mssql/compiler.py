@@ -1,21 +1,27 @@
 """SQL compiler compatibility for case-sensitive SQL Server collations."""
 
-import re
-
 from mssql import compiler as mssql_compiler
 
 
 class SQLCompiler(mssql_compiler.SQLCompiler):
-    """Keep generated select aliases consistent with Django's qualify wrapper."""
+    """
+    Forward ``with_col_aliases`` to ``pre_sql_setup()`` the way Django's own
+    ``SQLCompiler.as_sql()`` does.
+
+    mssql-django calls ``pre_sql_setup()`` with no arguments, so ``self.select``
+    has no aliases and its ``as_sql()`` makes up ``Col1``, ``Col2``, ...
+    Django's ``get_qualify_sql()`` refers to those columns as ``col1``, ...,
+    and the two names differ under a case-sensitive collation.
+    """
+
+    _with_col_aliases = False
 
     def as_sql(self, with_limits=True, with_col_aliases=False):
-        sql, params = super().as_sql(with_limits=with_limits, with_col_aliases=with_col_aliases)
-        if with_col_aliases:
-            # Django references these aliases as ``col1``, while mssql-django
-            # emits ``Col1``. They differ under the backend's case-sensitive
-            # collation and break sliced prefetch queries that use QUALIFY.
-            sql = re.sub(r'\bAS Col(\d+)\b', r'AS col\1', sql)
-        return sql, params
+        self._with_col_aliases = with_col_aliases or bool(self.query.combinator)
+        return super().as_sql(with_limits=with_limits, with_col_aliases=with_col_aliases)
+
+    def pre_sql_setup(self, with_col_aliases=False):
+        return super().pre_sql_setup(with_col_aliases=with_col_aliases or self._with_col_aliases)
 
 
 SQLAggregateCompiler = mssql_compiler.SQLAggregateCompiler

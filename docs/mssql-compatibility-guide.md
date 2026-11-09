@@ -56,7 +56,7 @@ Consumer applications should apply the same rule to their own models: use `Bound
 
 ## Other backend behavior
 
-- The backend's compiler normalizes generated select aliases (`AS Col1` → `AS col1`) so sliced prefetch queries keep working under the case-sensitive collation; Django's outer `QUALIFY` wrapper references the lowercase form while mssql-django emits uppercase. This is a candidate for upstreaming to mssql-django.
+- The backend's compiler forwards `with_col_aliases` to `pre_sql_setup()` the way Django's own compiler does (mssql-django drops it), so generated select aliases come out as the lowercase `col1`, `col2`... that Django's `QUALIFY` wrapper references. Without it, sliced prefetch and window-filter queries break under the case-sensitive collation. This is a candidate for upstreaming to mssql-django.
 - SQL Server stores `JSONField` values as `nvarchar(max)`. DAB omits the `ISJSON` check constraint on JSONField columns — for every JSONField, not only encrypted ones — so encrypted JSON values, which are ciphertext rather than valid JSON, can be stored.
 - The backend enables mssql-django's `return_rows_bulk_insert` option by default, so `bulk_create()` populates primary keys (and other database-side defaults) on created objects, matching PostgreSQL. Set `OPTIONS['return_rows_bulk_insert'] = False` to opt out — required only if a managed table has an enabled trigger, because SQL Server rejects `OUTPUT` without `INTO` on trigger tables (mssql-django #130); DAB's own schema has no triggers.
 
