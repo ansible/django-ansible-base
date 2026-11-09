@@ -5,6 +5,8 @@ from django.db import migrations, models
 import django.db.models.deletion
 import uuid
 
+from ansible_base.lib.fields import BoundedTextField
+
 
 class Migration(migrations.Migration):
 
@@ -37,7 +39,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='resource',
             name='object_id',
-            field=models.TextField(db_index=True, help_text='The object id for this resource.'),
+            field=BoundedTextField(db_index=True, help_text='The object id for this resource.', sql_server_max_length=64),
         ),
         migrations.AlterField(
             model_name='resource',

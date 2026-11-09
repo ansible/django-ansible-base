@@ -4,6 +4,8 @@ from django.conf import settings
 from django.db import migrations, models
 import django.db.models.deletion
 
+from ansible_base.lib.fields import BoundedTextField
+
 
 class Migration(migrations.Migration):
 
@@ -37,7 +39,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='objectrole',
             name='object_id',
-            field=models.TextField(help_text='The database primary key of the subject of permission assignments.'),
+            field=BoundedTextField(help_text='The database primary key of the subject of permission assignments.', sql_server_max_length=64),
         ),
         migrations.AlterField(
             model_name='roledefinition',
@@ -52,7 +54,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='roledefinition',
             name='name',
-            field=models.TextField(db_index=True, help_text='The name of this role.', unique=True),
+            field=BoundedTextField(db_index=True, help_text='The name of this role.', sql_server_max_length=255, unique=True),
         ),
         migrations.AlterField(
             model_name='roleevaluation',
