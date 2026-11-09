@@ -1,4 +1,5 @@
 import hashlib
+import time
 from unittest.mock import Mock, call, patch
 
 import jwt
@@ -236,6 +237,21 @@ def test_cached_jwk_client_only_caches_a_parser_validated_jwk_set():
     assert [key.key_id for key in jwk_set.keys] == ["key-id"]
     assert cache.get(client._jwk_set_cache_key) == document
     fetch_data.assert_called_once_with()
+
+
+def test_cached_jwk_client_refetches_after_the_cached_jwk_set_expires():
+    """The cached set is stored with the configured lifespan, so an expired entry forces a refetch."""
+    client = CachedJWKClient("https://issuer.example.com/keys", lifespan=1)
+    document = _jwk_document()
+
+    with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=document) as fetch_data:
+        assert [key.key_id for key in client.get_jwk_set().keys] == ["key-id"]
+        # Advance only the cache backend's clock past the entry's lifespan.
+        with patch("django.core.cache.backends.locmem.time.time", return_value=time.time() + 2):
+            assert cache.get(client._jwk_set_cache_key) is None
+        assert [key.key_id for key in client.get_jwk_set().keys] == ["key-id"]
+
+    assert fetch_data.call_count == 2
 
 
 @pytest.mark.parametrize("document", [{"error": "temporarily unavailable"}, {"keys": []}, {"keys": [{"kty": "invalid"}]}])

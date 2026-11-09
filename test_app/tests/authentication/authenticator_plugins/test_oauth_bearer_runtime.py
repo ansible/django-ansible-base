@@ -1,3 +1,4 @@
+import logging
 import warnings
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -206,6 +207,13 @@ def test_oauth_bearer_plugin_defaults_missing_clock_skew_for_existing_configurat
             {"scope": "write", "scp": "openid"},
             set(),
         ),
+        ({}, {"scope": None}, set()),
+        ({}, {"scope": 7}, set()),
+        ({}, {"scope": {"read": True}}, set()),
+        ({}, {"scope": ["read", 5, None]}, {"read"}),
+        ({}, {"scope": "   "}, set()),
+        ({}, {"scope": "READ"}, set()),
+        ({}, {"scope": "read read"}, {"read"}),
     ],
 )
 @pytest.mark.django_db
@@ -1072,3 +1080,156 @@ def test_oauth_bearer_plugin_rejects_unusable_identity(oauth_bearer_authenticato
         jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
         with pytest.raises(BearerTokenValidationError, match="Invalid Bearer token"):
             plugin.authenticate(token="token")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "token",
+    [
+        pytest.param("", id="empty"),
+        pytest.param("eyJhbGciOiJSUzI1NiJ9.only-two-segments", id="truncated"),
+        pytest.param("eyJ!!!.payload.signature", id="invalid-base64"),
+        pytest.param("not-a-jwt", id="no-segments"),
+        pytest.param("a" * 65536, id="extremely-long"),
+    ],
+)
+def test_oauth_bearer_plugin_declines_malformed_tokens_without_logging_them(oauth_bearer_authenticator, caplog, token):
+    """Malformed credentials never route to a provider, never fetch JWKS, and never reach a log record."""
+    caplog.set_level(logging.DEBUG, logger="ansible_base.authentication.authenticator_plugins.oauth_bearer")
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+
+    with patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient") as jwk_client:
+        assert plugin.authenticate(token=token) is None
+
+    jwk_client.assert_not_called()
+    # An empty token occurs in any text, so it cannot demonstrate a leak either way.
+    assert not token or token not in caplog.text
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "claims",
+    [
+        pytest.param({"iss": "https://login.example.com/tenant/v2.0", "sub": "subject"}, id="missing-audience"),
+        pytest.param({"aud": "api://aap-example", "sub": "subject"}, id="missing-issuer"),
+        pytest.param({"iss": "https://login.example.com/tenant/v2.0", "aud": "api://other", "sub": "subject"}, id="wrong-audience"),
+        pytest.param({"iss": "https://other.example.com/tenant/v2.0", "aud": "api://aap-example", "sub": "subject"}, id="wrong-issuer"),
+        pytest.param({"iss": "https://login.example.com/tenant/v2.0", "aud": [], "sub": "subject"}, id="empty-audience-list"),
+    ],
+)
+def test_oauth_bearer_plugin_declines_tokens_that_do_not_match_routing_claims(oauth_bearer_authenticator, claims):
+    """Routing requires both a matching issuer and a matching audience before any key lookup."""
+    token = jwt.encode(claims, "routing-only", algorithm="HS256")
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+
+    with patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient") as jwk_client:
+        assert plugin.authenticate(token=token) is None
+
+    jwk_client.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_plugin_rejects_a_token_that_is_not_yet_valid(oauth_bearer_authenticator):
+    """A future nbf claim is a validation failure, not a dispatcher error."""
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.decode",
+            side_effect=[
+                _routing_claims(oauth_bearer_authenticator.configuration),
+                jwt.ImmatureSignatureError("not yet valid"),
+            ],
+        ),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
+        with pytest.raises(BearerTokenValidationError) as exc_info:
+            plugin.authenticate(token="token")
+
+    assert exc_info.value.reason == "invalid"
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_plugin_grants_no_authorization_without_a_scope_claim(oauth_bearer_authenticator):
+    """A valid token with no scope claim maps to no API scopes.
+
+    ANSTRAT-1611 plan item TC-1 N12 expects read-only access for a missing scope
+    claim; the implementation deliberately grants nothing. This test pins the
+    implemented behaviour so the plan/item divergence stays visible.
+    """
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    claims = {**_routing_claims(oauth_bearer_authenticator.configuration), "sub": "subject", "email": "user@example.com"}
+
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.decode",
+            side_effect=[_routing_claims(oauth_bearer_authenticator.configuration), claims],
+        ),
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.get_or_create_authenticator_user",
+            return_value=(Mock(is_active=True), Mock(), False),
+        ),
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.update_user_claims"),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
+        result = plugin.authenticate(token="token")
+
+    assert result.auth.scopes == frozenset()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "identity",
+    [
+        pytest.param("o'brien+aliases@example.com", id="quotes-and-plus"),
+        pytest.param("user\ntwo@example.com", id="embedded-newline"),
+        pytest.param("ünïcode@example.com", id="non-ascii"),
+        pytest.param("'; DROP TABLE authenticator_user; --", id="sql-injection-shaped"),
+    ],
+)
+def test_oauth_bearer_plugin_passes_identity_claim_values_through_unchanged(oauth_bearer_authenticator, identity):
+    """Identity claims reach provisioning verbatim; the ORM parameterizes them."""
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    claims = {**_routing_claims(oauth_bearer_authenticator.configuration), "sub": "subject", "email": identity}
+
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.decode",
+            side_effect=[_routing_claims(oauth_bearer_authenticator.configuration), claims],
+        ),
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.get_or_create_authenticator_user",
+            return_value=(Mock(is_active=True), Mock(), False),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.update_user_claims"),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
+        plugin.authenticate(token="token")
+
+    assert get_or_create.call_args.kwargs["uid"] == identity
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_plugin_provisions_a_non_elevated_user(oauth_bearer_authenticator):
+    """A JIT-provisioned external identity holds no privileges until maps grant them."""
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    claims = {**_routing_claims(oauth_bearer_authenticator.configuration), "sub": "subject", "email": "new-external@example.com"}
+
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.decode",
+            side_effect=[_routing_claims(oauth_bearer_authenticator.configuration), claims],
+        ),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
+        result = plugin.authenticate(token="token")
+
+    assert result.user.is_superuser is False
+    assert result.user.is_staff is False
+    assert result.user.groups.count() == 0
+    assert result.auth.scopes == frozenset()
