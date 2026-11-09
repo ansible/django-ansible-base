@@ -153,6 +153,32 @@ class CachedJWKClient(PyJWKClient):
         finally:
             self._release_fetch_lock(fetch_owner, use_locks)
 
+    def _cached_jwk_document(self) -> Any | None:
+        """Return the shared JWKS document when caching is enabled."""
+        if self.cache_timeout <= 0:
+            return None
+        return cache.get(self._jwk_set_cache_key)
+
+    def _cached_jwk_set(self) -> PyJWKSet | None:
+        """Return the parsed shared JWKS document when it is available."""
+        document = self._cached_jwk_document()
+        if document is None:
+            return None
+        return self._parse_jwk_set(document)
+
+    def _updated_cached_jwk_set(self, cached_document: Any | None) -> PyJWKSet | None:
+        """Return a parsed JWKS only when another worker has replaced the shared document."""
+        document = self._cached_jwk_document()
+        if document is None or document == cached_document:
+            return None
+        return self._parse_jwk_set(document)
+
+    def _reusable_cached_jwk_set(self, refresh: bool, cached_document: Any | None) -> PyJWKSet | None:
+        """Return normal cached keys or a peer's newer keys during a forced refresh."""
+        if refresh:
+            return self._updated_cached_jwk_set(cached_document)
+        return self._cached_jwk_set()
+
     @staticmethod
     def _sleep_before_jwk_set_retry(deadline: float, retry_count: int, timeout_error: PyJWKClientError) -> None:
         """Back off with jitter or raise the coordination error that triggered the retry."""
@@ -160,7 +186,7 @@ class CachedJWKClient(PyJWKClient):
         if remaining <= 0:
             raise timeout_error
 
-        maximum_delay = min(MAX_JWKS_FETCH_RETRY_SECONDS, INITIAL_JWKS_FETCH_RETRY_SECONDS * 2**retry_count)
+        maximum_delay = min(MAX_JWKS_FETCH_RETRY_SECONDS, INITIAL_JWKS_FETCH_RETRY_SECONDS * 2 ** min(retry_count, 4))
         delay = min(random.uniform(maximum_delay / 2, maximum_delay), remaining)
         time.sleep(delay)
 
@@ -170,16 +196,19 @@ class CachedJWKClient(PyJWKClient):
         deadline = time.monotonic() + self.fetch_wait_seconds
         need_to_acquire_refresh_lock = refresh
         retry_count = 0
+        cached_document = self._cached_jwk_document() if refresh else None
         while True:
             try:
+                if (jwk_set := self._reusable_cached_jwk_set(refresh, cached_document)) is not None:
+                    return jwk_set
                 if need_to_acquire_refresh_lock:
                     # Forced refreshes intentionally bypass a valid shared
                     # JWKS. Keep this cooldown marker after the fetch
                     # completes to throttle them.
                     self._set_refresh_lock(use_locks)
                     need_to_acquire_refresh_lock = False
-                if self.cache_timeout > 0 and not refresh and (document := cache.get(self._jwk_set_cache_key)) is not None:
-                    return self._parse_jwk_set(document)
+                if (jwk_set := self._reusable_cached_jwk_set(refresh, cached_document)) is not None:
+                    return jwk_set
                 return self._fetch_jwk_set_with_fetch_lock(use_locks)
             except _JWKSRetry as retry:
                 # A forced-refresh cooldown may expire before this request
@@ -193,6 +222,8 @@ class CachedJWKClient(PyJWKClient):
                 # unavailable).
                 self._sleep_before_jwk_set_retry(deadline, retry_count, retry.timeout_error)
                 retry_count += 1
+                if (jwk_set := self._reusable_cached_jwk_set(refresh, cached_document)) is not None:
+                    return jwk_set
 
     def get_signing_key_from_jwt(self, token: str | bytes) -> PyJWK:
         """Override PyJWT key lookup to cache a signing key by provider URI and JWT key ID across processes."""

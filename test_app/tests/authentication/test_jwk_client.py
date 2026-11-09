@@ -412,6 +412,100 @@ def test_cached_jwk_client_reuses_jwk_set_populated_by_the_fetch_lock_owner():
     from_dict.assert_called_once_with(document)
 
 
+def test_cached_jwk_client_does_not_read_a_jwk_document_when_caching_is_disabled():
+    client = CachedJWKClient("https://issuer.example.com/keys", lifespan=0)
+
+    with patch("ansible_base.authentication.jwk_client.cache.get") as cache_get:
+        assert client._cached_jwk_document() is None
+
+    cache_get.assert_not_called()
+
+
+def test_cached_jwk_client_parses_an_available_cached_jwk_set():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    cache.set(client._jwk_set_cache_key, _jwk_document("cached-key"), timeout=client.cache_timeout)
+
+    assert [key.key_id for key in client._cached_jwk_set().keys] == ["cached-key"]
+
+
+def test_cached_jwk_client_returns_an_updated_cached_jwk_set_only_after_a_peer_change():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    original_document = _jwk_document("old-key")
+    cache.set(client._jwk_set_cache_key, original_document, timeout=client.cache_timeout)
+
+    assert client._updated_cached_jwk_set(original_document) is None
+
+    rotated_document = _jwk_document("rotated-key")
+    cache.set(client._jwk_set_cache_key, rotated_document, timeout=client.cache_timeout)
+
+    assert [key.key_id for key in client._updated_cached_jwk_set(original_document).keys] == ["rotated-key"]
+
+
+def test_cached_jwk_client_ignores_an_expired_jwk_set_while_waiting_for_a_forced_refresh():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    document = _jwk_document("old-key")
+    cache.set(client._jwk_set_cache_key, document, timeout=client.cache_timeout)
+    cache.delete(client._jwk_set_cache_key)
+
+    assert client._updated_cached_jwk_set(document) is None
+
+
+def test_cached_jwk_client_selects_reusable_keys_for_normal_and_forced_requests():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    original_document = _jwk_document("old-key")
+    rotated_document = _jwk_document("rotated-key")
+    cache.set(client._jwk_set_cache_key, original_document, timeout=client.cache_timeout)
+
+    assert [key.key_id for key in client._reusable_cached_jwk_set(False, None).keys] == ["old-key"]
+    assert client._reusable_cached_jwk_set(True, original_document) is None
+
+    cache.set(client._jwk_set_cache_key, rotated_document, timeout=client.cache_timeout)
+
+    assert [key.key_id for key in client._reusable_cached_jwk_set(True, original_document).keys] == ["rotated-key"]
+
+
+def test_cached_jwk_client_reuses_jwk_set_published_during_forced_refresh_wait():
+    """A refresh waiter must use a peer's rotated JWKS rather than waiting for cooldown expiry."""
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    old_document = _jwk_document("old-key")
+    new_document = _jwk_document("rotated-key")
+    cache.set(client._jwk_set_cache_key, old_document, timeout=client.cache_timeout)
+    cache.set(client._refresh_lock_key, True, timeout=client.forced_refresh_cooldown)
+
+    def publish_peer_jwk_set(_delay):
+        cache.set(client._jwk_set_cache_key, new_document, timeout=client.cache_timeout)
+
+    with (
+        patch("ansible_base.authentication.jwk_client.random.uniform", return_value=0.01),
+        patch("ansible_base.authentication.jwk_client.time.sleep", side_effect=publish_peer_jwk_set),
+        patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data") as fetch_data,
+    ):
+        jwk_set = client.get_jwk_set(refresh=True)
+
+    assert [key.key_id for key in jwk_set.keys] == ["rotated-key"]
+    fetch_data.assert_not_called()
+
+
+def test_cached_jwk_client_reuses_jwk_set_published_before_forced_refresh_lock_acquisition():
+    """A refresh owner must not fetch again when another worker publishes keys before it gets the lock."""
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    old_document = _jwk_document("old-key")
+    new_document = _jwk_document("rotated-key")
+    cache.set(client._jwk_set_cache_key, old_document, timeout=client.cache_timeout)
+
+    def acquire_refresh_lock_after_peer_publish(_use_locks):
+        cache.set(client._jwk_set_cache_key, new_document, timeout=client.cache_timeout)
+
+    with (
+        patch.object(client, "_set_refresh_lock", side_effect=acquire_refresh_lock_after_peer_publish),
+        patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data") as fetch_data,
+    ):
+        jwk_set = client.get_jwk_set(refresh=True)
+
+    assert [key.key_id for key in jwk_set.keys] == ["rotated-key"]
+    fetch_data.assert_not_called()
+
+
 def test_cached_jwk_client_raises_availability_error_when_fetch_lock_owner_does_not_finish():
     client = CachedJWKClient("https://issuer.example.com/keys")
     cache.set(client._fetch_lock_key, "other-request", timeout=client.fetch_lease_seconds)
@@ -435,6 +529,19 @@ def test_cached_jwk_client_exponentially_backs_off_fetch_retries():
 
     assert uniform.call_args_list == [call(0.01, 0.02), call(0.02, 0.04)]
     assert sleep.call_args_list == [call(0.02), call(0.04)]
+
+
+def test_cached_jwk_client_caps_fetch_retry_exponent_before_it_overflows():
+    """Long bounded waits retain the maximum backoff without calculating an enormous power."""
+    with (
+        patch("ansible_base.authentication.jwk_client.time.monotonic", return_value=0),
+        patch("ansible_base.authentication.jwk_client.random.uniform", return_value=0.25) as uniform,
+        patch("ansible_base.authentication.jwk_client.time.sleep") as sleep,
+    ):
+        CachedJWKClient._sleep_before_jwk_set_retry(1, retry_count=10000, timeout_error=PyJWKClientError("timeout"))
+
+    uniform.assert_called_once_with(0.125, 0.25)
+    sleep.assert_called_once_with(0.25)
 
 
 def test_cached_jwk_client_waits_for_an_active_fetch_before_forced_refresh():
