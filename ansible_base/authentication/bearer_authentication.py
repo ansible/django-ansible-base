@@ -177,7 +177,7 @@ class BearerAuthentication(ChallengeAwareAuthenticationMixin, BaseAuthentication
                 logger.debug(f"API authenticator with ID {authenticator_id} rejected a token it owns: {exc.reason}")
                 continue
             except Exception:
-                log_auth_exception(f'API authenticator with ID "{authenticator_id}" raised an exception')
+                log_auth_exception(f'API authenticator with ID "{authenticator_id}" raised an exception', redact_values=(token,))
                 continue
 
             if isinstance(result, BearerAuthenticationResult):
