@@ -462,7 +462,7 @@ def test_bearer_authentication_exposes_rfc6750_challenge_when_session_authentica
 
 
 @pytest.mark.django_db
-def test_bearer_authentication_audits_unexpected_plugin_exceptions_without_token_value():
+def test_bearer_authentication_audits_unexpected_plugin_exceptions_with_a_redacted_traceback():
     """Unexpected plugin defects are audited while expected rejections stay out of the audit log."""
     plugin = Mock()
     plugin.authenticate.side_effect = RuntimeError("untrusted token content")
@@ -479,7 +479,7 @@ def test_bearer_authentication_audits_unexpected_plugin_exceptions_without_token
 
     audit_message = log_auth_exception.call_args.args[0]
     assert audit_message == 'API authenticator with ID "17" raised an exception'
-    assert "untrusted token content" not in audit_message
+    assert log_auth_exception.call_args.kwargs == {"redact_values": ("untrusted-token-content",)}
 
 
 @pytest.mark.django_db
