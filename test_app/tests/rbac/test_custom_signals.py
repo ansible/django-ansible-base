@@ -302,7 +302,8 @@ class TestGlobalAssignmentSignals:
             dab_rbac_assignments_pre_delete.disconnect(capture, dispatch_uid='test-global-rm-return')
 
         assert removed.pk == granted.pk
-        assert captured == [removed] and captured[0] is removed
+        assert len(captured) == 1
+        assert captured[0] is removed
         assert removed.role_definition is global_inv_rd
         assert getattr(removed, actor_field) is actor
         assert not type(removed).objects.filter(pk=granted.pk).exists()
