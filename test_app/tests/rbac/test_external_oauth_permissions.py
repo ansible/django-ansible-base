@@ -150,7 +150,8 @@ def test_human_user_and_service_principal_permissions_stay_independent(oauth_bea
     service_claims = {"sub": "aap-service-client", "azp": "aap-service-client", "client_id": "aap-service-client"}
     human_login = _login(unauthenticated_api_client, oauth_bearer_authenticator, "human@example.com")
     service_login = _login(unauthenticated_api_client, oauth_bearer_authenticator, None, **service_claims)
-    assert human_login.status_code == 200 and service_login.status_code == 200
+    assert human_login.status_code == 200
+    assert service_login.status_code == 200
 
     human_user = _user_for(human_login)
     service_user = _user_for(service_login)
