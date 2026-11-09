@@ -5,7 +5,7 @@ from unittest import mock
 import pytest
 
 import ansible_base.authentication.backend as backend
-from ansible_base.authentication.authenticator_cache import get_authenticator_cache_version
+from ansible_base.authentication.authenticator_cache import IncompleteAuthenticatorPluginLoad, get_authenticator_cache_version
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.social_auth import SOCIAL_AUTH_PIPELINE_FAILED_STATUS
 
@@ -19,6 +19,26 @@ def test_authenticator_backends_import_error(ldap_authenticator):
     with mock.patch('ansible_base.authentication.authenticator_cache.get_authenticator_plugin', side_effect=ImportError("Test Exception")):
         # Force the cache to get evicted by updating an authenticator.
         assert len(backend.get_authentication_backends("fake date2")) == 0
+
+
+def test_authentication_backends_retry_incomplete_initialization_without_caching():
+    """A transient login-plugin failure must not cache the healthy subset."""
+    authenticators = mock.Mock()
+    authenticators.exclude.return_value.order_by.return_value = authenticators
+    healthy_backends = {9: mock.Mock()}
+    backend.get_authentication_backends.cache_clear()
+
+    with (
+        mock.patch.object(Authenticator.objects, "filter", return_value=authenticators),
+        mock.patch(
+            "ansible_base.authentication.backend.load_authenticator_plugins",
+            side_effect=[IncompleteAuthenticatorPluginLoad(healthy_backends), healthy_backends],
+        ) as load_plugins,
+    ):
+        assert backend.get_authentication_backends(("cache-version", 1)) is healthy_backends
+        assert backend.get_authentication_backends(("cache-version", 1)) is healthy_backends
+
+    assert load_plugins.call_count == 2
 
 
 @pytest.mark.django_db

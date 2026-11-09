@@ -3,7 +3,11 @@ from functools import lru_cache
 
 from django.contrib.auth.backends import ModelBackend
 
-from ansible_base.authentication.authenticator_cache import get_authenticator_cache_version, load_authenticator_plugins
+from ansible_base.authentication.authenticator_cache import (
+    IncompleteAuthenticatorPluginLoad,
+    get_authenticator_cache_version,
+    load_authenticator_plugins,
+)
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.logging import log_auth_event, log_auth_exception, log_auth_warning
 
@@ -11,10 +15,21 @@ logger = logging.getLogger('ansible_base.authentication.backend')
 
 
 @lru_cache(maxsize=1)
-def get_authentication_backends(cache_version):
+def _get_cached_authentication_backends(cache_version):
     # cache_version is primarily here as a cache busting mechanism
     authenticators = Authenticator.objects.filter(enabled=True).exclude(category="api_auth").order_by("order")
     return load_authenticator_plugins(authenticators)
+
+
+def get_authentication_backends(cache_version):
+    """Return login authenticators, retrying incomplete initialization on the next request."""
+    try:
+        return _get_cached_authentication_backends(cache_version)
+    except IncompleteAuthenticatorPluginLoad as exc:
+        return exc.plugins
+
+
+get_authentication_backends.cache_clear = _get_cached_authentication_backends.cache_clear
 
 
 class AnsibleBaseAuth(ModelBackend):
