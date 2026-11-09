@@ -12,7 +12,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ansible_base.authentication.authenticator_cache import get_authenticator_cache_version
+from ansible_base.authentication.authenticator_cache import IncompleteAuthenticatorPluginLoad, get_authenticator_cache_version
 from ansible_base.authentication.bearer_authentication import (
     BearerAuthentication,
     BearerAuthenticationFailed,
@@ -85,6 +85,28 @@ def test_api_authentication_backends_loads_only_enabled_api_authenticators():
     filter_authenticators.assert_called_once_with(enabled=True, category="api_auth")
     authenticators.order_by.assert_called_once_with("order")
     load_plugins.assert_called_once_with(authenticators)
+
+
+def test_api_authentication_backends_retries_incomplete_initialization_without_caching():
+    """A transient plugin failure must not cache the healthy subset."""
+    authenticators = Mock()
+    authenticators.order_by.return_value = authenticators
+    healthy_backends = OrderedDict([(9, Mock())])
+
+    with (
+        patch.object(Authenticator.objects, "filter", return_value=authenticators),
+        patch(
+            "ansible_base.authentication.bearer_authentication.load_authenticator_plugins",
+            side_effect=[
+                IncompleteAuthenticatorPluginLoad(healthy_backends),
+                healthy_backends,
+            ],
+        ) as load_plugins,
+    ):
+        assert get_api_authentication_backends(("cache-version", 1)) is healthy_backends
+        assert get_api_authentication_backends(("cache-version", 1)) is healthy_backends
+
+    assert load_plugins.call_count == 2
 
 
 @pytest.mark.django_db

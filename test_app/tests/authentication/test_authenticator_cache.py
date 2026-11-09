@@ -5,7 +5,11 @@ from unittest.mock import Mock, call, patch
 import pytest
 from django.db.models import Count, Max
 
-from ansible_base.authentication.authenticator_cache import get_authenticator_cache_version, load_authenticator_plugins
+from ansible_base.authentication.authenticator_cache import (
+    IncompleteAuthenticatorPluginLoad,
+    get_authenticator_cache_version,
+    load_authenticator_plugins,
+)
 
 
 @pytest.mark.parametrize(
@@ -23,7 +27,7 @@ def test_get_authenticator_cache_version_uses_shared_database_aggregate(aggregat
     authenticators.aggregate.assert_called_once_with(last_modified=Max("modified"), count=Count("id"))
 
 
-def test_load_authenticator_plugins_preserves_authenticator_order_and_skips_unavailable_plugins():
+def test_load_authenticator_plugins_preserves_authenticator_order_and_reports_unavailable_plugins():
     first = SimpleNamespace(id=7, type="available.first")
     unavailable = SimpleNamespace(id=8, type="unavailable")
     second = SimpleNamespace(id=9, type="available.second")
@@ -34,21 +38,51 @@ def test_load_authenticator_plugins_preserves_authenticator_order_and_skips_unav
         "ansible_base.authentication.authenticator_cache.get_authenticator_plugin",
         side_effect=[first_plugin, ImportError, second_plugin],
     ) as get_plugin:
-        plugins = load_authenticator_plugins([first, unavailable, second])
+        with pytest.raises(IncompleteAuthenticatorPluginLoad) as exc_info:
+            load_authenticator_plugins([first, unavailable, second])
 
-    assert plugins == OrderedDict([(first.id, first_plugin), (second.id, second_plugin)])
+    assert exc_info.value.plugins == OrderedDict([(first.id, first_plugin), (second.id, second_plugin)])
     assert get_plugin.call_args_list == [call(first.type), call(unavailable.type), call(second.type)]
     first_plugin.update_if_needed.assert_called_once_with(first)
     second_plugin.update_if_needed.assert_called_once_with(second)
 
 
-def test_load_authenticator_plugins_propagates_unexpected_configuration_errors():
-    authenticator = SimpleNamespace(id=7, type="available")
-    plugin = Mock()
-    plugin.update_if_needed.side_effect = RuntimeError("invalid configuration")
+@pytest.mark.parametrize("failure", [RuntimeError("invalid configuration"), OSError("dependency unavailable")])
+def test_load_authenticator_plugins_isolates_unexpected_initialization_errors(failure):
+    broken = SimpleNamespace(id=7, type="broken")
+    healthy = SimpleNamespace(id=8, type="healthy")
+    broken_plugin = Mock()
+    broken_plugin.update_if_needed.side_effect = failure
+    healthy_plugin = Mock()
 
     with (
-        patch("ansible_base.authentication.authenticator_cache.get_authenticator_plugin", return_value=plugin),
-        pytest.raises(RuntimeError, match="invalid configuration"),
+        patch(
+            "ansible_base.authentication.authenticator_cache.get_authenticator_plugin",
+            side_effect=[broken_plugin, healthy_plugin],
+        ),
+        patch("ansible_base.authentication.authenticator_cache.logger.exception") as log_exception,
+        pytest.raises(IncompleteAuthenticatorPluginLoad) as exc_info,
     ):
-        load_authenticator_plugins([authenticator])
+        load_authenticator_plugins([broken, healthy])
+
+    assert exc_info.value.plugins == OrderedDict([(healthy.id, healthy_plugin)])
+    log_exception.assert_called_once_with('Unable to initialize authenticator type "%s" with ID "%s"', broken.type, broken.id)
+
+
+def test_load_authenticator_plugins_isolates_constructor_errors():
+    broken = SimpleNamespace(id=7, type="broken")
+    healthy = SimpleNamespace(id=8, type="healthy")
+    healthy_plugin = Mock()
+
+    with (
+        patch(
+            "ansible_base.authentication.authenticator_cache.get_authenticator_plugin",
+            side_effect=[RuntimeError("plugin constructor failed"), healthy_plugin],
+        ),
+        patch("ansible_base.authentication.authenticator_cache.logger.exception") as log_exception,
+        pytest.raises(IncompleteAuthenticatorPluginLoad) as exc_info,
+    ):
+        load_authenticator_plugins([broken, healthy])
+
+    assert exc_info.value.plugins == OrderedDict([(healthy.id, healthy_plugin)])
+    log_exception.assert_called_once_with('Unable to initialize authenticator type "%s" with ID "%s"', broken.type, broken.id)

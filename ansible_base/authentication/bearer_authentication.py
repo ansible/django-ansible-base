@@ -11,7 +11,11 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.request import Request
 
-from ansible_base.authentication.authenticator_cache import get_authenticator_cache_version, load_authenticator_plugins
+from ansible_base.authentication.authenticator_cache import (
+    IncompleteAuthenticatorPluginLoad,
+    get_authenticator_cache_version,
+    load_authenticator_plugins,
+)
 from ansible_base.authentication.challenge import ChallengeAwareAuthenticationMixin
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.logging import log_auth_event, log_auth_exception
@@ -79,7 +83,7 @@ class BearerAuthenticationFailed(AuthenticationFailed):
 
 
 @lru_cache(maxsize=1)
-def get_api_authentication_backends(cache_version: Any) -> OrderedDict[int, Any]:
+def _get_cached_api_authentication_backends(cache_version: Any) -> OrderedDict[int, Any]:
     """Return enabled API-authenticator plugins, cached until their configuration changes.
 
     ``cache_version`` is deliberately an argument only to invalidate this small
@@ -89,6 +93,17 @@ def get_api_authentication_backends(cache_version: Any) -> OrderedDict[int, Any]
     """
     authenticators = Authenticator.objects.filter(enabled=True, category="api_auth").order_by("order")
     return load_authenticator_plugins(authenticators)
+
+
+def get_api_authentication_backends(cache_version: Any) -> OrderedDict[int, Any]:
+    """Return API authenticators, retrying incomplete initialization on the next request."""
+    try:
+        return _get_cached_api_authentication_backends(cache_version)
+    except IncompleteAuthenticatorPluginLoad as exc:
+        return exc.plugins
+
+
+get_api_authentication_backends.cache_clear = _get_cached_api_authentication_backends.cache_clear
 
 
 class BearerAuthentication(ChallengeAwareAuthenticationMixin, BaseAuthentication):
