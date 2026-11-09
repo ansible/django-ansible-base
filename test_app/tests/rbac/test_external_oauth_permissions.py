@@ -16,15 +16,17 @@ from test_app.models import Inventory, Organization
 PLUGIN = "ansible_base.authentication.authenticator_plugins.oauth_bearer"
 
 
-def _claims(configuration, email, **extra):
+def _claims(configuration, email=None, **extra):
+    """Build a token's claims; ``email=None`` gives a client-credentials-shaped token with no human identity."""
     claims = {
         "iss": configuration["ISSUER_URL"],
         "aud": configuration["AUDIENCE"],
-        "sub": f"subject-{email}",
-        "email": email,
         "scope": "read",
         "exp": int((datetime.now(timezone.utc) + timedelta(minutes=5)).timestamp()),
     }
+    if email is not None:
+        claims["sub"] = f"subject-{email}"
+        claims["email"] = email
     claims.update(extra)
     return claims
 
@@ -92,8 +94,13 @@ def test_external_user_read_access_follows_the_assigned_role(oauth_bearer_authen
 
 
 @pytest.mark.django_db
-def test_jwt_roles_claim_grants_nothing_without_an_aap_assignment(oauth_bearer_authenticator, inventory, unauthenticated_api_client):
-    """A roles[] claim in the JWT is ignored; RBAC is enforced only from AAP assignments (TC-1 item 8)."""
+def test_jwt_roles_claim_grants_nothing_without_an_aap_assignment(oauth_bearer_authenticator, inventory, org_inv_rd, unauthenticated_api_client):
+    """A roles[] claim in the JWT grants no RBAC; only AAP assignments do (TC-1 item 8).
+
+    The same user sees the inventory once given an AAP permission. That positive
+    control is what makes the empty result meaningful: without it the test could
+    pass on a broken harness rather than on the claim being ignored.
+    """
     _keep_local_assignments(oauth_bearer_authenticator)
 
     login = _login(
@@ -104,6 +111,8 @@ def test_jwt_roles_claim_grants_nothing_without_an_aap_assignment(oauth_bearer_a
     )
     assert login.status_code == 200
 
+    user = _user_for(login)
+    assert not user.is_superuser
     assert (
         _inventory_ids(
             unauthenticated_api_client,
@@ -114,28 +123,46 @@ def test_jwt_roles_claim_grants_nothing_without_an_aap_assignment(oauth_bearer_a
         == []
     )
 
+    org_inv_rd.give_permission(user, inventory.organization)
+    assert _inventory_ids(
+        unauthenticated_api_client,
+        oauth_bearer_authenticator,
+        "claim-admin@example.com",
+        roles=["admin"],
+    ) == [inventory.id]
+
 
 @pytest.mark.django_db
 def test_human_user_and_service_principal_permissions_stay_independent(oauth_bearer_authenticator, inventory, org_inv_rd, unauthenticated_api_client):
-    """Grants to a human user never bleed to a service principal sharing the provider, and vice versa (TC-1 item 14)."""
+    """Grants to a human never bleed to a service-principal token, and vice versa (TC-1 item 14).
+
+    The service token is client-credentials-shaped: a client_id subject and no email,
+    so it maps to its own local user rather than a second named human.
+    """
     _keep_local_assignments(oauth_bearer_authenticator)
+    # Real provider configs key on the token subject (Entra: oid, Keycloak: sub), which
+    # is what lets a client-credentials token with no email map to its own user.
+    oauth_bearer_authenticator.configuration = {**oauth_bearer_authenticator.configuration, "ID_KEY": "sub"}
+    oauth_bearer_authenticator.save()
     service_organization = Organization.objects.create(name="Service Principal Organization")
     service_inventory = Inventory.objects.create(name="service-inventory", organization=service_organization)
 
+    service_claims = {"sub": "aap-service-client", "azp": "aap-service-client", "client_id": "aap-service-client"}
     human_login = _login(unauthenticated_api_client, oauth_bearer_authenticator, "human@example.com")
-    service_login = _login(
-        unauthenticated_api_client,
-        oauth_bearer_authenticator,
-        "service-principal@example.com",
-    )
+    service_login = _login(unauthenticated_api_client, oauth_bearer_authenticator, None, **service_claims)
     assert human_login.status_code == 200 and service_login.status_code == 200
 
-    org_inv_rd.give_permission(_user_for(human_login), inventory.organization)
-    org_inv_rd.give_permission(_user_for(service_login), service_organization)
+    human_user = _user_for(human_login)
+    service_user = _user_for(service_login)
+    assert human_user.pk != service_user.pk
+
+    org_inv_rd.give_permission(human_user, inventory.organization)
+    org_inv_rd.give_permission(service_user, service_organization)
 
     assert _inventory_ids(unauthenticated_api_client, oauth_bearer_authenticator, "human@example.com") == [inventory.id]
     assert _inventory_ids(
         unauthenticated_api_client,
         oauth_bearer_authenticator,
-        "service-principal@example.com",
+        None,
+        **service_claims,
     ) == [service_inventory.id]

@@ -102,13 +102,16 @@ def test_reenabled_external_provider_and_local_oauth_coexist(oauth_bearer_authen
 
 
 @pytest.mark.django_db
-def test_disabled_provider_stays_disabled_after_a_process_restart(oauth_bearer_authenticator, unauthenticated_api_client):
-    """The toggle is stored on the authenticator row, so a restarted process reloads it disabled and never validates its tokens (TC-12 item 9)."""
+def test_disabled_provider_stays_disabled_after_backend_cache_reload(oauth_bearer_authenticator, unauthenticated_api_client):
+    """`enabled=False` persists, so a reloaded backend set never validates this provider's tokens (TC-12 item 9).
+
+    The test clears the in-process backend cache and reads the authenticator back from
+    the database. It does not simulate a process restart; it proves only that the
+    disabled state is persisted rather than held in memory.
+    """
     oauth_bearer_authenticator.enabled = False
     oauth_bearer_authenticator.save()
 
-    # Dropping the dispatcher cache stands in for a Gateway restart: the next
-    # request reloads the authenticator set from the database.
     get_api_authentication_backends.cache_clear()
     try:
         with (
