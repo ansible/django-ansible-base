@@ -99,3 +99,31 @@ def test_reenabled_external_provider_and_local_oauth_coexist(oauth_bearer_authen
 
     assert _external_login(unauthenticated_api_client, oauth_bearer_authenticator).status_code == 200
     assert _local_login(unauthenticated_api_client, oauth2_admin_access_token[1]).status_code == 200
+
+
+@pytest.mark.django_db
+def test_disabled_provider_stays_disabled_after_backend_cache_reload(oauth_bearer_authenticator, unauthenticated_api_client):
+    """`enabled=False` persists, so a reloaded backend set never validates this provider's tokens (TC-12 item 9).
+
+    The test clears the in-process backend cache and reads the authenticator back from
+    the database. It does not simulate a process restart; it proves only that the
+    disabled state is persisted rather than held in memory.
+    """
+    oauth_bearer_authenticator.enabled = False
+    oauth_bearer_authenticator.save()
+
+    get_api_authentication_backends.cache_clear()
+    try:
+        with (
+            patch(f"{PLUGIN}.CachedJWKClient") as jwk_client,
+            patch(f"{PLUGIN}.decode", side_effect=lambda _token, **_kwargs: _claims(oauth_bearer_authenticator.configuration)),
+        ):
+            response = unauthenticated_api_client.get(get_relative_url("user-me"), headers={"Authorization": "Bearer external-token"})
+    finally:
+        get_api_authentication_backends.cache_clear()
+
+    assert response.status_code == 401
+    jwk_client.assert_not_called()
+    reloaded = Authenticator.objects.get(pk=oauth_bearer_authenticator.pk)
+    assert reloaded.enabled is False
+    assert reloaded.configuration["AUDIENCE"] == oauth_bearer_authenticator.configuration["AUDIENCE"]
