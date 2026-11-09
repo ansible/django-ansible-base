@@ -1,4 +1,6 @@
+import logging
 from collections import OrderedDict
+from contextlib import suppress
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -410,6 +412,35 @@ def test_bearer_authentication_preserves_plugin_failure_when_local_oauth_rejects
 
     assert str(exc_info.value.detail) == "Bearer token has expired."
     assert exc_info.value.auth_header == 'Bearer realm="api", error="invalid_token", error_description="The access token expired"'
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("outcome", ["success", "declined", "expected-failure", "unexpected-error"])
+def test_bearer_authentication_never_logs_the_raw_credential(caplog, outcome):
+    """No outcome writes the raw bearer credential to a log record (ANSTRAT-1611 TC-2 item 6)."""
+    caplog.set_level(logging.DEBUG)
+    token = "sentinel-credential-6f1c9d2a4b7e"
+    plugin = Mock()
+    if outcome == "success":
+        plugin.authenticate.return_value = Mock(username="external-user")
+    elif outcome == "expected-failure":
+        plugin.authenticate.side_effect = BearerTokenValidationError("expired")
+    elif outcome == "unexpected-error":
+        plugin.authenticate.side_effect = RuntimeError("provider exploded")
+    else:
+        plugin.authenticate.return_value = None
+
+    with (
+        patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict([(17, plugin)])),
+        patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
+        suppress(BearerAuthenticationFailed),
+    ):
+        BearerAuthentication().authenticate(_request(token))
+
+    assert caplog.records, "the dispatcher should log something on every path"
+    assert token not in caplog.text
+    for record in caplog.records:
+        assert token not in (record.getMessage() + str(record.args))
 
 
 @pytest.mark.django_db
