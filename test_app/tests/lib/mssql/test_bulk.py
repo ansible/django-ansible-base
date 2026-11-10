@@ -297,3 +297,53 @@ class TestBulkCreateLive:
 
         assert len(result) == 3
         assert all(obj.pk is not None and obj._state.adding is False for obj in result)
+
+
+class TestManagerAttachment:
+    "Task 2: the shared bases hand every model a bulk-safe default manager."
+
+    SAFE_MANAGER_MODELS = [
+        ("dab_activitystream", "Entry"),
+        ("dab_authentication", "Authenticator"),
+        ("dab_authentication", "AuthenticatorMap"),
+        ("dab_feature_flags", "AAPFlag"),
+        ("dab_oauth2_provider", "OAuth2AccessToken"),
+        ("dab_oauth2_provider", "OAuth2Application"),
+        ("dab_oauth2_provider", "OAuth2IDToken"),
+        ("dab_oauth2_provider", "OAuth2RefreshToken"),
+        ("dab_rbac", "ObjectRole"),
+        ("dab_rbac", "RoleEvaluation"),
+        ("dab_rbac", "RoleEvaluationUUID"),
+        ("dab_rbac", "RoleUserAssignment"),
+        ("dab_rbac", "RoleTeamAssignment"),
+        ("dab_rbac", "DABPermission"),
+        ("dab_rbac", "DABContentType"),
+        ("dab_rbac", "RoleDefinition"),
+        ("dab_resource_registry", "Resource"),
+    ]
+
+    @pytest.mark.parametrize("app_label,model_name", SAFE_MANAGER_MODELS)
+    def test_models_dispatch_bulk_writes_through_mssql_safe_queryset(self, app_label, model_name):
+        from django.apps import apps
+
+        model = apps.get_model(app_label, model_name)
+        assert model.objects.get_queryset().__class__ is MSSQLSafeQuerySet, f"{app_label}.{model_name}"
+
+    def test_abstract_dab_user_manager_unchanged(self):
+        "Users are never bulk-written with ignore_conflicts; UserManager stays."
+        from django.contrib.auth import get_user_model
+
+        assert get_user_model().objects.get_queryset().__class__ is not MSSQLSafeQuerySet
+
+    def test_custom_manager_methods_survive(self):
+        "Subclassing MSSQLSafeManager does not displace the rbac managers' own methods."
+        from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition
+
+        assert hasattr(DABPermission.objects, "load_remote_objects")
+        assert hasattr(DABContentType.objects, "clear_cache")
+        assert hasattr(RoleDefinition.objects, "give_creator_permissions")
+
+    def test_mssql_safe_manager_not_serialized_into_migrations(self):
+        from ansible_base.lib.mssql.bulk import MSSQLSafeManager
+
+        assert MSSQLSafeManager.use_in_migrations is False

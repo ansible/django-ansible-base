@@ -8,6 +8,7 @@ from django.db.models.functions import Cast
 from django.db.utils import IntegrityError
 
 import ansible_base.lib.checks  # noqa: F401 - register checks
+from ansible_base.lib.mssql import bulk as mssql_bulk
 from ansible_base.lib.utils.db import ensure_transaction, migrations_are_complete
 from ansible_base.resource_registry.utils.settings import resource_server_defined
 
@@ -114,11 +115,13 @@ def _backfill_missing_resources(registry, resource_cls, resource_type_cls, apps)
                 )
             )
             if len(data) == batch_size:
-                resource_cls.objects.bulk_create(data, ignore_conflicts=True)
+                # post_migrate hands us historical models (plain managers), so the
+                # bulk-safe queryset cannot be reached through .objects here
+                mssql_bulk.bulk_create(resource_cls, data, ignore_conflicts=True)
                 _sync_backfilled_resource_ids(resource_cls, r_type.content_type, [resource.object_id for resource in data])
                 data.clear()
         if data:
-            resource_cls.objects.bulk_create(data, ignore_conflicts=True)
+            mssql_bulk.bulk_create(resource_cls, data, ignore_conflicts=True)
             _sync_backfilled_resource_ids(resource_cls, r_type.content_type, [resource.object_id for resource in data])
         r_type.save()
 

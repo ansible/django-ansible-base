@@ -316,8 +316,12 @@ class TestGlobalAssignmentSignals:
         global_inv_rd.give_global_permission(rando)
         with CaptureQueriesContext(connection) as ctx:
             global_inv_rd.remove_global_permission(rando)
+        # SQL Server uses [brackets], PostgreSQL uses "quotes"
         lookups = [
-            q['sql'] for q in ctx.captured_queries if q['sql'].startswith('SELECT') and '"dab_rbac_roleuserassignment"."object_role_id" IS NULL' in q['sql']
+            q['sql']
+            for q in ctx.captured_queries
+            if q['sql'].startswith('SELECT')
+            and ('"dab_rbac_roleuserassignment"."object_role_id" IS NULL' in q['sql'] or '[dab_rbac_roleuserassignment].[object_role_id] IS NULL' in q['sql'])
         ]
         assert len(lookups) == 1, lookups
 
