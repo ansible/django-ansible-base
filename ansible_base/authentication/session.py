@@ -1,9 +1,11 @@
+from django.conf import settings
 from rest_framework import authentication
 
+from ansible_base.authentication.challenge import ChallengeAwareAuthenticationMixin
 from ansible_base.lib.utils.settings import replace_trusted_origins
 
 
-class SessionAuthentication(authentication.SessionAuthentication):
+class SessionAuthentication(ChallengeAwareAuthenticationMixin, authentication.SessionAuthentication):
     """
     This class allows us to fail with a 401 if the user is not authenticated.
 
@@ -11,7 +13,12 @@ class SessionAuthentication(authentication.SessionAuthentication):
     Reverting the value of CSRF_TRUSTED_ORIGINS afterwards.
     """
 
-    def authenticate_header(self, request):
+    def authenticate(self, request):
+        if request.COOKIES.get(settings.SESSION_COOKIE_NAME):
+            self.record_authentication_challenge(request, "Session")
+        return super().authenticate(request)
+
+    def get_default_authentication_challenge(self, request):
         return "Session"
 
     @replace_trusted_origins

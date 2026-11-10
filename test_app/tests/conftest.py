@@ -352,6 +352,43 @@ def oidc_authenticator(oidc_configuration):
 
 
 @pytest.fixture
+def oauth_bearer_configuration():
+    return {
+        "ISSUER_URL": "https://login.example.com/tenant/v2.0",
+        "JWKS_URI": "https://login.example.com/tenant/discovery/v2.0/keys",
+        "JWKS_URL_TIMEOUT": 30,
+        "JWT_CLOCK_SKEW_TOLERANCE_SECONDS": 0,
+        "ALLOWED_ALGORITHMS": ["RS256"],
+        "AUDIENCE": "api://aap-example",
+        "JWKS_CACHE_TIMEOUT": 3600,
+        "ID_KEY": "email",
+        "GROUPS_CLAIM": "groups",
+        "SCOPE_KEY": "scope",
+        "READ_SCOPE_NAME": "read",
+        "WRITE_SCOPE_NAME": "write",
+        "USERINFO_URL": "",
+        "OIDC_ENDPOINT": "",
+        "VERIFY_SSL": True,
+    }
+
+
+@pytest.fixture
+def oauth_bearer_authenticator(oauth_bearer_configuration):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test OAuth Bearer Authenticator",
+        enabled=True,
+        create_objects=True,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.oauth_bearer",
+        configuration=oauth_bearer_configuration,
+    )
+    yield authenticator
+    delete_authenticator(authenticator)
+
+
+@pytest.fixture
 def tacacs_configuration():
     return {
         "PORT": 49,

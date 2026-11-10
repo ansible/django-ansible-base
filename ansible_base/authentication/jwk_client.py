@@ -1,0 +1,271 @@
+import hashlib
+import random
+import time
+from typing import Any
+from uuid import uuid4
+
+from django.core.cache import cache
+from jwt import PyJWK, PyJWKClient, PyJWKSet, get_unverified_header
+from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError, PyJWKError, PyJWKSetError
+
+from ansible_base.lib.utils.settings import get_setting
+
+JWKS_REFRESH_COOLDOWN_SETTING = "jwks_refresh_cooldown_seconds"
+DEFAULT_JWKS_REFRESH_COOLDOWN_SECONDS = 60
+MAX_JWKS_REFRESH_COOLDOWN_SECONDS = 86400
+INITIAL_JWKS_FETCH_RETRY_SECONDS = 0.02
+MAX_JWKS_FETCH_RETRY_SECONDS = 0.25
+
+
+class JWKSFetchTimeoutError(PyJWKClientConnectionError):
+    """A peer did not finish a coordinated JWKS fetch within the wait budget."""
+
+
+class _JWKSRetry(Exception):
+    """Internal signal that a JWKS coordination marker is currently held."""
+
+    def __init__(self, timeout_error: PyJWKClientError) -> None:
+        super().__init__(str(timeout_error))
+        self.timeout_error = timeout_error
+
+
+class CachedJWKClient(PyJWKClient):
+    """Adds a shared Django-cache layer to PyJWT's normal JWKS handling."""
+
+    forced_refresh_cooldown = DEFAULT_JWKS_REFRESH_COOLDOWN_SECONDS
+
+    def __init__(self, uri: str, cache_namespace: str | None = None, **kwargs: Any) -> None:
+        """Initialize a client whose JWKS cache is owned exclusively by Django's shared cache.
+
+        ``cache_namespace`` lets callers scope cached key material to their own
+        persisted configuration version. When omitted, the URI preserves the
+        historical provider-shared cache behavior for direct callers.
+        """
+        # PyJWT's per-instance cache writes the raw response before DAB can
+        # validate it. Keep all JWKS caching in the shared Django cache below.
+        kwargs["cache_jwk_set"] = False
+        super().__init__(uri, **kwargs)
+        self.cache_timeout = kwargs.get("lifespan", 300)
+        self._cache_namespace = hashlib.sha256((cache_namespace or uri).encode()).hexdigest()
+        self.forced_refresh_cooldown = self._configured_refresh_cooldown()
+        # A fetch lease must outlive the originating HTTP request. Followers
+        # use the same explicit JWKS timeout as the fetch owner, rather than
+        # an unrelated request-worker timeout.
+        self.fetch_wait_seconds = self.timeout
+        self.fetch_lease_seconds = self.fetch_wait_seconds + 1
+
+    @staticmethod
+    def _configured_refresh_cooldown() -> int:
+        """Return the bounded shared-cache cooldown for forced JWKS refreshes.
+
+        Gateway supplies this through DAB's generic settings hook. Other DAB
+        consumers safely use the default when they do not register the setting.
+        A value of zero intentionally disables all refresh and fetch locking.
+        """
+        value = get_setting(JWKS_REFRESH_COOLDOWN_SETTING, DEFAULT_JWKS_REFRESH_COOLDOWN_SECONDS)
+        if isinstance(value, int) and 0 <= value <= MAX_JWKS_REFRESH_COOLDOWN_SECONDS:
+            return value
+        return DEFAULT_JWKS_REFRESH_COOLDOWN_SECONDS
+
+    @property
+    def _jwk_set_cache_key(self) -> str:
+        """Return the shared cache key for this provider's complete JWKS document."""
+        return f"jwk_set:{self._cache_namespace}"
+
+    @property
+    def _refresh_lock_key(self) -> str:
+        """Return the cooldown key that throttles forced key-set refreshes."""
+        return f"jwks_refresh:{self._cache_namespace}"
+
+    @property
+    def _fetch_lock_key(self) -> str:
+        """Return the short-lived lock used while one request fetches a JWKS document."""
+        return f"jwks_fetch:{self._cache_namespace}"
+
+    @classmethod
+    def invalidate_cache_namespace(cls, cache_namespace: str) -> None:
+        """Delete known shared-cache entries for a superseded namespace.
+
+        Individual signing-key cache entries cannot be enumerated because their
+        key IDs are hashed. They are made unreachable by the caller switching
+        to a new namespace and expire according to their original TTL.
+        """
+        namespace = hashlib.sha256(cache_namespace.encode()).hexdigest()
+        cache.delete_many((f"jwk_set:{namespace}", f"jwks_refresh:{namespace}", f"jwks_fetch:{namespace}"))
+
+    def _signing_key_cache_key(self, kid: str) -> str:
+        """Return a cache key that safely scopes an individual signing key to this URI."""
+        cache_identifier = hashlib.sha256(kid.encode()).hexdigest()
+        return f"jwk:{self._cache_namespace}:{cache_identifier}"
+
+    @staticmethod
+    def _parse_jwk_set(document: Any) -> PyJWKSet:
+        """Parse a provider document, rejecting non-objects and unusable JWKS documents."""
+        if not isinstance(document, dict):
+            raise PyJWKClientError("The JWKS endpoint did not return a JSON object")
+        try:
+            return PyJWKSet.from_dict(document)
+        except PyJWKSetError as exc:
+            raise PyJWKClientError("The JWKS endpoint returned an unusable key set") from exc
+
+    def _fetch_and_cache_jwk_set(self) -> PyJWKSet:
+        """Fetch, validate, and cache a JWKS document while holding the fetch lease."""
+        document = super().fetch_data()
+        jwk_set = self._parse_jwk_set(document)
+        if self.cache_timeout > 0:
+            cache.set(self._jwk_set_cache_key, document, timeout=self.cache_timeout)
+        return jwk_set
+
+    def _acquire_fetch_lock(self, use_locks: bool) -> str:
+        """Acquire the normal fetch lease and return its ownership token."""
+        fetch_owner = str(uuid4())
+        if use_locks and not cache.add(self._fetch_lock_key, fetch_owner, timeout=self.fetch_lease_seconds):
+            raise _JWKSRetry(JWKSFetchTimeoutError("Timed out waiting for a coordinated JWKS fetch"))
+        return fetch_owner
+
+    def _release_fetch_lock(self, owner: str, use_locks: bool) -> None:
+        """Release a fetch lease only when it is still owned by this request.
+
+        A lease can expire while an upstream request is slow. Checking its token
+        prevents that original request from deleting a later request's lease.
+        The lease exceeds the configured JWKS HTTP timeout, so a live owner
+        releases it before expiry under normal operation.
+        """
+        if use_locks and cache.get(self._fetch_lock_key) == owner:
+            cache.delete(self._fetch_lock_key)
+
+    def _set_refresh_lock(self, use_locks: bool) -> None:
+        """Start the forced-refresh cooldown without affecting normal fetch coordination.
+
+        Unlike a fetch lease, the cooldown marker is deliberately not released;
+        it expires naturally so unknown or rotated keys cannot trigger repeated
+        provider refreshes.
+        """
+        if use_locks and not cache.add(self._refresh_lock_key, True, timeout=self.forced_refresh_cooldown):
+            raise _JWKSRetry(PyJWKClientError("Timed out waiting for the JWKS refresh cooldown"))
+
+    def _fetch_jwk_set_with_fetch_lock(self, use_locks: bool) -> PyJWKSet:
+        """Fetch the JWK set when this request owns the normal fetch lease."""
+        fetch_owner = self._acquire_fetch_lock(use_locks)
+
+        try:
+            return self._fetch_and_cache_jwk_set()
+        finally:
+            self._release_fetch_lock(fetch_owner, use_locks)
+
+    def _cached_jwk_document(self) -> Any | None:
+        """Return the shared JWKS document when caching is enabled."""
+        if self.cache_timeout <= 0:
+            return None
+        return cache.get(self._jwk_set_cache_key)
+
+    def _cached_jwk_set(self) -> PyJWKSet | None:
+        """Return the parsed shared JWKS document when it is available."""
+        document = self._cached_jwk_document()
+        if document is None:
+            return None
+        return self._parse_jwk_set(document)
+
+    def _updated_cached_jwk_set(self, cached_document: Any | None) -> PyJWKSet | None:
+        """Return a parsed JWKS only when another worker has replaced the shared document."""
+        document = self._cached_jwk_document()
+        if document is None or document == cached_document:
+            return None
+        return self._parse_jwk_set(document)
+
+    def _reusable_cached_jwk_set(self, refresh: bool, cached_document: Any | None) -> PyJWKSet | None:
+        """Return normal cached keys or a peer's newer keys during a forced refresh."""
+        if refresh:
+            return self._updated_cached_jwk_set(cached_document)
+        return self._cached_jwk_set()
+
+    @staticmethod
+    def _sleep_before_jwk_set_retry(deadline: float, retry_count: int, timeout_error: PyJWKClientError) -> None:
+        """Back off with jitter or raise the coordination error that triggered the retry."""
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise timeout_error
+
+        maximum_delay = min(MAX_JWKS_FETCH_RETRY_SECONDS, INITIAL_JWKS_FETCH_RETRY_SECONDS * 2 ** min(retry_count, 4))
+        delay = min(random.uniform(maximum_delay / 2, maximum_delay), remaining)
+        time.sleep(delay)
+
+    def get_jwk_set(self, refresh: bool = False) -> PyJWKSet:
+        """Override PyJWT JWKS lookup to share provider keys and refresh coordination through Django's cache."""
+        use_locks = self.cache_timeout > 0 and self.forced_refresh_cooldown > 0
+        deadline = time.monotonic() + self.fetch_wait_seconds
+        need_to_acquire_refresh_lock = refresh
+        retry_count = 0
+        cached_document = self._cached_jwk_document() if refresh else None
+        while True:
+            try:
+                if (jwk_set := self._reusable_cached_jwk_set(refresh, cached_document)) is not None:
+                    return jwk_set
+                if need_to_acquire_refresh_lock:
+                    # Forced refreshes intentionally bypass a valid shared
+                    # JWKS. Keep this cooldown marker after the fetch
+                    # completes to throttle them.
+                    self._set_refresh_lock(use_locks)
+                    need_to_acquire_refresh_lock = False
+                if (jwk_set := self._reusable_cached_jwk_set(refresh, cached_document)) is not None:
+                    return jwk_set
+                return self._fetch_jwk_set_with_fetch_lock(use_locks)
+            except _JWKSRetry as retry:
+                # A forced-refresh cooldown may expire before this request
+                # reaches its bounded JWKS wait timeout. Keep retrying so a
+                # token signed during key rotation can still validate. We
+                # cannot safely infer the request's remaining lifetime from
+                # the cache marker, which may predate this request and be
+                # constrained by an outer worker timeout. On timeout, report
+                # the outcome associated with the marker that blocked this
+                # attempt: cooldown (invalid token) or fetch lease (provider
+                # unavailable).
+                self._sleep_before_jwk_set_retry(deadline, retry_count, retry.timeout_error)
+                retry_count += 1
+                if (jwk_set := self._reusable_cached_jwk_set(refresh, cached_document)) is not None:
+                    return jwk_set
+
+    def get_signing_key_from_jwt(self, token: str | bytes) -> PyJWK:
+        """Override PyJWT key lookup to cache a signing key by provider URI and JWT key ID across processes."""
+        kid = get_unverified_header(token).get("kid")
+        if not kid:
+            raise PyJWKClientError("JWT header is missing kid")
+
+        cache_key = self._signing_key_cache_key(kid)
+        if self.cache_timeout > 0:
+            cached_jwk = cache.get(cache_key)
+            if cached_jwk is not None:
+                try:
+                    return PyJWK.from_dict(cached_jwk)
+                except (AttributeError, PyJWKError):
+                    cache.delete(cache_key)
+
+        signing_key = super().get_signing_key_from_jwt(token)
+        # PyJWT exposes no public JWK serializer; cache its original JSON-safe
+        # JWK data rather than the non-serializable cryptography key object.
+        if self.cache_timeout > 0:
+            cache.set(cache_key, signing_key._jwk_data, timeout=self.cache_timeout)
+        return signing_key
+
+    def refresh_signing_key_from_jwt(self, token: str) -> PyJWK:
+        """Refresh a JWT signing key once the provider's cooldown permits it.
+
+        Check the cooldown before evicting the current signing key so repeated
+        forged signatures do not churn a still-valid shared cache entry.
+        """
+        kid = get_unverified_header(token).get("kid")
+        if not kid:
+            raise PyJWKClientError("JWT header is missing kid")
+
+        if self.cache_timeout > 0 and self.forced_refresh_cooldown > 0 and cache.get(self._refresh_lock_key) is not None:
+            raise PyJWKClientError("JWKS refresh is on cooldown")
+
+        if self.cache_timeout > 0:
+            cache.delete(self._signing_key_cache_key(kid))
+        signing_keys = self.get_signing_keys(refresh=True)
+        signing_key = self.match_kid(signing_keys, kid)
+        if not signing_key:
+            raise PyJWKClientError(f"Unable to find a signing key that matches: {kid}")
+        if self.cache_timeout > 0:
+            cache.set(self._signing_key_cache_key(kid), signing_key._jwk_data, timeout=self.cache_timeout)
+        return signing_key

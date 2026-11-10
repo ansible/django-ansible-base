@@ -14,7 +14,7 @@ class ApiDocumentationConfig(AppConfig):
         if 'ansible_base.authentication' in settings.INSTALLED_APPS:
             apply_authentication_customizations()
 
-        if 'ansible_base.oauth2_provider' in settings.INSTALLED_APPS:
+        if 'ansible_base.authentication' in settings.INSTALLED_APPS or 'ansible_base.oauth2_provider' in settings.INSTALLED_APPS:
             apply_oauth2_customizations()
 
         # Import filter extensions to register them with drf-spectacular
