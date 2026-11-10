@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Sequence
-from typing import NamedTuple, Union, cast
+from dataclasses import dataclass
+from typing import Union, cast
 
 from django.apps import apps as django_apps
 from django.conf import settings
-from django.db import connection, models
+from django.db import connection, models, transaction
 from django.db.models import Q
-from django.db.models.signals import post_save
+from django.db.models.constants import OnConflict
+from django.db.models.signals import post_save  # TEMPORARY: see _fire_post_save / AAP-90162 merge-order note (consumers must connect to ONE signal, not both)
 
 from ansible_base.lib.utils.models import current_user_or_system_user
 from ansible_base.rbac.caching import (
@@ -17,35 +19,62 @@ from ansible_base.rbac.caching import (
     defer_rbac_state,
     recompute_role_evaluations,
 )
+from ansible_base.rbac.evaluations import bound_singleton_permissions
 from ansible_base.rbac.models.content_type import DABContentType
 from ansible_base.rbac.models.role import AssignmentBase, ObjectRole, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.remote import RemoteObject
 from ansible_base.rbac.resource_queries import resolve_resource_ids
-from ansible_base.rbac.validators import validate_assignment, validate_team_assignment_enabled
+from ansible_base.rbac.triggers import dab_rbac_assignments_created, dab_rbac_assignments_pre_delete
+from ansible_base.rbac.validators import validate_assignment, validate_assignment_actor, validate_global_assignment, validate_team_assignment_enabled
 
 logger = logging.getLogger(__name__)
 
+_FIND_ASSIGNMENTS_BATCH_SIZE = 500
 
-class ResolvedAssignment(NamedTuple):
+
+@dataclass(frozen=True, eq=False)
+class ResolvedAssignment:
+    """A permission triple resolved to the content type and object id it is stored under.
+
+    content_type and object_id are both None for a global (singleton) assignment and both
+    set otherwise.
+    """
+
     role_definition: RoleDefinition
     actor: models.Model
-    content_type: DABContentType
-    object_id: str
+    content_type: DABContentType | None
+    object_id: str | None
     parent_reference: str
+
+    def _key(self) -> tuple:
+        """The DB uniqueness key: (actor, role_definition, content_type, object_id)."""
+        return (self.actor.pk, self.role_definition.pk, self.content_type.pk if self.content_type else None, self.object_id)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ResolvedAssignment):
+            return NotImplemented
+        return self._key() == other._key()
+
+    def __hash__(self) -> int:
+        return hash(self._key())
 
 
 ContentObject = Union[models.Model, RemoteObject]
-PermissionTriple = tuple[RoleDefinition, models.Model, ContentObject]
+PermissionTriple = tuple[RoleDefinition, models.Model, Union[ContentObject, None]]
 ObjectRoleLookup = dict[tuple[int, str], ObjectRole]
 
 
-def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABContentType, str, str]:
+def _resolve_content_object(obj: models.Model | RemoteObject | None) -> tuple[DABContentType | None, str | None, str]:
     """Resolve content_type, object_id, and parent_reference from a content object.
 
+    For None (a global/singleton assignment): returns (None, None, '') -- there is no
+    content object, so there is no ObjectRole and nothing to recompute.
     For RemoteObject: uses its own attributes directly.
     For local Django models: resolves parent_reference from the registered parent FK.
     """
+    if obj is None:
+        return None, None, ''
     if isinstance(obj, RemoteObject):
         return cast(DABContentType, obj.content_type), str(obj.object_id), str(obj.parent_reference) if obj.parent_reference else ''
     ct = cast(DABContentType, DABContentType.objects.get_for_model(obj))
@@ -58,47 +87,94 @@ def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABConten
     return ct, object_id, ''
 
 
-def _resolve_triples(triples: Iterable[PermissionTriple]) -> list[ResolvedAssignment]:
-    """Convert permission triples to ResolvedAssignments (no validation, no DB queries beyond content type lookup)."""
-    return [ResolvedAssignment(rd, actor, *_resolve_content_object(obj)) for rd, actor, obj in triples]
+def _resolve_triples(
+    triples: Iterable[PermissionTriple],
+) -> tuple[list[ResolvedAssignment], dict[tuple[int, str], ContentObject]]:
+    """Convert permission triples to ResolvedAssignments (no validation, no DB queries beyond content type lookup).
+
+    Always builds the content_objects dict (keyed by (content_type_id, object_id)) from the
+    input triples so the bulk signal can carry them without a re-fetch. Global triples
+    (content object is None) contribute no dict entry -- they have no content object.
+
+    Returns:
+        (resolved_assignments, content_objects_dict)
+    """
+    resolved = []
+    content_objects: dict[tuple[int, str], ContentObject] = {}
+
+    for rd, actor, obj in triples:
+        ct, object_id, parent_ref = _resolve_content_object(obj)
+        resolved.append(ResolvedAssignment(rd, actor, ct, object_id, parent_ref))
+        if ct is not None and object_id is not None:
+            content_objects[(ct.id, object_id)] = obj
+
+    return resolved, content_objects
 
 
 def _resolve_assignments(
     user_permissions: Sequence[PermissionTriple],
     team_permissions: Sequence[PermissionTriple],
-) -> tuple[list[ResolvedAssignment], list[ResolvedAssignment]]:
-    """Validate permissions and build the resolved assignment lists."""
+) -> tuple[list[ResolvedAssignment], list[ResolvedAssignment], dict[tuple[int, str], ContentObject]]:
+    """Validate permissions and build the resolved assignment lists.
+
+    Always builds the content_objects dict (keyed by (content_type_id, object_id)) from the
+    input triples so the bulk signal can carry them without a re-fetch. Global triples
+    (content object is None) contribute no dict entry.
+
+    Object triples are validated once per (role_definition, content_type) pair; global triples
+    (content object is None) are validated per actor (validate_global_assignment), since the
+    user/team enablement gate is actor-type-specific.
+
+    Returns:
+        (user_resolved, team_resolved, content_objects_dict)
+    """
     validated_pairs: set[tuple[int, int]] = set()
+    content_objects: dict[tuple[int, str], ContentObject] = {}
 
     user_resolved: list[ResolvedAssignment] = []
     for rd, actor, obj in user_permissions:
         obj_ct, object_id, parent_ref = _resolve_content_object(obj)
-        key = (rd.pk, obj_ct.id)
-        if key not in validated_pairs:
-            validate_assignment(rd, actor, obj)
-            validated_pairs.add(key)
+        if obj is None:
+            validate_global_assignment(rd, actor)
+        else:
+            validate_assignment_actor(actor)
+            assert obj_ct is not None and object_id is not None
+            key = (rd.pk, obj_ct.id)
+            if key not in validated_pairs:
+                validate_assignment(rd, obj)
+                validated_pairs.add(key)
+            content_objects[(obj_ct.id, object_id)] = obj
         user_resolved.append(ResolvedAssignment(rd, actor, obj_ct, object_id, parent_ref))
 
     team_validated_pairs: set[tuple[int, int]] = set()
     team_resolved: list[ResolvedAssignment] = []
     for rd, actor, obj in team_permissions:
         obj_ct, object_id, parent_ref = _resolve_content_object(obj)
-        key = (rd.pk, obj_ct.id)
-        if key not in validated_pairs:
-            validate_assignment(rd, actor, obj)
-            validated_pairs.add(key)
-        if key not in team_validated_pairs:
-            has_team_perm = rd.permissions.filter(codename=permission_registry.team_permission).exists()
-            has_org_member = rd.permissions.filter(codename='member_organization').exists()
-            validate_team_assignment_enabled(obj_ct, has_team_perm=has_team_perm, has_org_member=has_org_member)
-            team_validated_pairs.add(key)
+        if obj is None:
+            validate_global_assignment(rd, actor)
+        else:
+            validate_assignment_actor(actor)
+            assert obj_ct is not None and object_id is not None
+            key = (rd.pk, obj_ct.id)
+            if key not in validated_pairs:
+                validate_assignment(rd, obj)
+                validated_pairs.add(key)
+            if key not in team_validated_pairs:
+                has_team_perm = rd.permissions.filter(codename=permission_registry.team_permission).exists()
+                has_org_member = rd.permissions.filter(codename='member_organization').exists()
+                validate_team_assignment_enabled(obj_ct, has_team_perm=has_team_perm, has_org_member=has_org_member)
+                team_validated_pairs.add(key)
+            content_objects[(obj_ct.id, object_id)] = obj
         team_resolved.append(ResolvedAssignment(rd, actor, obj_ct, object_id, parent_ref))
 
-    return user_resolved, team_resolved
+    return user_resolved, team_resolved, content_objects
 
 
 def _batch_resolve_object_ansible_ids(resolved: Sequence[ResolvedAssignment]) -> dict[tuple[str, str, str], str]:
-    """Resolve local assignment resources in one query for the whole batch."""
+    """Resolve local assignment resources in one query for the whole batch.
+
+    Global assignments (content_type is None) are skipped - they have no object_ansible_id.
+    """
     if not resolved or not django_apps.is_installed('ansible_base.resource_registry'):
         return {}
 
@@ -106,6 +182,8 @@ def _batch_resolve_object_ansible_ids(resolved: Sequence[ResolvedAssignment]) ->
     services_by_type: dict[tuple[str, str], set[str]] = {}
     for assignment in resolved:
         content_type = assignment.content_type
+        if content_type is None:
+            continue
         content_type_key = (content_type.app_label, content_type.model)
         object_ids_by_type.setdefault(content_type_key, set()).add(assignment.object_id)
         services_by_type.setdefault(content_type_key, set()).add(content_type.service)
@@ -114,9 +192,14 @@ def _batch_resolve_object_ansible_ids(resolved: Sequence[ResolvedAssignment]) ->
 
 
 def _lookup_object_roles(resolved: list[ResolvedAssignment]) -> ObjectRoleLookup:
-    """Look up existing ObjectRoles for resolved assignments."""
+    """Look up existing ObjectRoles for resolved assignments.
+
+    Global assignments (content_type is None) have no ObjectRole and are skipped.
+    """
     object_ids_by_rd: dict[int, tuple[int, set[str]]] = {}
     for ra in resolved:
+        if ra.content_type is None:
+            continue
         rd_id = ra.role_definition.pk
         if rd_id not in object_ids_by_rd:
             object_ids_by_rd[rd_id] = (ra.content_type.id, set())
@@ -131,12 +214,18 @@ def _lookup_object_roles(resolved: list[ResolvedAssignment]) -> ObjectRoleLookup
 
 
 def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> ObjectRoleLookup:
-    """Look up existing ObjectRoles, create any that are missing, and return the full lookup."""
+    """Look up existing ObjectRoles, create any that are missing, and return the full lookup.
+
+    Global assignments (content_type is None) have no ObjectRole and are skipped here.
+    """
     object_ids_by_rd: dict[int, tuple[int, set[str]]] = {}
     # Key by (rd_id, object_id) so batches with the same object_id across different
     # role definitions / content types do not overwrite each other's parent_reference.
     parent_refs: dict[tuple[int, str], str] = {}
     for ra in requested_assignments:
+        if ra.content_type is None:
+            continue
+        assert ra.object_id is not None
         rd_id = ra.role_definition.pk
         if rd_id not in object_ids_by_rd:
             object_ids_by_rd[rd_id] = (ra.content_type.id, set())
@@ -170,31 +259,112 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
     return lookup
 
 
-def _audit_log_created(db_assignments: list[AssignmentBase], existing_pks: set[int]) -> None:
-    """Emit audit logs for newly-created assignments (not idempotent re-assignments)."""
-    if not db_assignments or 'ansible_base.activitystream' not in settings.INSTALLED_APPS:
+def _audit_log_created(created_assignments: list[AssignmentBase]) -> None:
+    """Emit audit logs for newly-created assignments (not idempotent re-assignments).
+
+    This is the END-STATE audit path for bulk-created assignments: DAB audits its own rows
+    directly without re-firing post_save. It is intentionally retained but NOT called during
+    the AAP-90162 merge window -- _create_assignments calls _fire_post_save instead so
+    not-yet-migrated consumers keep working. The final cleanup PR swaps the call back here
+    and deletes _fire_post_save. See _fire_post_save for the full rationale.
+    """
+    if not created_assignments or 'ansible_base.activitystream' not in settings.INSTALLED_APPS:
         return
 
     from ansible_base.activitystream.signals import _store_activitystream_entry
 
-    for assignment in db_assignments:
-        if assignment.pk not in existing_pks:
-            _store_activitystream_entry(None, assignment, 'create')
+    for assignment in created_assignments:
+        _store_activitystream_entry(None, assignment, 'create')
 
 
-def _pair_filter(assignments: list[AssignmentBase], actor_field: str) -> Q:
-    """Build a Q filter matching exact (actor, object_role) pairs — no cross-product."""
-    q = Q()
-    for a in assignments:
-        q |= Q(**{actor_field: getattr(a, actor_field), 'object_role': a.object_role})
-    return q
+def _insert_new(assignments: list[AssignmentBase], actor_id_field: str, model: type[AssignmentBase]) -> list[AssignmentBase]:
+    """Bulk-insert assignments and return only the newly-created rows (as the in-memory objects).
+
+    Each batch is one ``INSERT ... ON CONFLICT DO NOTHING RETURNING id, <actor>, role_definition,
+    object_role``, issued through the private ``QuerySet._insert``. ``bulk_create(ignore_conflicts=True)``
+    is built on the same method but never requests RETURNING, so it cannot say which rows it
+    inserted; ``_insert`` with ``returning_fields`` can, on PostgreSQL and SQLite 3.35+.
+    test_app/tests/rbac/test_insert_new.py pins this Django behavior so an upgrade that changes it
+    fails loudly instead of silently dropping audit/signal events.
+
+    Only the rows the statement inserted come back; rows skipped by a unique constraint (including
+    the partial global-assignment ones) do not. The one exception is a one-row batch that
+    conflicts, which Django's single-row path returns as ``[None]``; those are skipped. So there is
+    no pre- or post-insert query, and a concurrent insert of the same identity is never counted as
+    created here.
+
+    Returned rows are matched back to the in-memory objects by (actor, role_definition,
+    object_role), and those objects are returned with their PK backfilled, so they keep the
+    caller's role_definition, actor and object_role instances with no re-fetch. role_definition is
+    part of the key so global assignments (object_role is None) for different role definitions stay
+    distinct. The GFK content_object is not pre-loaded; it travels via the content_objects dict.
+
+    Pre-existing rows are deliberately not returned: ON CONFLICT DO NOTHING reports nothing about
+    the rows it skipped, and fetching them back would add an OR-of-pairs query (one that must be
+    chunked to stay under SQLite's expression-depth limit) to every grant. Callers needing a
+    pre-existing row fetch it themselves -- see RoleDefinition.give_permission and
+    RoleDefinition.give_or_remove_global_permission.
+
+    Callers guard against the empty case (see _create_assignments), so ``assignments`` is
+    always non-empty here.
+    """
+    opts = model._meta
+    fields = [f for f in opts.concrete_fields if not f.generated and f is not opts.pk]
+    returning_fields = [
+        opts.pk,
+        opts.get_field(actor_id_field.removesuffix('_id')),
+        opts.get_field('role_definition'),
+        opts.get_field('object_role'),
+    ]
+    for assignment in assignments:
+        assignment._prepare_related_fields_for_save(operation_name='bulk_create')
+    by_identity = {(getattr(a, actor_id_field), a.role_definition_id, a.object_role_id): a for a in assignments}
+    batch_size = max(connection.ops.bulk_batch_size(fields, assignments), 1)
+
+    created: list[AssignmentBase] = []
+    with transaction.atomic(using=model.objects.db, savepoint=False):
+        for start in range(0, len(assignments), batch_size):
+            rows = model.objects._insert(
+                assignments[start : start + batch_size],
+                fields=fields,
+                returning_fields=returning_fields,
+                on_conflict=OnConflict.IGNORE,
+            )
+            for row in rows:
+                if row is None:
+                    continue
+                pk, actor_id, role_definition_id, object_role_id = row
+                obj = by_identity[(actor_id, role_definition_id, object_role_id)]
+                obj.pk = pk
+                obj._state.adding = False
+                obj._state.db = model.objects.db
+                created.append(obj)
+    return created
 
 
-def _fire_post_save(db_assignments: list[AssignmentBase], existing_pks: set[int]) -> None:
-    """Fire post_save signals for newly-created assignments (skipped by bulk_create)."""
-    for assignment in db_assignments:
-        if assignment.pk not in existing_pks:
-            post_save.send(sender=type(assignment), instance=assignment, created=True, raw=False, using='default', update_fields=None)
+def _fire_post_save(created_assignments: list[AssignmentBase]) -> None:
+    """Re-fire post_save (created=True) for rows _insert_new inserted without signalling.
+
+    ~~~ TEMPORARY -- REMOVE WITH AAP-90162 CONSUMER MIGRATION ~~~
+
+    This exists ONLY to keep the merge order clean. The end state (see _audit_log_created)
+    is that DAB does NOT re-fire post_save for bulk-created assignments: DAB audits its own
+    rows directly, and external consumers (AWX, Hub) move to the bulk signals
+    (dab_rbac_assignments_created / dab_rbac_assignments_pre_delete).
+
+    But until the AWX (AAP-90164) and Hub (AAP-90165) patches land, those consumers still
+    have per-row post_save receivers on RoleUserAssignment / RoleTeamAssignment. If DAB
+    stopped firing post_save before they migrate, their old-RBAC mirroring and activity
+    stream would silently break (their downstream test suites fail). So we keep firing it.
+
+    This knowingly re-introduces the per-row-signal performance cost in AWX for the interim.
+    That regression is self-correcting: once the AWX patch removes its post_save receivers
+    and connects to the bulk signals, this call does nothing for AWX, and the FINAL DAB
+    cleanup PR deletes _fire_post_save (and this import) and switches back to
+    _audit_log_created. DO NOT build anything new on top of this re-fire.
+    """
+    for assignment in created_assignments:
+        post_save.send(sender=type(assignment), instance=assignment, created=True, raw=False, using='default', update_fields=None)
 
 
 def _create_assignments(
@@ -202,64 +372,84 @@ def _create_assignments(
     team_resolved: list[ResolvedAssignment],
     lookup: ObjectRoleLookup,
     object_ansible_ids: dict[tuple[str, str, str], str],
-    fire_signals_on_create: bool = True,
-    ignore_conflicts: bool = True,
 ) -> list[AssignmentBase]:
-    """Bulk-create user and team assignment objects, return all resulting assignments."""
+    """Bulk-create user and team assignment objects; return only the newly-created rows.
+
+    Pre-existing (idempotent) pairs are deliberately omitted -- see _insert_new for why.
+
+    Newly-created rows drive audit + downstream mirroring. The END STATE is a direct
+    _audit_log_created() call (DAB audits itself; consumers use the bulk signals). During
+    the AAP-90162 merge window we instead re-fire post_save via _fire_post_save() so
+    not-yet-migrated consumers (AWX, Hub) keep working -- see that function's docstring.
+    We must call ONE of the two, never both: post_save re-drives DAB's own
+    activitystream_create receiver, so pairing it with _audit_log_created would double-audit.
+    """
     created_by = current_user_or_system_user()
-    all_assignments: list[AssignmentBase] = []
+    created_assignments: list[AssignmentBase] = []
 
-    user_assignments = []
-    for ra in user_resolved:
-        obj_role = lookup[(ra.role_definition.pk, ra.object_id)]
-        user_assignments.append(
-            RoleUserAssignment(
-                user=ra.actor,
-                object_role=obj_role,
-                role_definition=ra.role_definition,
-                content_type=ra.content_type,
-                object_id=ra.object_id,
-                object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)),
-                created_by=created_by,
-            )
+    user_assignments = [
+        RoleUserAssignment(
+            user=ra.actor,
+            object_role=lookup.get((ra.role_definition.pk, ra.object_id)),
+            role_definition=ra.role_definition,
+            content_type=ra.content_type,
+            object_id=ra.object_id,
+            object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)) if ra.content_type else None,
+            created_by=created_by,
         )
+        for ra in user_resolved
+    ]
     if user_assignments:
-        pair_q = _pair_filter(user_assignments, 'user')
-        existing_user_pks = set(RoleUserAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleUserAssignment.objects.bulk_create(user_assignments, ignore_conflicts=ignore_conflicts)
-        db_users = list(RoleUserAssignment.objects.filter(pair_q))
-        all_assignments.extend(db_users)
-        if fire_signals_on_create:
-            _fire_post_save(db_users, existing_user_pks)
-        else:
-            _audit_log_created(db_users, existing_user_pks)
+        created_user_assignments = _insert_new(user_assignments, 'user_id', RoleUserAssignment)
+        created_assignments.extend(created_user_assignments)
+        # TEMPORARY (AAP-90162 merge order): _fire_post_save instead of _audit_log_created.
+        _fire_post_save(created_user_assignments)
 
-    team_assignments = []
-    for ra in team_resolved:
-        obj_role = lookup[(ra.role_definition.pk, ra.object_id)]
-        team_assignments.append(
-            RoleTeamAssignment(
-                team=ra.actor,
-                object_role=obj_role,
-                role_definition=ra.role_definition,
-                content_type=ra.content_type,
-                object_id=ra.object_id,
-                object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)),
-                created_by=created_by,
-            )
+    team_assignments = [
+        RoleTeamAssignment(
+            team=ra.actor,
+            object_role=lookup.get((ra.role_definition.pk, ra.object_id)),
+            role_definition=ra.role_definition,
+            content_type=ra.content_type,
+            object_id=ra.object_id,
+            object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)) if ra.content_type else None,
+            created_by=created_by,
         )
+        for ra in team_resolved
+    ]
     if team_assignments:
-        pair_q = _pair_filter(team_assignments, 'team')
-        existing_team_pks = set(RoleTeamAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleTeamAssignment.objects.bulk_create(team_assignments, ignore_conflicts=ignore_conflicts)
-        db_teams = list(RoleTeamAssignment.objects.filter(pair_q))
-        all_assignments.extend(db_teams)
-        if fire_signals_on_create:
-            _fire_post_save(db_teams, existing_team_pks)
-        else:
-            _audit_log_created(db_teams, existing_team_pks)
+        created_team_assignments = _insert_new(team_assignments, 'team_id', RoleTeamAssignment)
+        created_assignments.extend(created_team_assignments)
+        # TEMPORARY (AAP-90162 merge order): _fire_post_save instead of _audit_log_created.
+        _fire_post_save(created_team_assignments)
 
-    return all_assignments
+    return created_assignments
+
+
+def _clear_singleton_caches(assignments: Iterable[AssignmentBase]) -> None:
+    """Invalidate the in-memory singleton (global) permission cache after global assignments change.
+
+    Global (singleton) role assignments are the only thing that populates a user's cached
+    ``_singleton_permissions``, so giving or removing one must invalidate that cache -- otherwise
+    an in-memory actor reused later in the request would answer permission checks from stale data.
+    This is part of the pipeline's contract: the in-memory actor rides along in the assignment
+    data, so callers should not have to think about clearing the cache themselves.
+
+    For users we clear the cache on the exact in-memory instance carried by the assignment. For
+    teams, membership makes the set of affected users unknowable, so we raise the process-wide
+    clear signal (the same mechanism the legacy give/remove_global_permission methods used).
+    """
+    team_changed = False
+    for a in assignments:
+        if a.object_role_id is not None:
+            continue
+        if isinstance(a, RoleUserAssignment):
+            if hasattr(a.user, '_singleton_permissions'):
+                delattr(a.user, '_singleton_permissions')
+        else:
+            team_changed = True
+    if team_changed:
+        bound_singleton_permissions._team_clear_signal = True
 
 
 def _collect_recompute_team_ids(object_roles: Iterable[ObjectRole]) -> set[int]:
@@ -302,12 +492,16 @@ def _recompute_after_give(
     assignments: list[AssignmentBase],
     prefetch_evaluations: bool = False,
 ) -> None:
-    """Run recomputation pass after bulk permission assignment."""
+    """Run recomputation pass after bulk permission assignment.
+
+    Global team assignments (object_role is None) do not populate RoleEvaluation, so they are
+    excluded from team ancestor expansion.
+    """
     _check_defer_guard()
     recompute_team_ids = _collect_recompute_team_ids(lookup.values())
     object_roles_to_update: set[ObjectRole] = set(lookup.values())
 
-    unique_teams = {a.team for a in assignments if isinstance(a, RoleTeamAssignment)}
+    unique_teams = {a.team for a in assignments if isinstance(a, RoleTeamAssignment) and a.object_role_id is not None}
     if unique_teams:
         direct_roles = ObjectRole.objects.filter(pk__in=[obj_role.pk for obj_role in object_roles_to_update]).prefetch_related('provides_teams__has_roles')
         for obj_role in direct_roles:
@@ -323,21 +517,68 @@ def _recompute_after_give(
         recompute_role_evaluations(roles_to_recompute, prefetch_evaluations=prefetch_evaluations)
 
 
+def _find_assignments_chunked(
+    resolved: Sequence[ResolvedAssignment],
+    lookup: ObjectRoleLookup,
+    model: type[AssignmentBase],
+    actor_field: str,
+    batch_size: int = _FIND_ASSIGNMENTS_BATCH_SIZE,
+) -> list[AssignmentBase]:
+    """Find existing assignments matching resolved triples, chunking to avoid query depth limits.
+
+    Each resolved triple becomes an OR term in the Q filter. SQLite limits expression tree
+    depth to 1000, and max_query_params is 999, but empirically 999 OR terms still exceeds
+    the limit. Use batch_size (default _FIND_ASSIGNMENTS_BATCH_SIZE) to control chunk size.
+
+    Triples are first deduplicated on the DB uniqueness key (see ResolvedAssignment) so the
+    same assignment cannot land in two chunks and be fetched twice.
+    """
+    unique_resolved = list(dict.fromkeys(resolved))
+
+    if len(unique_resolved) <= batch_size:
+        return _find_assignments(unique_resolved, lookup, model, actor_field)
+
+    found = []
+    for i in range(0, len(unique_resolved), batch_size):
+        chunk = unique_resolved[i : i + batch_size]
+        found.extend(_find_assignments(chunk, lookup, model, actor_field))
+    return found
+
+
 def _find_assignments(
     resolved: Sequence[ResolvedAssignment],
     lookup: ObjectRoleLookup,
     model: type[AssignmentBase],
     actor_field: str,
 ) -> list[AssignmentBase]:
-    """Find existing assignments matching resolved triples via the ObjectRole lookup."""
+    """Find existing assignments matching resolved triples.
+
+    Object assignments are matched via the ObjectRole lookup; global assignments (content_type
+    is None) are matched directly by (role_definition, actor) with object_role IS NULL.
+
+    The role_definition and actor instances already held on the resolved triples are attached
+    back onto the fetched rows, so signal handlers can read them without a per-row query.
+    The GFK content_object cannot be attached this way; it travels via content_objects.
+    """
     q = Q()
     for ra in resolved:
-        obj_role = lookup.get((ra.role_definition.pk, ra.object_id))
-        if obj_role is not None:
-            q |= Q(object_role_id=obj_role.pk, **{actor_field: ra.actor.pk})
+        if ra.content_type is None:
+            q |= Q(role_definition_id=ra.role_definition.pk, object_role__isnull=True, **{actor_field: ra.actor.pk})
+        else:
+            obj_role = lookup.get((ra.role_definition.pk, ra.object_id))
+            if obj_role is not None:
+                q |= Q(object_role_id=obj_role.pk, **{actor_field: ra.actor.pk})
     if not q:
         return []
-    return list(model.objects.filter(q))
+    assignments = list(model.objects.filter(q))
+
+    actor_relation = actor_field.removesuffix('_id')
+    actor_by_pk = {ra.actor.pk: ra.actor for ra in resolved}
+    rd_by_pk = {ra.role_definition.pk: ra.role_definition for ra in resolved}
+    for assignment in assignments:
+        setattr(assignment, actor_relation, actor_by_pk[getattr(assignment, actor_field)])
+        assignment.role_definition = rd_by_pk[assignment.role_definition_id]
+    return assignments
 
 
 def _recompute_after_remove(
@@ -368,22 +609,43 @@ def _recompute_after_remove(
 def remove_assignments(
     user_assignments: Sequence[RoleUserAssignment] = (),
     team_assignments: Sequence[RoleTeamAssignment] = (),
+    content_objects: dict[tuple[int, str], ContentObject] | None = None,
 ) -> None:
     """Remove assignments by reference and recompute affected permissions.
 
     Lower-level alternative to bulk_remove_permissions — accepts assignment objects
     directly, avoiding the triple resolution and GFK lookups that the bulk API requires.
+
+    Args:
+        content_objects: Optional dict mapping (content_type_id, object_id) to model instances.
+            When provided, these are included in the bulk signal. When None, signal fires
+            with an empty dict for content objects (consumer can fetch if needed).
+
+    Sends dab_rbac_assignments_pre_delete before deleting, while the rows are still readable
+    (see docs/apps/rbac/bulk_operations.md). Global assignments do not populate
+    RoleEvaluation, so they are skipped during recompute.
     """
     if not user_assignments and not team_assignments:
         return
 
+    all_assignments = list(user_assignments) + list(team_assignments)
+    dab_rbac_assignments_pre_delete.send(
+        sender=None,
+        assignments=all_assignments,
+        content_objects=content_objects or {},
+    )
+
+    _clear_singleton_caches(all_assignments)
+
     object_role_ids: set[int] = set()
     actor_team_ids: set[int] = set()
     for a in user_assignments:
-        object_role_ids.add(a.object_role_id)
+        if a.object_role_id is not None:
+            object_role_ids.add(a.object_role_id)
     for a in team_assignments:
-        object_role_ids.add(a.object_role_id)
-        actor_team_ids.add(a.team_id)
+        if a.object_role_id is not None:
+            object_role_ids.add(a.object_role_id)
+            actor_team_ids.add(a.team_id)
 
     if user_assignments:
         RoleUserAssignment.objects.filter(pk__in=[a.pk for a in user_assignments]).delete()
@@ -396,14 +658,24 @@ def remove_assignments(
 def give_assignments(
     user_resolved: Sequence[ResolvedAssignment] = (),
     team_resolved: Sequence[ResolvedAssignment] = (),
-    fire_signals_on_create: bool = True,
-    ignore_conflicts: bool = True,
-    prefetch_evaluations: bool = False,
+    content_objects: dict[tuple[int, str], ContentObject] | None = None,
 ) -> list[AssignmentBase]:
-    """Assign already-resolved roles and return the persisted assignments.
+    """Assign roles from already-resolved assignments (skips validation).
 
-    Validation is skipped. ``ignore_conflicts`` controls whether database insert
-    conflicts are ignored or surfaced to the caller.
+    Lower-level alternative to bulk_give_permissions — accepts ResolvedAssignment
+    lists directly, for callers that have already resolved and validated.
+
+    Returns only the *newly-created* assignments. Pairs that already existed are omitted:
+    INSERT ... ON CONFLICT DO NOTHING reports nothing about skipped rows, and fetching them
+    back is the query that does not scale. Callers needing pre-existing rows must fetch them.
+
+    Args:
+        content_objects: Optional dict mapping (content_type_id, object_id) to model instances.
+            When provided, these are included in the dab_rbac_assignments_created signal.
+            When None, the signal fires with an empty dict (consumer can fetch if needed).
+
+    Sends dab_rbac_assignments_created after recompute, and only when rows were actually
+    created (see docs/apps/rbac/bulk_operations.md).
     """
     if not user_resolved and not team_resolved:
         return []
@@ -412,63 +684,80 @@ def give_assignments(
     team_resolved = list(team_resolved)
     object_ansible_ids = _batch_resolve_object_ansible_ids(user_resolved + team_resolved)
     lookup = _ensure_object_roles(user_resolved + team_resolved)
-    assignments = _create_assignments(
-        user_resolved,
-        team_resolved,
-        lookup,
-        object_ansible_ids,
-        fire_signals_on_create=fire_signals_on_create,
-        ignore_conflicts=ignore_conflicts,
-    )
-    _recompute_after_give(lookup, assignments, prefetch_evaluations=prefetch_evaluations)
-    return assignments
+    created_assignments = _create_assignments(user_resolved, team_resolved, lookup, object_ansible_ids)
+
+    _clear_singleton_caches(created_assignments)
+
+    _recompute_after_give(lookup, created_assignments)
+
+    if created_assignments:
+        dab_rbac_assignments_created.send(
+            sender=None,
+            assignments=created_assignments,
+            content_objects=content_objects or {},
+        )
+
+    return created_assignments
 
 
 def bulk_give_permissions(
     user_permissions: Sequence[PermissionTriple] = (),
     team_permissions: Sequence[PermissionTriple] = (),
-    fire_signals_on_create: bool = True,
-    ignore_conflicts: bool = True,
-    prefetch_evaluations: bool = False,
 ) -> list[AssignmentBase]:
-    """Validate permission triples, create their assignments, and return persisted rows.
+    """Convenience API: validates triples, resolves, and delegates to give_assignments.
 
-    ``ignore_conflicts`` defaults to ignoring insert conflicts; callers that need to
-    distinguish their writes can disable it and handle integrity conflicts.
+    Each triple is (role_definition, actor, content_object). A None content object denotes a
+    global (singleton) assignment -- object-scoped and global triples may be freely mixed in
+    the same call, spanning any number of role definitions. Global triples create no ObjectRole
+    and skip recompute (global roles do not populate RoleEvaluation) but flow through the same
+    creation, audit, and bulk-signal path. See AAP-90170.
+
+    Returns only the newly-created assignments (see give_assignments for why).
     """
     if not user_permissions and not team_permissions:
         return []
-    user_resolved, team_resolved = _resolve_assignments(user_permissions, team_permissions)
-    return give_assignments(
-        user_resolved,
-        team_resolved,
-        fire_signals_on_create=fire_signals_on_create,
-        ignore_conflicts=ignore_conflicts,
-        prefetch_evaluations=prefetch_evaluations,
-    )
+
+    user_resolved, team_resolved, content_objects = _resolve_assignments(user_permissions, team_permissions)
+    return give_assignments(user_resolved, team_resolved, content_objects=content_objects)
 
 
 def bulk_remove_permissions(
     user_permissions: Sequence[PermissionTriple] = (),
     team_permissions: Sequence[PermissionTriple] = (),
-) -> None:
-    """Bulk-remove multiple role assignments.
+    fetch_batch_size: int = _FIND_ASSIGNMENTS_BATCH_SIZE,
+) -> list[AssignmentBase]:
+    """Bulk-remove multiple role assignments and return the ones removed.
 
     user_permissions: sequence of (role_definition, user, content_object) triples
     team_permissions: sequence of (role_definition, team, content_object) triples
 
-    This is the bulk replacement for remove_permission. Deletes assignments,
-    cleans up orphaned ObjectRoles, and runs a single recomputation pass.
+    A None content object denotes a global (singleton) assignment (found by object_role IS
+    NULL); object-scoped and global triples may be freely mixed. This is the bulk replacement
+    for remove_permission. Deletes assignments, cleans up orphaned ObjectRoles, and runs a
+    single recomputation pass.
+
+    The in-memory singleton cache of the caller's user instances is cleared here for global
+    removals, because remove_assignments only sees DB-fetched rows. Global team removals are
+    handled by the process-wide clear in remove_assignments.
+
+    The returned assignments are the rows that were found, passed to
+    dab_rbac_assignments_pre_delete, and deleted; their PKs refer to rows that no longer exist.
     """
     if not user_permissions and not team_permissions:
-        return
+        return []
 
-    user_resolved = _resolve_triples(user_permissions)
-    team_resolved = _resolve_triples(team_permissions)
+    user_resolved, user_content_objects = _resolve_triples(user_permissions)
+    team_resolved, team_content_objects = _resolve_triples(team_permissions)
+
+    for ra in user_resolved:
+        if ra.content_type is None and hasattr(ra.actor, '_singleton_permissions'):
+            delattr(ra.actor, '_singleton_permissions')
+
+    content_objects = {**user_content_objects, **team_content_objects}
+
     lookup = _lookup_object_roles(user_resolved + team_resolved)
-    if not lookup:
-        return
 
-    user_found = _find_assignments(user_resolved, lookup, RoleUserAssignment, 'user_id')
-    team_found = _find_assignments(team_resolved, lookup, RoleTeamAssignment, 'team_id')
-    remove_assignments(user_assignments=user_found, team_assignments=team_found)
+    user_found = _find_assignments_chunked(user_resolved, lookup, RoleUserAssignment, 'user_id', batch_size=fetch_batch_size)
+    team_found = _find_assignments_chunked(team_resolved, lookup, RoleTeamAssignment, 'team_id', batch_size=fetch_batch_size)
+    remove_assignments(user_assignments=user_found, team_assignments=team_found, content_objects=content_objects)
+    return [*user_found, *team_found]

@@ -13,7 +13,6 @@ from django.db.models import F, Model, QuerySet
 from django.db.utils import IntegrityError
 
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
-from ansible_base.lib.utils.models import cached_system_user
 from ansible_base.rbac.resource_queries import assignment_resource_annotation
 from ansible_base.resource_registry.models import Resource
 
@@ -441,14 +440,19 @@ def parse_ansible_ids_from_claims(
 
 
 def save_user_claims(user: Model, objects: dict, object_roles: dict, global_roles: list) -> None:
-    """
-    Apply RBAC permissions from claims data
+    """Apply RBAC permissions from claims data.
+
+    1. Resolve every desired grant into a (role_definition, user, content_object) triple.
+       Global roles use a None content object, so they need no separate pass (AAP-90170).
+    2. Grant all desired permissions, global and object, in one bulk_give_permissions call.
+    3. Remove stale managed-role assignments not in the desired set. The user already held
+       is attached to those rows so signal handlers reading assignment.user do not refetch it.
     """
 
     managed_roles = settings.ANSIBLE_BASE_JWT_MANAGED_ROLES
 
-    # Global roles are few (0-2 typically), keep serial
-    global_assignment_pks = set()
+    desired_permissions = []
+
     for system_role_name in global_roles:
         rd = get_role_definition(system_role_name)
         if rd is None:
@@ -458,9 +462,7 @@ def save_user_claims(user: Model, objects: dict, object_roles: dict, global_role
         if rd.name not in managed_roles:
             logger.error(f"Unable to grant {user.username} system level role {system_role_name} because it is not a JWT managed role")
             continue
-
-        assignment = rd.give_global_permission(user)
-        global_assignment_pks.add(assignment.pk)
+        desired_permissions.append((rd, user, None))
         logger.info(f"Granting user {user.username} global role {system_role_name}")
 
     # Resolve each resource once and reuse it for repeated role references.
@@ -469,7 +471,6 @@ def save_user_claims(user: Model, objects: dict, object_roles: dict, global_role
     resource_ansible_ids_and_content_types = parse_ansible_ids_from_claims(objects, managed_object_roles)
     resources_by_ansible_id = build_resource_cache(resource_ansible_ids_and_content_types)
 
-    desired_permissions = []
     resolved_resources = {}
     failed_resource_keys = set()
 
@@ -514,35 +515,17 @@ def save_user_claims(user: Model, objects: dict, object_roles: dict, global_role
                 desired_permissions.append((rd, user, obj))
                 logger.info(f"Granting user {user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
 
-    # Pass 2: bulk assign all desired permissions
     if desired_permissions:
-        with cached_system_user():
-            bulk_give_permissions(
-                user_permissions=desired_permissions,
-                fire_signals_on_create=False,
-                prefetch_evaluations=True,
-            )
+        bulk_give_permissions(user_permissions=desired_permissions)
 
-    # Pass 3: remove stale assignments not in the desired set
-    desired_keys = {(rd.pk, obj.pk) for rd, _user, obj in desired_permissions}
-
-    stale_assignments = (
-        RoleUserAssignment.objects.filter(
-            user=user,
-            role_definition__name__in=managed_roles,
-        )
-        .exclude(pk__in=global_assignment_pks)
-        .select_related("role_definition")
-    )
-
-    stale_user_assignments = []
-    for assignment in stale_assignments:
-        if (assignment.role_definition_id, assignment.cache_id) not in desired_keys:
-            if not assignment.content_type_id:
-                assignment.role_definition.remove_global_permission(user)
-            else:
-                stale_user_assignments.append(assignment)
-
+    desired_keys = {(rd.pk, obj.pk if obj is not None else None) for rd, _user, obj in desired_permissions}
+    stale_user_assignments = [
+        assignment
+        for assignment in RoleUserAssignment.objects.filter(user=user, role_definition__name__in=managed_roles).select_related('role_definition')
+        if (assignment.role_definition_id, assignment.cache_id) not in desired_keys
+    ]
+    for assignment in stale_user_assignments:
+        assignment.user = user
     if stale_user_assignments:
         logger.info(f"Removing {len(stale_user_assignments)} stale role assignments for user {user.username}")
         remove_assignments(user_assignments=stale_user_assignments)
