@@ -1,29 +1,58 @@
+import logging
 from typing import Any, Optional
 
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email as django_validate_email
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.lib.utils.models import is_system_user
 
+logger = logging.getLogger('ansible_base.authentication.utils.user')
+
+
+def _is_valid_email(email: str) -> bool:
+    """Check if email is valid using Django's built-in email validator."""
+    try:
+        django_validate_email(email)
+        return True
+    except ValidationError:
+        return False
+
 
 # This helper centralizes the logic for handling and cleaning the email input.
 def normalize_and_get_email(email: Any) -> Optional[str]:
-    """Handles list or string email input, validates type, and normalizes it."""
+    """Handles list or string email input, validates type, normalizes, and validates format.
+
+    Returns the normalized email if valid, or None if the input is empty, not a string,
+    or not a valid email address. Logs a warning when an invalid email is rejected.
+    """
     if not email:  # Covers None, empty string, or empty list
         return None
 
+    raw_email = None
     if isinstance(email, list):
         first_email = email[0]
         if not isinstance(first_email, str) or not first_email.strip():
             return None
-        return first_email.strip().lower()
+        raw_email = first_email.strip().lower()
+    elif isinstance(email, str):
+        raw_email = email.strip().lower()
+    else:
+        # For any other type (int, dict, etc.), treat as empty
+        return None
 
-    if isinstance(email, str):
-        return email.strip().lower()
+    if raw_email and not _is_valid_email(raw_email):
+        logger.warning(
+            "Rejecting invalid email address '%s' from authenticator. "
+            "User will be created with an empty email. "
+            "Check your authenticator's email attribute mapping.",
+            raw_email,
+        )
+        return None
 
-    # For any other type (int, dict, etc.), treat as empty
-    return None
+    return raw_email
 
 
 def can_user_change_password(user: Optional[AbstractUser]) -> bool:
