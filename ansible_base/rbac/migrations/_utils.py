@@ -3,6 +3,8 @@ import logging
 
 from django.db import models
 
+from ansible_base.lib.mssql import bulk as mssql_bulk
+
 logger = logging.getLogger(__name__)
 
 # This method has moved, and this is put here temporarily to make branch management easier
@@ -35,7 +37,9 @@ def give_permissions(apps, rd, users=(), teams=(), object_id=None, content_type_
             RoleUserAssignment(object_role=object_role, user=user, **object_role_fields)
             for user in users
         ]
-        RoleUserAssignment.objects.bulk_create(user_assignments, ignore_conflicts=True)
+        # migration context: apps.get_model returns historical models with plain
+        # managers, so the bulk-safe queryset cannot be reached through .objects here
+        mssql_bulk.bulk_create(RoleUserAssignment, user_assignments, ignore_conflicts=True)
     if teams:
         RoleTeamAssignment = apps.get_model('dab_rbac', 'RoleTeamAssignment')
         # AWX has trouble getting the team object, conditionally accept team id list
@@ -49,7 +53,7 @@ def give_permissions(apps, rd, users=(), teams=(), object_id=None, content_type_
                 RoleTeamAssignment(object_role=object_role, team_id=team_id, **object_role_fields)
                 for team_id in teams
             ]
-        RoleTeamAssignment.objects.bulk_create(team_assignments, ignore_conflicts=True)
+        mssql_bulk.bulk_create(RoleTeamAssignment, team_assignments, ignore_conflicts=True)
 
 
 def cleanup_orphaned_permissions(apps):
