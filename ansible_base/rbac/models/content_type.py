@@ -8,6 +8,8 @@ from django.db.models import Max
 from django.db.models.options import Options
 from django.utils.translation import gettext_lazy as _
 
+from ansible_base.lib.mssql.bulk import MSSQLSafeManager
+
 from ..remote import (
     RemoteObject,
     get_local_resource_prefix,
@@ -16,7 +18,7 @@ from ..remote import (
 )
 
 
-class DABContentTypeManager(django_models.Manager[django_models.Model]):
+class DABContentTypeManager(MSSQLSafeManager[django_models.Model]):
     """Manager storing DABContentType objects in a local cache like original ContentType.
 
     The major structural difference is that the cache keys have to add the service reference.

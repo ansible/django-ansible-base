@@ -2,10 +2,12 @@ from django.apps import apps
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from ansible_base.lib.mssql.bulk import MSSQLSafeManager
+
 from .content_type import DABContentType
 
 
-class DABPermissionManager(models.Manager):
+class DABPermissionManager(MSSQLSafeManager):
     def load_remote_objects(self, remote_data: list[dict], update_managed=False):
         """Load the permission list from a remote system, requires types are loaded first
 

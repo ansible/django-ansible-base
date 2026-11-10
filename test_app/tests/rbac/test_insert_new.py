@@ -5,7 +5,7 @@ on_conflict=OnConflict.IGNORE. The first group of tests pins that Django/databas
 behavior directly, so a Django upgrade that changes it fails here.
 """
 
-from unittest import mock
+from unittest import mock, skipIf
 
 import pytest
 from django.db import connection
@@ -56,6 +56,7 @@ def test_database_can_return_rows_from_bulk_insert():
 
 
 @pytest.mark.django_db
+@skipIf(connection.vendor == 'microsoft', 'pinned postgres behavior; on MS SQL Server _insert_new dispatches to the mssql-safe bulk path')
 def test_private_insert_returns_only_inserted_rows(rando, other_user, inv_rd, inv_object_role):
     """QuerySet._insert with RETURNING and ON CONFLICT DO NOTHING returns only the rows it inserted."""
     opts = RoleUserAssignment._meta
@@ -73,6 +74,7 @@ def test_private_insert_returns_only_inserted_rows(rando, other_user, inv_rd, in
 
 
 @pytest.mark.django_db
+@skipIf(connection.vendor == 'microsoft', 'pinned postgres behavior; on MS SQL Server _insert_new dispatches to the mssql-safe bulk path')
 @pytest.mark.parametrize('n_objs', [1, 3])
 def test_private_insert_returns_no_rows_when_all_conflict(rando, inv_rd, inv_object_role, n_objs):
     """When every row conflicts, nothing usable comes back.

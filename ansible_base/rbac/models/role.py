@@ -20,6 +20,7 @@ from rest_framework.exceptions import ValidationError
 # ansible_base lib functions
 from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommonModel
 from ansible_base.lib.fields import BoundedTextField
+from ansible_base.lib.mssql.bulk import MSSQLSafeManager
 
 # ansible_base RBAC logic imports
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
@@ -35,6 +36,7 @@ from .fields import FederatedForeignKey
 
 if TYPE_CHECKING:
     from ansible_base.rbac.prefetch import EvaluationsPrefetch
+
 from .permission import DABPermission
 
 # Conditionally import AuditableModel if activitystream is installed
@@ -78,7 +80,7 @@ class ManagedRoleManager:
             return rd
 
 
-class RoleDefinitionManager(models.Manager):
+class RoleDefinitionManager(MSSQLSafeManager):
     def contribute_to_class(self, cls: Type[models.Model], name: str) -> None:
         """After Django populates the model for the manager, attach the manager role manager"""
         super().contribute_to_class(cls, name)
@@ -605,6 +607,8 @@ class ObjectRole(ObjectRoleFields):
     permissions to that user or team, for that content_object
     """
 
+    objects = MSSQLSafeManager()
+
     class Meta:
         app_label = 'dab_rbac'
         verbose_name_plural = _('object_roles')
@@ -1007,6 +1011,8 @@ class RoleEvaluationFields(models.Model):
 
 
 class RoleEvaluation(RoleEvaluationFields):
+    objects = MSSQLSafeManager()
+
     class Meta(RoleEvaluationMeta):
         constraints = [models.UniqueConstraint(name='one_entry_per_object_permission_and_role', fields=['object_id', 'content_type_id', 'codename', 'role'])]
         ordering = ['id']
@@ -1023,6 +1029,8 @@ class RoleEvaluation(RoleEvaluationFields):
 
 class RoleEvaluationUUID(RoleEvaluationFields):
     "Cache for UUID type models"
+
+    objects = MSSQLSafeManager()
 
     class Meta(RoleEvaluationMeta):
         constraints = [
