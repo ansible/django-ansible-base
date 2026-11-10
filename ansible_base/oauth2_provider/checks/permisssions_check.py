@@ -6,14 +6,14 @@ from django.core.checks import CheckMessage, Debug, Error, Warning
 from rest_framework.permissions import AllowAny, OperandHolder, OperationHolderMixin, SingleOperandHolder
 from rest_framework.views import APIView
 
+from ansible_base.lib.permissions import TokenScopePermission
 from ansible_base.lib.utils.views.urls import get_api_view_functions
-from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
 
 
-class OAuth2ScopePermissionCheck:
+class TokenScopePermissionCheck:
     """
     Class containing logic for checking view classes for the
-    OAuth2ScopePermission permission_class, and aggregating
+    TokenScopePermission permission class, and aggregating
     CheckMessage's for django system checks.
 
     :param ignore_list: List of python import path strings for view classes exempt from the check logic.
@@ -30,14 +30,14 @@ class OAuth2ScopePermissionCheck:
         if self.generate_check_messages:
             self.messages.append(message)
 
-    # These are all warning or error conditions, this function is mostly saying to not invert OAuth2ScopePermissions
+    # These are all warning or error conditions, this function is mostly saying to not invert TokenScopePermission.
     # Returns False.
     def process_single_operand_holder(self, operand_holder: SingleOperandHolder) -> bool:
         # The only unary operand for permission classes provided by rest_framework is ~ (not)
         if self.parse_permission_class(operand_holder.op1_class):
             self.check_message(
                 Warning(
-                    "~ (not) operand used on OAuth2ScopePermission, probably a bad idea.",
+                    "~ (not) operand used on TokenScopePermission, probably a bad idea.",
                     id="ansible_base.oauth2_provider.W001",
                     obj=self.current_view,
                 )
@@ -52,10 +52,10 @@ class OAuth2ScopePermissionCheck:
     # Sort of recursive? Reasonably this should not be an issue, so long as we don't recurse on an unknown OperationHolderMixin type
     def parse_permission_class(self, cls: Union[Type[OperationHolderMixin], OperationHolderMixin]) -> bool:
         # First, most likely case, we're dealing with a BasePermission subclass.
-        if cls is OAuth2ScopePermission:
+        if isinstance(cls, type) and issubclass(cls, TokenScopePermission):
             return True
         elif isinstance(cls, SingleOperandHolder):
-            # Warning or Error case: Will not accept OAuth2 permission nested in NOT
+            # Warning or Error case: Will not accept a scope permission nested in NOT.
             return self.process_single_operand_holder(cls)
         elif isinstance(cls, OperandHolder):
             return self.process_operand_holder(cls)
@@ -63,9 +63,9 @@ class OAuth2ScopePermissionCheck:
 
     def check_view(self, view_class: Type[APIView]) -> bool:
         """
-        Primary function of the OAuth2ScopePermissionCheck.
+        Primary function of the TokenScopePermissionCheck.
 
-        Checks if OAuth2ScopePermission is present on the supplied view's
+        Checks if TokenScopePermission is present on the supplied view's
         permission_classes; ignores classes that are not APIViews, or that are
         in the ignore_list.
 
@@ -73,7 +73,7 @@ class OAuth2ScopePermissionCheck:
 
         :param view_class: django View class or rest_framework ApiView class
 
-        :return: True if view_class uses the OAuth2ScopePermission permission
+        :return: True if view_class uses the TokenScopePermission permission
             class, or has some mitigating circumstance that prohibits it, such as
             view_class not using permission classes, or its import path being in
             self.ignore_list; returns False otherwise.
@@ -94,7 +94,7 @@ class OAuth2ScopePermissionCheck:
             if self.parse_permission_class(permission_class):
                 self.check_message(
                     Debug(
-                        "Found OAuth2ScopePermission permission_class",
+                        "Found TokenScopePermission permission_class",
                         obj=self.current_view,
                         id="ansible_base.oauth2_provider.D02",
                     )
@@ -104,7 +104,7 @@ class OAuth2ScopePermissionCheck:
         if not self.current_view.permission_classes or AllowAny in self.current_view.permission_classes:
             self.check_message(
                 Debug(
-                    "View object is fully permissive, OAuth2ScopePermission is not required",
+                    "View object is fully permissive, TokenScopePermission is not required",
                     obj=self.current_view,
                     id="ansible_base.oauth2_provider.D04",
                 )
@@ -114,7 +114,7 @@ class OAuth2ScopePermissionCheck:
         # if we went though the whole loop without finding a valid permission_class, raise an error
         self.check_message(
             Error(
-                "View class has no valid usage of OAuth2ScopePermission",
+                "View class has no valid usage of TokenScopePermission",
                 obj=self.current_view,
                 id="ansible_base.oauth2_provider.E002",
             )
@@ -133,7 +133,7 @@ def view_in_app_configs(view_class: type, app_configs: Optional[list[AppConfig]]
 
 def oauth2_permission_scope_check(app_configs: Optional[list[AppConfig]], **kwargs) -> list[CheckMessage]:
     """
-    Check for OAuth2ScopePermission permission class on all enabled views.
+    Check for TokenScopePermission permission class on all enabled views.
 
     Ignore views in the ANSIBLE_BASE_OAUTH2_PROVIDER_PERMISSIONS_CHECK_IGNORED_VIEWS setting
     """
@@ -142,7 +142,7 @@ def oauth2_permission_scope_check(app_configs: Optional[list[AppConfig]], **kwar
         + getattr(settings, "ANSIBLE_BASE_OAUTH2_PROVIDER_PERMISSIONS_CHECK_IGNORED_VIEWS", [])
     )
 
-    check = OAuth2ScopePermissionCheck(ignore_list)
+    check = TokenScopePermissionCheck(ignore_list)
 
     view_functions = get_api_view_functions()
     for view in view_functions:
