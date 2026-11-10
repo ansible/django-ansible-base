@@ -347,3 +347,45 @@ class TestManagerAttachment:
         from ansible_base.lib.mssql.bulk import MSSQLSafeManager
 
         assert MSSQLSafeManager.use_in_migrations is False
+
+
+class TestMigrationUtils:
+    """give_permissions runs inside migrations, where apps.get_model returns
+    historical models with plain managers — the attached MSSQLSafeManager is
+    unreachable there, so the migration utils must use the function form."""
+
+    @pytest.mark.django_db
+    def test_give_permissions_ignores_conflicts_through_historical_models(self):
+        from django.apps import apps as global_apps
+        from django.contrib.auth import get_user_model
+        from django.db.migrations.state import ProjectState
+
+        from ansible_base.rbac import permission_registry
+        from ansible_base.rbac.migrations import _utils
+        from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
+        from test_app.models import Inventory, Organization
+
+        organization = Organization.objects.create(name='mig-utils-org')
+        inventory = Inventory.objects.create(name='mig-utils-inv', organization=organization)
+        rd = RoleDefinition.objects.create_from_permissions(
+            permissions=['view_inventory'],
+            name='mig-utils-view-inv',
+            content_type=permission_registry.content_type_model.objects.get_for_model(Inventory),
+        )
+        user = get_user_model().objects.create(username='mig-utils-user')
+        object_role = rd.give_permission(user, inventory).object_role
+        assert RoleUserAssignment.objects.filter(user=user, object_role=object_role).count() == 1
+
+        state_apps = ProjectState.from_apps(global_apps).apps
+        historical_manager = state_apps.get_model('dab_rbac', 'RoleUserAssignment').objects
+        assert historical_manager.get_queryset().__class__ is not MSSQLSafeQuerySet
+
+        # migration context only ever sees historical instances, so fetch rd and user through it
+        historical_rd = state_apps.get_model('dab_rbac', 'RoleDefinition').objects.get(pk=rd.pk)
+        historical_user = state_apps.get_model('test_app', 'User').objects.get(pk=user.pk)
+
+        # replaying the assignment through migration context must not raise
+        _utils.give_permissions(
+            state_apps, historical_rd, users=[historical_user], object_id=object_role.object_id, content_type_id=object_role.content_type_id
+        )
+        assert RoleUserAssignment.objects.filter(user=user, object_role=object_role).count() == 1
