@@ -8,6 +8,8 @@ unique_global_*_assignment partial unique index. Deleting the assignment rows
 first avoids that.
 """
 
+from unittest.mock import Mock
+
 import pytest
 
 from ansible_base.rbac import permission_registry
@@ -158,3 +160,104 @@ class TestRoleDefinitionDeletion:
         inv_rd.refresh_from_db()
         assert ObjectRole.objects.filter(role_definition_id=inv_rd.id).count() == 2
         assert RoleUserAssignment.objects.filter(role_definition=inv_rd, user=rando).count() == 2
+
+
+def test_role_definition_queryset_delete_routes_cleanup_to_write_database(monkeypatch):
+    """QuerySet.db resolves through the router's read alias unless _for_write is
+    set (Django's own QuerySet.delete sets it before reading .db), so the mssql
+    cleanup must run on the same write database as the deletion itself — not on
+    a read replica."""
+    import types
+
+    from django.db import router
+    from django.db.models import QuerySet
+
+    import ansible_base.rbac.models.role as role_module
+
+    class ReadReplicaRouter:
+        def db_for_read(self, model, **hints):
+            return 'replica'
+
+        def db_for_write(self, model, **hints):
+            return 'default'
+
+    class FakeConnection:
+        def __init__(self, vendor):
+            self.vendor = vendor
+
+    class FakeAtomic:
+        def __init__(self, using):
+            FakeAtomic.using = using
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    cleanup_dbs = []
+
+    def fake_delete_object_roles(queryset):
+        cleanup_dbs.append(queryset.db)
+
+    super_delete = Mock()
+
+    monkeypatch.setattr(role_module, 'connections', {'default': FakeConnection('microsoft'), 'replica': FakeConnection('postgresql')})
+    monkeypatch.setattr(role_module, 'transaction', types.SimpleNamespace(atomic=FakeAtomic))
+    monkeypatch.setattr(router, 'routers', [ReadReplicaRouter()])
+    monkeypatch.setattr('ansible_base.rbac.caching.delete_object_roles', fake_delete_object_roles)
+    monkeypatch.setattr(QuerySet, 'delete', super_delete)
+
+    RoleDefinition.objects.all().delete()
+
+    assert cleanup_dbs == ['default']
+    super_delete.assert_called_once()
+
+
+@pytest.mark.django_db
+class TestContentTypeDeletion:
+    def test_deleting_content_type_removes_multi_object_assignments(self, rando, organization, inv_rd):
+        """Deleting a DABContentType cascades into both the RoleDefinitions typed
+        by it and the ObjectRoles anchored on it, and through those into the
+        assignments. On SQL Server the collector NULLs the nullable
+        assignment.object_role foreign key first, and two object-scoped grants
+        for one actor then violate unique_global_user_assignment — the same
+        collision delete_object_roles exists to prevent, reached through the
+        content-type cascade."""
+        from ansible_base.rbac.models import DABContentType
+        from test_app.models import Inventory
+
+        inventory_a = Inventory.objects.create(name='ct-delete-inv-a', organization=organization)
+        inventory_b = Inventory.objects.create(name='ct-delete-inv-b', organization=organization)
+        inv_rd.give_permission(rando, inventory_a)
+        inv_rd.give_permission(rando, inventory_b)
+
+        assert RoleUserAssignment.objects.filter(role_definition=inv_rd, user=rando).count() == 2
+
+        ct = DABContentType.objects.get_for_model(Inventory)
+        ct.delete()
+
+        assert not DABContentType.objects.filter(pk=ct.pk).exists()
+        assert not ObjectRole.objects.filter(content_type_id=ct.id).exists()
+        assert not RoleUserAssignment.objects.filter(role_definition_id=inv_rd.id).exists()
+
+    def test_deleting_content_type_queryset_removes_multi_object_assignments(self, rando, organization, inv_rd):
+        """QuerySet.delete() bypasses Model.delete(), so the queryset form needs
+        its own route through the same mssql-safe object-role cleanup as the
+        instance method."""
+        from ansible_base.rbac.models import DABContentType
+        from test_app.models import Inventory
+
+        inventory_a = Inventory.objects.create(name='ct-qs-delete-inv-a', organization=organization)
+        inventory_b = Inventory.objects.create(name='ct-qs-delete-inv-b', organization=organization)
+        inv_rd.give_permission(rando, inventory_a)
+        inv_rd.give_permission(rando, inventory_b)
+
+        assert RoleUserAssignment.objects.filter(role_definition=inv_rd, user=rando).count() == 2
+
+        ct = DABContentType.objects.get_for_model(Inventory)
+        DABContentType.objects.filter(pk=ct.pk).delete()
+
+        assert not DABContentType.objects.filter(pk=ct.pk).exists()
+        assert not ObjectRole.objects.filter(content_type_id=ct.id).exists()
+        assert not RoleUserAssignment.objects.filter(role_definition_id=inv_rd.id).exists()

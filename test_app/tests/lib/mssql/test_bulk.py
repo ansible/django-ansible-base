@@ -287,15 +287,17 @@ def test_bulk_update_delegates_to_super_on_postgres(monkeypatch):
 
 
 def test_bulk_update_clamps_explicit_batch_size_on_microsoft(monkeypatch):
-    "A CASE...WHEN update binds two parameters per field per row (key and value)."
+    "A CASE...WHEN update binds two parameters per field per row plus one pk in the WHERE clause."
     queryset, _ = make_queryset(monkeypatch)
     spy = Mock(return_value=0)
     monkeypatch.setattr(QuerySet, "bulk_update", spy)
     objs = [make_event("a", pk=1)]
 
-    # 3 fields x 2 parameters/field x N rows: (2100 - 100) // 6 = 333
+    # Django combines all fields into one UPDATE per batch: N rows bind
+    # 2 parameters per field (WHEN key + value) plus N pk values in the
+    # pk__in filter — 3 fields: (2100 - 100) // (2*3 + 1) = 285
     queryset.bulk_update(objs, ["f1", "f2", "f3"], batch_size=800)
-    spy.assert_called_with(objs, ["f1", "f2", "f3"], batch_size=333)
+    spy.assert_called_with(objs, ["f1", "f2", "f3"], batch_size=285)
 
     # a smaller explicit batch is never grown
     queryset.bulk_update(objs, ["f1", "f2", "f3"], batch_size=10)
@@ -305,7 +307,7 @@ def test_bulk_update_clamps_explicit_batch_size_on_microsoft(monkeypatch):
     # row count for same-model fields but NOT for fields inherited from a
     # parent table, so the default batch can exceed the parameter ceiling
     queryset.bulk_update(objs, ["f1", "f2", "f3"], batch_size=None)
-    spy.assert_called_with(objs, ["f1", "f2", "f3"], batch_size=333)
+    spy.assert_called_with(objs, ["f1", "f2", "f3"], batch_size=285)
 
 
 def test_function_form_delegates_through_queryset(monkeypatch):

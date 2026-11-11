@@ -3,12 +3,14 @@ from collections import defaultdict
 from typing import Any, Dict, Optional, Sequence, Tuple, Type, Union
 
 from django.apps import apps
+from django.db import connections
 from django.db import models as django_models
+from django.db import router, transaction
 from django.db.models import Max
 from django.db.models.options import Options
 from django.utils.translation import gettext_lazy as _
 
-from ansible_base.lib.mssql.bulk import MSSQLSafeManager
+from ansible_base.lib.mssql.bulk import MSSQLSafeManager, MSSQLSafeQuerySet
 
 from ..remote import (
     RemoteObject,
@@ -18,6 +20,30 @@ from ..remote import (
 )
 
 
+class DABContentTypeQuerySet(MSSQLSafeQuerySet):
+    """DABContentType queryset whose delete() routes mssql-safe object-role cleanup.
+
+    QuerySet.delete() bypasses Model.delete(), so without this a queryset
+    deletion would hit the same unique-assignment collision on SQL Server that
+    DABContentType.delete() prevents (see that method).
+    """
+
+    def delete(self):
+        # Route through the write alias, like Django's own QuerySet.delete:
+        # without _for_write, self.db resolves to the router's read database.
+        self._for_write = True
+        if connections[self.db].vendor == 'microsoft':
+            from ansible_base.rbac.caching import delete_object_roles
+            from ansible_base.rbac.models import ObjectRole
+
+            with transaction.atomic(using=self.db):
+                delete_object_roles(
+                    ObjectRole.objects.using(self.db).filter(django_models.Q(content_type__in=self) | django_models.Q(role_definition__content_type__in=self))
+                )
+                return super().delete()
+        return super().delete()
+
+
 class DABContentTypeManager(MSSQLSafeManager[django_models.Model]):
     """Manager storing DABContentType objects in a local cache like original ContentType.
 
@@ -25,6 +51,9 @@ class DABContentTypeManager(MSSQLSafeManager[django_models.Model]):
     """
 
     use_in_migrations = True
+
+    def get_queryset(self):
+        return DABContentTypeQuerySet(self.model, using=self._db, hints=self._hints)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -284,6 +313,33 @@ class DABContentType(django_models.Model):
             if update_fields := kwargs.get('update_fields', []):
                 update_fields.append('api_slug')
         return super().save(*args, **kwargs)
+
+    def delete(self, using=None, keep_parents=False):
+        """Remove dependent object roles before the cascade, on SQL Server.
+
+        Django's deletion collector NULLs the nullable assignment.object_role
+        foreign key before deleting on databases that cannot defer constraint
+        checks, which turns two object-scoped grants for one actor into
+        colliding global grants. Deleting the object roles (and with them the
+        assignments) first avoids that; on other vendors this is a passthrough.
+        """
+        using = using or router.db_for_write(type(self), instance=self)
+        with transaction.atomic(using=using):
+            if connections[using].vendor == 'microsoft':
+                from ansible_base.rbac.caching import delete_object_roles
+                from ansible_base.rbac.models import ObjectRole
+
+                delete_object_roles(
+                    ObjectRole.objects.using(using).filter(django_models.Q(content_type=self) | django_models.Q(role_definition__content_type=self))
+                )
+            result = super().delete(using=using, keep_parents=keep_parents)
+        # Model.delete() nulls self.pk, and this instance is often the one the
+        # manager cache holds — without eviction the cache would keep handing
+        # out the deleted (now unsaved) content type.
+        objects = getattr(type(self), 'objects', None)
+        if hasattr(objects, 'clear_cache'):
+            objects.clear_cache()
+        return result
 
     def model_class(self) -> Union[Type[django_models.Model], Type[RemoteObject]]:
         """Return the model class or a stand-in.

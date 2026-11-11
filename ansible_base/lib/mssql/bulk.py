@@ -110,12 +110,13 @@ class MSSQLSafeQuerySet(models.QuerySet):
         connection = connections[self.db]
         if connection.vendor != "microsoft":
             return super().bulk_update(objs, fields, batch_size=batch_size)
-        # A CASE...WHEN update binds two parameters per field per row (the key
-        # comparison and the new value). mssql-django's bulk_batch_size halves
-        # its row count for same-model fields but NOT for fields inherited from
-        # a parent table, so clamp every batch — explicit or default — with the
-        # safe formula.
-        max_batch = (SQL_SERVER_MAX_QUERY_PARAMETERS - SQL_SERVER_QUERY_PARAMETER_HEADROOM) // max(1, 2 * len(fields))
+        # Django combines all fields into one UPDATE per batch: each row binds
+        # two parameters per field (the CASE WHEN key comparison and the new
+        # value) plus one pk value in the WHERE clause. mssql-django's
+        # bulk_batch_size halves its row count for same-model fields but NOT
+        # for fields inherited from a parent table, so clamp every batch —
+        # explicit or default — with the safe formula.
+        max_batch = (SQL_SERVER_MAX_QUERY_PARAMETERS - SQL_SERVER_QUERY_PARAMETER_HEADROOM) // max(1, 2 * len(fields) + 1)
         batch_size = min(batch_size, max_batch) if batch_size else max_batch
         return super().bulk_update(objs, fields, batch_size=batch_size)
 
