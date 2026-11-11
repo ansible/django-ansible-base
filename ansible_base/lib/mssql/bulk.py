@@ -79,9 +79,17 @@ class MSSQLSafeQuerySet(models.QuerySet):
                 update_fields=update_fields,
             )
         if ignore_conflicts and not connection.features.supports_ignore_conflicts:
-            return self._bulk_create_ignoring_conflicts(objs, batch_size)
+            # All-or-nothing, like a native ON CONFLICT DO NOTHING statement:
+            # without the outer atomic, the per-row fallback below would commit
+            # each row separately, leaving rows before a later error committed.
+            with transaction.atomic(using=self.db):
+                return self._bulk_create_ignoring_conflicts(objs, batch_size)
         if not ignore_conflicts and not connection.features.can_return_rows_from_bulk_insert:
-            return self._bulk_create_with_savepoints(objs)
+            # Same guarantee for the savepoint fallback: each batch releases at
+            # its savepoint, so a failure in a later batch must not leave
+            # earlier batches committed.
+            with transaction.atomic(using=self.db):
+                return self._bulk_create_with_savepoints(objs)
         return self._delegate_bulk_create(
             objs,
             batch_size=batch_size,
@@ -102,12 +110,13 @@ class MSSQLSafeQuerySet(models.QuerySet):
         connection = connections[self.db]
         if connection.vendor != "microsoft":
             return super().bulk_update(objs, fields, batch_size=batch_size)
-        if batch_size is not None:
-            # mssql-django already clamps its own default (batch_size=None) via
-            # DatabaseOperations.bulk_batch_size; only an explicit caller-chosen
-            # batch can exceed SQL Server's parameter ceiling.
-            max_batch = (SQL_SERVER_MAX_QUERY_PARAMETERS - SQL_SERVER_QUERY_PARAMETER_HEADROOM) // max(1, len(fields))
-            batch_size = min(batch_size, max_batch)
+        # A CASE...WHEN update binds two parameters per field per row (the key
+        # comparison and the new value). mssql-django's bulk_batch_size halves
+        # its row count for same-model fields but NOT for fields inherited from
+        # a parent table, so clamp every batch — explicit or default — with the
+        # safe formula.
+        max_batch = (SQL_SERVER_MAX_QUERY_PARAMETERS - SQL_SERVER_QUERY_PARAMETER_HEADROOM) // max(1, 2 * len(fields))
+        batch_size = min(batch_size, max_batch) if batch_size else max_batch
         return super().bulk_update(objs, fields, batch_size=batch_size)
 
     def _bulk_create_ignoring_conflicts(self, objs, batch_size):

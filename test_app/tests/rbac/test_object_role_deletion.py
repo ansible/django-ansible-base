@@ -113,3 +113,48 @@ class TestRoleDefinitionDeletion:
 
         assert not ObjectRole.objects.filter(role_definition_id=inv_rd.id).exists()
         assert not RoleUserAssignment.objects.filter(role_definition_id=inv_rd.id).exists()
+
+    def test_deleting_role_definition_queryset_removes_multi_object_assignments(self, rando, organization, inv_rd):
+        """QuerySet.delete() bypasses Model.delete(), so the queryset form needs
+        its own route through the same mssql-safe object-role cleanup as the
+        instance method."""
+        from test_app.models import Inventory
+
+        inventory_a = Inventory.objects.create(name='rd-qs-delete-inv-a', organization=organization)
+        inventory_b = Inventory.objects.create(name='rd-qs-delete-inv-b', organization=organization)
+        inv_rd.give_permission(rando, inventory_a)
+        inv_rd.give_permission(rando, inventory_b)
+
+        assert RoleUserAssignment.objects.filter(role_definition=inv_rd, user=rando).count() == 2
+
+        RoleDefinition.objects.filter(pk=inv_rd.pk).delete()
+
+        assert not RoleDefinition.objects.filter(pk=inv_rd.pk).exists()
+        assert not ObjectRole.objects.filter(role_definition_id=inv_rd.id).exists()
+        assert not RoleUserAssignment.objects.filter(role_definition_id=inv_rd.id).exists()
+
+    @pytest.mark.django_db(transaction=True)
+    def test_deleting_role_definition_is_atomic(self, rando, organization, inv_rd, monkeypatch):
+        """A failure in the collector after the object-role cleanup must roll
+        the cleanup back with it: a failed role-definition delete leaves the
+        grants in place, on every vendor (in autocommit the cleanup otherwise
+        commits before the collector runs)."""
+        from test_app.models import Inventory
+
+        def collector_failure(self, *args, **kwargs):
+            raise RuntimeError('simulated collector failure')
+
+        inventory_a = Inventory.objects.create(name='rd-atomic-inv-a', organization=organization)
+        inventory_b = Inventory.objects.create(name='rd-atomic-inv-b', organization=organization)
+        inv_rd.give_permission(rando, inventory_a)
+        inv_rd.give_permission(rando, inventory_b)
+        assert RoleUserAssignment.objects.filter(role_definition=inv_rd, user=rando).count() == 2
+
+        monkeypatch.setattr('django.db.models.Model.delete', collector_failure)
+
+        with pytest.raises(RuntimeError, match='simulated collector failure'):
+            inv_rd.delete()
+
+        inv_rd.refresh_from_db()
+        assert ObjectRole.objects.filter(role_definition_id=inv_rd.id).count() == 2
+        assert RoleUserAssignment.objects.filter(role_definition=inv_rd, user=rando).count() == 2

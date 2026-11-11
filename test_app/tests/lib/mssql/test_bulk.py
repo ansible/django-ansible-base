@@ -126,8 +126,8 @@ def test_bulk_create_ignoring_conflicts_retries_per_row_after_batch_failure(monk
     spy.assert_called_once_with([duplicate, fresh], batch_size=None, ignore_conflicts=False)
     assert result == [fresh]
     assert fresh.id == 88
-    # one atomic block for the batch attempt plus one per row
-    assert atomic.call_count == 3
+    # one outer all-or-nothing atomic, one for the batch attempt, one per row
+    assert atomic.call_count == 4
     assert all(c == call(using="default") for c in atomic.call_args_list)
     assert fake.needs_rollback is False
 
@@ -201,7 +201,9 @@ def test_ignore_conflicts_without_row_return_skips_batch_attempt(monkeypatch):
 
     spy.assert_not_called()
     assert result == [obj] and obj.id == 88
-    atomic.assert_called_once_with(using="default")
+    # one outer all-or-nothing atomic plus one for the per-row insert
+    assert atomic.call_count == 2
+    assert all(c == call(using="default") for c in atomic.call_args_list)
 
 
 @pytest.mark.parametrize(
@@ -229,6 +231,7 @@ def test_is_unique_key_violation_walks_cause_chain():
 def test_bulk_create_falls_back_to_savepoints_when_rows_not_returnable(monkeypatch):
     "User opted out of return_rows_bulk_insert: batches of 50, one row per _insert."
     queryset, _ = make_queryset(monkeypatch, can_return_rows=False)
+    patch_atomic(monkeypatch)
     savepoint, commit, rollback = patch_savepoints(monkeypatch, ("batch-1", "batch-2"))
     spy = patch_super_bulk_create(monkeypatch)
     pre_save_receivers = pre_save.receivers
@@ -254,6 +257,7 @@ def test_bulk_create_falls_back_to_savepoints_when_rows_not_returnable(monkeypat
 
 def test_bulk_create_savepoint_fallback_rolls_back_failed_batch(monkeypatch):
     queryset, _ = make_queryset(monkeypatch, can_return_rows=False)
+    patch_atomic(monkeypatch)
     _, commit, rollback = patch_savepoints(monkeypatch, ("batch-1",))
     obj = make_event("fresh")
     obj.save = Mock(side_effect=RuntimeError("save must not be called"))
@@ -279,23 +283,25 @@ def test_bulk_update_delegates_to_super_on_postgres(monkeypatch):
 
 
 def test_bulk_update_clamps_explicit_batch_size_on_microsoft(monkeypatch):
-    "mssql-django clamps batch_size=None itself (bulk_batch_size); explicit sizes are our job."
+    "A CASE...WHEN update binds two parameters per field per row (key and value)."
     queryset, _ = make_queryset(monkeypatch)
     spy = Mock(return_value=0)
     monkeypatch.setattr(QuerySet, "bulk_update", spy)
     objs = [make_event("a", pk=1)]
 
-    # 3 fields x N rows CASE-WHEN parameters: (2100 - 100) // 3 = 666
+    # 3 fields x 2 parameters/field x N rows: (2100 - 100) // 6 = 333
     queryset.bulk_update(objs, ["f1", "f2", "f3"], batch_size=800)
-    spy.assert_called_with(objs, ["f1", "f2", "f3"], batch_size=666)
+    spy.assert_called_with(objs, ["f1", "f2", "f3"], batch_size=333)
 
     # a smaller explicit batch is never grown
     queryset.bulk_update(objs, ["f1", "f2", "f3"], batch_size=10)
     spy.assert_called_with(objs, ["f1", "f2", "f3"], batch_size=10)
 
-    # batch_size=None goes through untouched: mssql-django's bulk_batch_size applies
-    queryset.bulk_update(objs, ["name"], batch_size=None)
-    spy.assert_called_with(objs, ["name"], batch_size=None)
+    # batch_size=None is clamped too: mssql-django's bulk_batch_size halves its
+    # row count for same-model fields but NOT for fields inherited from a
+    # parent table, so the default batch can exceed the parameter ceiling
+    queryset.bulk_update(objs, ["f1", "f2", "f3"], batch_size=None)
+    spy.assert_called_with(objs, ["f1", "f2", "f3"], batch_size=333)
 
 
 def test_function_form_delegates_through_queryset(monkeypatch):
@@ -396,6 +402,52 @@ class TestBulkCreateLive:
         assert not isinstance(excinfo.value, TransactionManagementError)
         assert 'truncat' in str(excinfo.value).lower()
 
+    @skipUnless(connection.vendor == "microsoft", "MS SQL Server only: postgres has native ignore_conflicts")
+    @pytest.mark.django_db(transaction=True)
+    def test_ignore_conflicts_fallback_is_all_or_nothing(self, monkeypatch):
+        """Without an outer transaction the per-row fallback commits each row as
+        it goes, so a later foreign-key error would leave earlier rows committed
+        — a native ON CONFLICT DO NOTHING statement is all-or-nothing, so the
+        fallback must be too. Uses the trigger-table opt-out (no bulk row
+        returns) to reach the per-row path deterministically."""
+        from django.contrib.auth import get_user_model
+
+        from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
+
+        monkeypatch.setattr(connection.features, "can_return_rows_from_bulk_insert", False)
+
+        rd = RoleDefinition.objects.create(name='bulk-atomic-rd')
+        user = get_user_model().objects.create(username='bulk-atomic-user')
+        good = RoleUserAssignment(user=user, role_definition=rd, object_id='')
+        dangling_fk = RoleUserAssignment(user_id=99999999, role_definition=rd, object_id='')
+
+        with pytest.raises(IntegrityError):
+            RoleUserAssignment.objects.bulk_create([good, dangling_fk], ignore_conflicts=True)
+
+        assert not RoleUserAssignment.objects.filter(role_definition=rd).exists()
+
+    @skipUnless(connection.vendor == "microsoft", "MS SQL Server only: savepoint fallback is mssql-specific")
+    @pytest.mark.django_db(transaction=True)
+    def test_savepoint_fallback_is_all_or_nothing(self, monkeypatch):
+        """The savepoint-batched fallback releases each batch at its savepoint;
+        a failure in a later batch must not leave earlier batches committed."""
+        from ansible_base.rbac.models import ObjectRole, RoleDefinition
+        from ansible_base.rbac.permission_registry import permission_registry
+        from test_app.models import Inventory
+
+        monkeypatch.setattr(connection.features, "can_return_rows_from_bulk_insert", False)
+
+        rd = RoleDefinition.objects.create(name='bulk-sp-atomic-rd')
+        ct = permission_registry.content_type_model.objects.get_for_model(Inventory)
+        good = [ObjectRole(role_definition=rd, content_type=ct, object_id=str(i)) for i in range(bulk_module._SAVEPOINT_FALLBACK_BATCH)]
+        # one row past the first batch, with a dangling role_definition FK
+        dangling = ObjectRole(role_definition_id=99999999, content_type=ct, object_id='dangling')
+
+        with pytest.raises(IntegrityError):
+            ObjectRole.objects.bulk_create(good + [dangling])
+
+        assert not ObjectRole.objects.filter(role_definition=rd).exists()
+
 
 class TestManagerAttachment:
     "Task 2: the shared bases hand every model a bulk-safe default manager."
@@ -425,7 +477,9 @@ class TestManagerAttachment:
         from django.apps import apps
 
         model = apps.get_model(app_label, model_name)
-        assert model.objects.get_queryset().__class__ is MSSQLSafeQuerySet, f"{app_label}.{model_name}"
+        # a subclass is fine (RoleDefinition adds a delete() override); what
+        # matters is that bulk writes dispatch through the mssql-safe queryset
+        assert issubclass(model.objects.get_queryset().__class__, MSSQLSafeQuerySet), f"{app_label}.{model_name}"
 
     def test_abstract_dab_user_manager_unchanged(self):
         "Users are never bulk-written with ignore_conflicts; UserManager stays."
