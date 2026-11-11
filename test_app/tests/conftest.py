@@ -25,8 +25,37 @@ from ansible_base.lib.testing.util import copy_fixture, delete_authenticator
 from ansible_base.oauth2_provider.fixtures import *  # noqa: F403, F401
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
-from ansible_base.resource_registry.models.service_identifier import service_id
+from ansible_base.resource_registry.models.service_identifier import ServiceID, service_id
 from test_app import models
+
+# This suite commits session-wide demo data and must run separately, as in tox.
+# An explicit `pytest test_app/tests/query_count_scale` still collects it.
+collect_ignore = ["query_count_scale"]
+
+
+@pytest.fixture(scope='session')
+def django_db_setup(django_db_setup, django_db_blocker):
+    # Transactional tests flush data but retain migration records. On the next
+    # --reuse-db run Django does not rerun data migrations. Restore their test
+    # prerequisites before any test creates a registered resource. Leave fresh
+    # migration data untouched, including the Resource row checked by the
+    # resource registry's post-migration tests.
+    with django_db_blocker.unblock():
+        if not ServiceID.objects.exists():
+            ServiceID.objects.create()
+        service_uuid = ServiceID.objects.get().pk
+        models.ResourceMigrationTestModel.objects.get_or_create(name='migration resource')
+
+    def restore_after_flush(sender, using, **kwargs):
+        if sender.label == 'test_app':
+            # Keep the UUID stable: service_id() caches it for this process.
+            ServiceID.objects.using(using).get_or_create(id=service_uuid)
+            models.ResourceMigrationTestModel.objects.using(using).get_or_create(name='migration resource')
+
+    # TransactionTestCase flushes between tests without rerunning data migrations.
+    post_migrate.connect(restore_after_flush)
+    yield
+    post_migrate.disconnect(restore_after_flush)
 
 
 @pytest.fixture()

@@ -7,12 +7,13 @@ Therefore we can run any manage.py command directly from the root folder.
 
 # Setting up an environment
 
-If you are attempting to start test_app for the first time in a fresh environment you will first need a python virtual environment configured to run test_app. Create and activate a python 3 virtual environment using any method you like and then run the following command from the root of your django-ansible-base checkout:
+Create and activate a Python virtual environment compatible with `requires-python` in `pyproject.toml`, then run the following command from the root of your django-ansible-base checkout:
 
 ```
-pip install -r requirements/requirements_all.txt
-pip install -r requirements/requirements_dev.txt
+python -m pip install --no-binary lxml,xmlsec -r requirements/requirements_all.txt -r requirements/requirements_dev.txt
 ```
+
+`--no-binary lxml,xmlsec` builds both bindings against the same system libxml2, avoiding incompatibilities between bundled wheel libraries and system-linked xmlsec. This requires a compiler and development headers for Python, libxml2, and libxmlsec1; LDAP also requires LDAP/SASL headers.
 
 # Initialize the test app
 
@@ -37,13 +38,14 @@ LARGE=true ./test_app/scripts/bootstrap.sh
 If not using the bootstrap script, you'll need to manually start the database container.
 You can do this with: `make postgres`
 
-Note that it might take a few seconds to create the database and be ready for connections, so it's ill-advised to sequence a command immediately after `make postgres`. The bootstrap script accounts for this, waiting for the database to be ready before continuing.
+`make postgres` waits for the database to be healthy before returning.
 
 ```
 python manage.py migrate
 ```
 
-This will apply a handful of migrations to a sql lite database. The files behind the sqllite database are stored in `test_app/tests/sqllite_dbs`. If you ever want to reset your database or are having issues with the database you can remove these files and test_app will create a fresh database.
+This applies migrations to the development PostgreSQL database (`dab_db` by
+default). It does not prepare pytest's separate test database.
 
 ## Create an admin user
 
