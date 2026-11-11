@@ -22,6 +22,10 @@ This module will be the source of truth for things like the projet name.
 
 class StandInPK:
     UUID_FIELD_TYPES = {'uuid', 'uniqueidentifier', 'char(32)'}
+    # Logical primary-key type strings (as stored in DABContentType.pk_field_type)
+    # that StandInPK represents with an integer field, covering the PostgreSQL,
+    # SQLite and SQL Server spellings of integer primary keys.
+    INTEGER_FIELD_TYPES = {'int', 'integer', 'integer unsigned', 'bigint', 'smallint'}
 
     def __init__(self, ct: models.Model):
         self.pk_field_type = ct.pk_field_type
