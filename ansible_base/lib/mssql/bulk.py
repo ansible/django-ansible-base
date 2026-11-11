@@ -14,6 +14,7 @@ utilities only — Django swaps historical models' managers for a plain
 """
 
 import logging
+import re
 
 from django.db import DEFAULT_DB_ALIAS, IntegrityError, connections, models, router, transaction
 
@@ -24,6 +25,31 @@ logger = logging.getLogger(__name__)
 # Rows per savepoint-batched fallback when the backend cannot return rows from
 # a multi-row insert (ported from the original SQL Server support work).
 _SAVEPOINT_FALLBACK_BATCH = 50
+
+# SQL Server native error numbers for duplicate-key failures:
+# 2627 = unique constraint violation, 2601 = unique index violation.
+# Other integrity errors (foreign key 547, check constraints) must not be
+# swallowed by ignore_conflicts — PostgreSQL's ON CONFLICT DO NOTHING only
+# skips unique conflicts, and the two vendors must agree.
+_UNIQUE_KEY_ERROR_NUMBERS = frozenset((2627, 2601))
+_NATIVE_ERROR_NUMBER_RE = re.compile(r"\((\d+)\)")
+
+
+def _is_unique_key_violation(exc: BaseException) -> bool:
+    """True when a SQL Server IntegrityError is a duplicate-key failure.
+
+    mssql-django surfaces the native error number only inside the exception
+    message text, so scan the exception and its cause chain for "(2627)" /
+    "(2601)".
+    """
+    error: BaseException | None = exc
+    while error is not None:
+        for arg in getattr(error, "args", ()) or ():
+            for match in _NATIVE_ERROR_NUMBER_RE.finditer(str(arg)):
+                if int(match.group(1)) in _UNIQUE_KEY_ERROR_NUMBERS:
+                    return True
+        error = error.__cause__
+    return False
 
 
 class MSSQLSafeQuerySet(models.QuerySet):
@@ -85,34 +111,33 @@ class MSSQLSafeQuerySet(models.QuerySet):
         return super().bulk_update(objs, fields, batch_size=batch_size)
 
     def _bulk_create_ignoring_conflicts(self, objs, batch_size):
-        """Insert ignoring conflicts without native support: try the batch, retry rows that conflict."""
+        """Insert ignoring conflicts without native support: try the batch, retry rows that conflict.
+
+        Each attempt runs inside ``transaction.atomic`` so a failure rolls back
+        to its savepoint with Django's own rollback bookkeeping — a caller's
+        outer transaction is never left with ``needs_rollback`` set, and the
+        original exception reaches the caller unchanged. Only duplicate-key
+        IntegrityErrors (SQL Server 2627/2601) are ignored, matching what
+        PostgreSQL's ``ON CONFLICT DO NOTHING`` skips.
+        """
         connection = connections[self.db]
         created = []
         if connection.features.can_return_rows_from_bulk_insert:
-            savepoint_id = transaction.savepoint(using=self.db)
             try:
-                created = super().bulk_create(objs, batch_size=batch_size, ignore_conflicts=False)
-                transaction.savepoint_commit(savepoint_id, using=self.db)
-                return created
+                with transaction.atomic(using=self.db):
+                    return super().bulk_create(objs, batch_size=batch_size, ignore_conflicts=False)
             except IntegrityError as exc:
+                if not _is_unique_key_violation(exc):
+                    raise
                 logger.warning("bulk_create batch conflicted for %s: %s", self.model.__name__, exc)
-                connection.needs_rollback = False
-                transaction.savepoint_rollback(savepoint_id, using=self.db)
-            except BaseException:
-                transaction.savepoint_rollback(savepoint_id, using=self.db)
-                raise
         for obj in objs:
-            savepoint_id = transaction.savepoint(using=self.db)
             try:
-                created.append(self._bulk_insert_one(obj))
-                transaction.savepoint_commit(savepoint_id, using=self.db)
+                with transaction.atomic(using=self.db):
+                    created.append(self._bulk_insert_one(obj))
             except IntegrityError as exc:
+                if not _is_unique_key_violation(exc):
+                    raise
                 logger.warning("bulk_create row conflicted for %s: %s", self.model.__name__, exc)
-                connection.needs_rollback = False
-                transaction.savepoint_rollback(savepoint_id, using=self.db)
-            except BaseException:
-                transaction.savepoint_rollback(savepoint_id, using=self.db)
-                raise
         return created
 
     def _bulk_create_with_savepoints(self, objs):
@@ -139,7 +164,9 @@ class MSSQLSafeQuerySet(models.QuerySet):
         self._prepare_for_bulk_create([obj])
         opts = self.model._meta
         fields = [field for field in opts.concrete_fields if not field.generated]
-        if not obj._is_pk_set():
+        if obj.pk is None:
+            # Version-safe form of Model._is_pk_set (Django 5.2+): leave unset
+            # AutoField PKs to the database, like Django's own bulk paths.
             fields = [field for field in fields if not isinstance(field, models.AutoField)]
 
         returning_fields = opts.db_returning_fields

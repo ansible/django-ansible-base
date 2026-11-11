@@ -1,11 +1,12 @@
 """Tests for ansible_base.lib.mssql.bulk — transparent MS SQL Server bulk writes."""
 
+import contextlib
 from types import SimpleNamespace
 from unittest import skipUnless
 from unittest.mock import Mock, call
 
 import pytest
-from django.db import IntegrityError, connection
+from django.db import DataError, IntegrityError, connection
 from django.db.models import QuerySet
 from django.db.models.signals import post_save, pre_save
 
@@ -42,6 +43,19 @@ def patch_savepoints(monkeypatch, savepoint_ids):
     monkeypatch.setattr(bulk_module.transaction, "savepoint_commit", commit)
     monkeypatch.setattr(bulk_module.transaction, "savepoint_rollback", rollback)
     return savepoint, commit, rollback
+
+
+def patch_atomic(monkeypatch):
+    """Replace transaction.atomic with a no-op context manager.
+
+    The ignore-conflicts retry path runs each attempt inside transaction.atomic;
+    these tests are not marked django_db, so the real atomic block must not
+    touch a database connection. The savepoint/rollback bookkeeping inside
+    atomic is Django's own and is covered by the live tests.
+    """
+    atomic = Mock(side_effect=lambda *args, **kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(bulk_module.transaction, "atomic", atomic)
+    return atomic
 
 
 def patch_super_bulk_create(monkeypatch, **kwargs):
@@ -101,28 +115,48 @@ def test_bulk_create_update_conflicts_not_special_cased(monkeypatch):
 
 def test_bulk_create_ignoring_conflicts_retries_per_row_after_batch_failure(monkeypatch):
     queryset, fake = make_queryset(monkeypatch, can_return_rows=True, supports_ignore_conflicts=False)
-    savepoint, commit, rollback = patch_savepoints(monkeypatch, ("batch", "row-dup", "row-ok"))
-    spy = patch_super_bulk_create(monkeypatch, side_effect=IntegrityError("batch conflicted"))
+    atomic = patch_atomic(monkeypatch)
+    spy = patch_super_bulk_create(monkeypatch, side_effect=IntegrityError("(2627) batch conflicted"))
     duplicate = make_event("dup")
     fresh = make_event("fresh")
-    queryset._insert = Mock(side_effect=[IntegrityError("duplicate"), [(88,)]])
+    queryset._insert = Mock(side_effect=[IntegrityError("(2601) duplicate"), [(88,)]])
 
     result = queryset.bulk_create([duplicate, fresh], ignore_conflicts=True)
 
     spy.assert_called_once_with([duplicate, fresh], batch_size=None, ignore_conflicts=False)
     assert result == [fresh]
     assert fresh.id == 88
-    assert savepoint.call_count == 3
-    rollback.assert_has_calls([call("batch", using="default"), call("row-dup", using="default")])
-    commit.assert_called_once_with("row-ok", using="default")
+    # one atomic block for the batch attempt plus one per row
+    assert atomic.call_count == 3
+    assert all(c == call(using="default") for c in atomic.call_args_list)
     assert fake.needs_rollback is False
+
+
+def test_bulk_create_ignoring_conflicts_reraises_non_unique_integrity_errors(monkeypatch):
+    "A foreign-key or check-constraint violation (547) is not a duplicate key; it must raise."
+    queryset, _ = make_queryset(monkeypatch, can_return_rows=True, supports_ignore_conflicts=False)
+    patch_atomic(monkeypatch)
+    patch_super_bulk_create(monkeypatch, side_effect=IntegrityError("(547) INSERT conflicted with the FOREIGN KEY constraint"))
+
+    with pytest.raises(IntegrityError, match="547"):
+        queryset.bulk_create([make_event("a")], ignore_conflicts=True)
+
+
+def test_bulk_create_ignoring_conflicts_propagates_other_errors(monkeypatch):
+    "A non-IntegrityError (deadlock, truncation) reaches the caller unchanged."
+    queryset, _ = make_queryset(monkeypatch, can_return_rows=True, supports_ignore_conflicts=False)
+    patch_atomic(monkeypatch)
+    patch_super_bulk_create(monkeypatch, side_effect=DataError("(22001) string or binary data would be truncated"))
+
+    with pytest.raises(DataError, match="truncated"):
+        queryset.bulk_create([make_event("a")], ignore_conflicts=True)
 
 
 def test_bulk_create_ignoring_conflicts_sets_state_and_pk(monkeypatch):
     "Per-row retry results carry a populated PK and a settled _state, like plain bulk_create."
     queryset, _ = make_queryset(monkeypatch, can_return_rows=True, supports_ignore_conflicts=False)
-    patch_savepoints(monkeypatch, ("batch", "row"))
-    patch_super_bulk_create(monkeypatch, side_effect=IntegrityError("batch conflicted"))
+    patch_atomic(monkeypatch)
+    patch_super_bulk_create(monkeypatch, side_effect=IntegrityError("(2627) batch conflicted"))
     obj = make_event("fresh")
     queryset._insert = Mock(return_value=[(88,)])
 
@@ -137,8 +171,8 @@ def test_bulk_create_ignoring_conflicts_sets_state_and_pk(monkeypatch):
 def test_bulk_create_per_row_skips_unset_autofield(monkeypatch):
     "Unset AutoField PKs are left to the database, exactly like Django's own bulk paths."
     queryset, _ = make_queryset(monkeypatch, can_return_rows=True, supports_ignore_conflicts=False)
-    patch_savepoints(monkeypatch, ("batch", "row", "batch-2", "row-2"))
-    patch_super_bulk_create(monkeypatch, side_effect=IntegrityError("batch conflicted"))
+    patch_atomic(monkeypatch)
+    patch_super_bulk_create(monkeypatch, side_effect=IntegrityError("(2627) batch conflicted"))
     obj = make_event("fresh")
     queryset._insert = Mock(return_value=[(88,)])
 
@@ -158,7 +192,7 @@ def test_bulk_create_per_row_skips_unset_autofield(monkeypatch):
 def test_ignore_conflicts_without_row_return_skips_batch_attempt(monkeypatch):
     "When the backend cannot return rows from a batch, go straight to per-row inserts (old return_ids=True path)."
     queryset, _ = make_queryset(monkeypatch, can_return_rows=False, supports_ignore_conflicts=False)
-    savepoint, commit, rollback = patch_savepoints(monkeypatch, ("row",))
+    atomic = patch_atomic(monkeypatch)
     spy = patch_super_bulk_create(monkeypatch)
     obj = make_event("fresh")
     queryset._insert = Mock(return_value=[(88,)])
@@ -167,9 +201,29 @@ def test_ignore_conflicts_without_row_return_skips_batch_attempt(monkeypatch):
 
     spy.assert_not_called()
     assert result == [obj] and obj.id == 88
-    savepoint.assert_called_once_with(using="default")
-    commit.assert_called_once_with("row", using="default")
-    rollback.assert_not_called()
+    atomic.assert_called_once_with(using="default")
+
+
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("(2627) Violation of PRIMARY KEY constraint", True),
+        ("(2601) Cannot insert duplicate key row", True),
+        ("(547) The INSERT statement conflicted with the FOREIGN KEY constraint", False),
+        ("(23000) some other integrity failure", False),
+    ],
+)
+def test_is_unique_key_violation(message, expected):
+    assert bulk_module._is_unique_key_violation(IntegrityError(message)) is expected
+
+
+def test_is_unique_key_violation_walks_cause_chain():
+    "mssql-django may wrap the driver error; the native number can live on the cause."
+    cause = IntegrityError("(2601) duplicate key")
+    exc = IntegrityError("(23000) wrapper")
+    exc.__cause__ = cause
+
+    assert bulk_module._is_unique_key_violation(exc) is True
 
 
 def test_bulk_create_falls_back_to_savepoints_when_rows_not_returnable(monkeypatch):
@@ -297,6 +351,50 @@ class TestBulkCreateLive:
 
         assert len(result) == 3
         assert all(obj.pk is not None and obj._state.adding is False for obj in result)
+
+    @skipUnless(connection.vendor == "microsoft", "MS SQL Server only: PostgreSQL FKs are DEFERRABLE, checked at COMMIT")
+    @pytest.mark.django_db
+    def test_ignore_conflicts_still_raises_non_unique_violations(self, organization):
+        """ignore_conflicts means "skip duplicate keys" only. A row that violates
+        a foreign key must raise on SQL Server, not be silently dropped with
+        bulk_create reporting success. (On PostgreSQL the same row surfaces as an
+        IntegrityError at COMMIT — Django's postgres backend creates FKs
+        DEFERRABLE INITIALLY DEFERRED — so the error is never lost there either.)"""
+        from django.contrib.auth import get_user_model
+
+        from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
+
+        rd = RoleDefinition.objects.create(name='bulk-fk-rd')
+        user = get_user_model().objects.create(username='bulk-fk-user')
+        good = RoleUserAssignment(user=user, role_definition=rd, object_id='')
+        dangling_fk = RoleUserAssignment(user_id=99999999, role_definition=rd, object_id='')
+
+        with pytest.raises(IntegrityError):
+            RoleUserAssignment.objects.bulk_create([good, dangling_fk], ignore_conflicts=True)
+
+    @skipUnless(connection.vendor == "microsoft", "MS SQL Server inline truncation errors")
+    @pytest.mark.django_db
+    def test_ignore_conflicts_does_not_mask_other_errors(self, organization):
+        """A non-IntegrityError inside the ignore-conflicts path (here: a value too
+        long for its column) must reach the caller unchanged — the transaction
+        bookkeeping must not replace it with a TransactionManagementError."""
+        from django.db.transaction import TransactionManagementError
+
+        from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation
+        from ansible_base.rbac.permission_registry import permission_registry
+        from test_app.models import Inventory
+
+        rd = RoleDefinition.objects.create(name='bulk-trunc-rd')
+        inventory = Inventory.objects.create(name='bulk-trunc-inv', organization=organization)
+        ct = permission_registry.content_type_model.objects.get_for_model(Inventory)
+        object_role = ObjectRole.objects.create(role_definition=rd, content_type=ct, object_id=str(inventory.pk))
+        evaluation = RoleEvaluation(role=object_role, codename='x' * 500, content_type_id=ct.id, object_id=inventory.pk)
+
+        with pytest.raises(Exception) as excinfo:
+            RoleEvaluation.objects.bulk_create([evaluation], ignore_conflicts=True)
+
+        assert not isinstance(excinfo.value, TransactionManagementError)
+        assert 'truncat' in str(excinfo.value).lower()
 
 
 class TestManagerAttachment:
