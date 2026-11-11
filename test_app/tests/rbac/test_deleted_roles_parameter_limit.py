@@ -31,6 +31,28 @@ OVER_LIMIT_COUNT = SQL_SERVER_MAX_QUERY_PARAMETERS + 1  # one more than the hard
 
 @pytest.mark.django_db
 @pytest.mark.skipif(connection.vendor != 'microsoft', reason='SQL Server parameter limit regression test')
+def test_delete_object_roles_large_candidate_sets_stay_under_parameter_limit(inv_rd):
+    from ansible_base.rbac.caching import delete_object_roles
+    from ansible_base.rbac.models import ObjectRole
+
+    object_role_count = OVER_LIMIT_COUNT
+    content_type = inv_rd.content_type
+    ObjectRole.objects.bulk_create(
+        [ObjectRole(role_definition=inv_rd, content_type=content_type, object_id=f'parameter-limit-{index}') for index in range(object_role_count)],
+        batch_size=200,
+    )
+
+    parameter_counts = []
+    with connection.execute_wrapper(_assert_sql_server_parameter_limit(parameter_counts)):
+        deleted_count, _ = delete_object_roles(ObjectRole.objects.filter(role_definition=inv_rd))
+
+    assert parameter_counts
+    assert deleted_count >= object_role_count
+    assert not ObjectRole.objects.filter(role_definition=inv_rd).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.skipif(connection.vendor != 'microsoft', reason='SQL Server parameter limit regression test')
 def test_deferred_role_cleanup_large_object_id_sets_stay_under_parameter_limit():
     from ansible_base.rbac.caching import cleanup_deleted_object_roles, cleanup_deleted_team_roles
 
