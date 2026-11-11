@@ -12,6 +12,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.db.utils import IntegrityError
 
+from ansible_base.lib.mssql.params import in_chunks
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import EvaluationsPrefetch, TypesPrefetch
@@ -117,11 +118,14 @@ def cleanup_orphaned_object_roles() -> int:
 
 def object_roles_for_parents(parent_gfks: set[GenericObject]) -> set['ObjectRole']:
     """Return ObjectRoles affected by created objects via their parent chain. Called by defer_rbac_computations flush."""
-    q_exprs = [Q(content_type_id=parent.content_type_id, object_id=parent.pk) for parent in parent_gfks]
-    q_filter = q_exprs[0]
-    for next_q in q_exprs[1:]:
-        q_filter |= next_q
-    to_update = set(ObjectRole.objects.filter(q_filter))
+    to_update: set[ObjectRole] = set()
+    # OR-ed Q pairs bind both values inline, so chunk under the SQL Server parameter limit
+    for chunk in in_chunks(parent_gfks, params_per_value=2):
+        q_exprs = [Q(content_type_id=parent.content_type_id, object_id=parent.pk) for parent in chunk]
+        q_filter = q_exprs[0]
+        for next_q in q_exprs[1:]:
+            q_filter |= next_q
+        to_update.update(ObjectRole.objects.filter(q_filter))
     ancestors = set(ObjectRole.objects.filter(provides_teams__has_roles__in=to_update))
     to_update.update(ancestors)
     return to_update
@@ -554,11 +558,13 @@ def _created_team_roles(
     if not team_ids:
         return team_roles_by_pk, team_to_role_pks
 
-    relevant_filter = Q(content_type_id=object_ct_id, object_id__in=[])
-    for ct_id, parent_id in parent_keys:
-        relevant_filter |= Q(content_type_id=ct_id, object_id=parent_id)
-    relevant_filter &= Q(role_definition_id__in=granting_rd_ids)
-    team_roles_by_pk = {role.pk: role for role in ObjectRole.objects.filter(teams__in=team_ids).filter(relevant_filter).distinct()}
+    # OR-ed Q pairs bind both values inline, so chunk under the SQL Server parameter limit
+    for chunk in in_chunks(parent_keys, params_per_value=2):
+        relevant_filter = Q(content_type_id=object_ct_id, object_id__in=[])
+        for ct_id, parent_id in chunk:
+            relevant_filter |= Q(content_type_id=ct_id, object_id=parent_id)
+        relevant_filter &= Q(role_definition_id__in=granting_rd_ids)
+        team_roles_by_pk.update({role.pk: role for role in ObjectRole.objects.filter(teams__in=team_ids).filter(relevant_filter).distinct()})
     if not team_roles_by_pk:
         return team_roles_by_pk, team_to_role_pks
 

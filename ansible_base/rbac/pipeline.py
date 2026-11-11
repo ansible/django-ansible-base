@@ -13,6 +13,7 @@ from django.db.models.constants import OnConflict
 from django.db.models.signals import post_save  # TEMPORARY: see _fire_post_save / AAP-90162 merge-order note (consumers must connect to ONE signal, not both)
 
 from ansible_base.lib.mssql import bulk as mssql_bulk
+from ansible_base.lib.mssql.params import in_chunks
 from ansible_base.lib.utils.models import current_user_or_system_user
 from ansible_base.rbac.caching import (
     bulk_ancestor_roles,
@@ -569,17 +570,19 @@ def _find_assignments(
     back onto the fetched rows, so signal handlers can read them without a per-row query.
     The GFK content_object cannot be attached this way; it travels via content_objects.
     """
-    q = Q()
-    for ra in resolved:
-        if ra.content_type is None:
-            q |= Q(role_definition_id=ra.role_definition.pk, object_role__isnull=True, **{actor_field: ra.actor.pk})
-        else:
-            obj_role = lookup.get((ra.role_definition.pk, ra.object_id))
-            if obj_role is not None:
-                q |= Q(object_role_id=obj_role.pk, **{actor_field: ra.actor.pk})
-    if not q:
-        return []
-    assignments = list(model.objects.filter(q))
+    assignments: list[AssignmentBase] = []
+    # OR-ed Q pairs bind both values inline, so chunk under the SQL Server parameter limit
+    for chunk in in_chunks(resolved, params_per_value=2):
+        q = Q()
+        for ra in chunk:
+            if ra.content_type is None:
+                q |= Q(role_definition_id=ra.role_definition.pk, object_role__isnull=True, **{actor_field: ra.actor.pk})
+            else:
+                obj_role = lookup.get((ra.role_definition.pk, ra.object_id))
+                if obj_role is not None:
+                    q |= Q(object_role_id=obj_role.pk, **{actor_field: ra.actor.pk})
+        if q:
+            assignments.extend(model.objects.filter(q))
 
     actor_relation = actor_field.removesuffix('_id')
     actor_by_pk = {ra.actor.pk: ra.actor for ra in resolved}

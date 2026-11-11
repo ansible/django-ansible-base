@@ -9,6 +9,7 @@ from django.db.utils import IntegrityError
 
 import ansible_base.lib.checks  # noqa: F401 - register checks
 from ansible_base.lib.mssql import bulk as mssql_bulk
+from ansible_base.lib.mssql.params import in_chunks
 from ansible_base.lib.utils.db import ensure_transaction, migrations_are_complete
 from ansible_base.resource_registry.utils.settings import resource_server_defined
 
@@ -38,12 +39,18 @@ def _update_assignment_resource_ids(content_type, resource_ids):
         app_label=content_type.app_label,
         model=content_type.model,
     )
-    object_id_case = Case(
-        *(When(object_id=object_id, then=Value(ansible_id)) for object_id, ansible_id in resource_ids.items()),
-        output_field=UUIDField(),
-    )
-    for assignment_model in (RoleUserAssignment, RoleTeamAssignment):
-        assignment_model.objects.filter(content_type__in=content_types, object_id__in=resource_ids).update(object_ansible_id=object_id_case)
+    # Case/When entries bind three parameters per entry inline, so chunk under
+    # the SQL Server parameter limit; the filter is scoped to the same chunk so
+    # rows outside it keep their existing value
+    for chunk in in_chunks(list(resource_ids.items()), params_per_value=3):
+        object_id_case = Case(
+            *(When(object_id=object_id, then=Value(ansible_id)) for object_id, ansible_id in chunk),
+            output_field=UUIDField(),
+        )
+        for assignment_model in (RoleUserAssignment, RoleTeamAssignment):
+            assignment_model.objects.filter(content_type__in=content_types, object_id__in=[object_id for object_id, _ in chunk]).update(
+                object_ansible_id=object_id_case
+            )
 
 
 def _sync_backfilled_resource_ids(resource_cls, content_type, object_ids):
