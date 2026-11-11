@@ -138,8 +138,10 @@ def test_bulk_create_ignoring_conflicts_reraises_non_unique_integrity_errors(mon
     patch_atomic(monkeypatch)
     patch_super_bulk_create(monkeypatch, side_effect=IntegrityError("(547) INSERT conflicted with the FOREIGN KEY constraint"))
 
+    obj = make_event("a")
+
     with pytest.raises(IntegrityError, match="547"):
-        queryset.bulk_create([make_event("a")], ignore_conflicts=True)
+        queryset.bulk_create([obj], ignore_conflicts=True)
 
 
 def test_bulk_create_ignoring_conflicts_propagates_other_errors(monkeypatch):
@@ -147,9 +149,10 @@ def test_bulk_create_ignoring_conflicts_propagates_other_errors(monkeypatch):
     queryset, _ = make_queryset(monkeypatch, can_return_rows=True, supports_ignore_conflicts=False)
     patch_atomic(monkeypatch)
     patch_super_bulk_create(monkeypatch, side_effect=DataError("(22001) string or binary data would be truncated"))
+    obj = make_event("a")
 
     with pytest.raises(DataError, match="truncated"):
-        queryset.bulk_create([make_event("a")], ignore_conflicts=True)
+        queryset.bulk_create([obj], ignore_conflicts=True)
 
 
 def test_bulk_create_ignoring_conflicts_sets_state_and_pk(monkeypatch):
@@ -200,7 +203,8 @@ def test_ignore_conflicts_without_row_return_skips_batch_attempt(monkeypatch):
     result = queryset.bulk_create([obj], ignore_conflicts=True)
 
     spy.assert_not_called()
-    assert result == [obj] and obj.id == 88
+    assert result == [obj]
+    assert obj.id == 88
     # one outer all-or-nothing atomic plus one for the per-row insert
     assert atomic.call_count == 2
     assert all(c == call(using="default") for c in atomic.call_args_list)
