@@ -1,25 +1,24 @@
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
+from ansible_base.lib.permissions import TokenScopePermission
 from ansible_base.lib.utils.models import is_system_user
 from ansible_base.lib.utils.settings import get_setting
-
-oauth2_provider_installed = "ansible_base.oauth2_provider" in get_setting("INSTALLED_APPS", [])
 
 
 def try_add_oauth2_scope_permission(permission_classes: list):
     """
-    Attach OAuth2ScopePermission to the provided permission_classes list
+    Attach the provider-independent read/write scope permission.
 
-    :param permission_classes: list of rest_framework permissions
-    :return: A list of permission_classes, including OAuth2ScopePermission
-        if ansible_base.oauth2_provider is installed; otherwise the same
-        permission_classes list supplied to the function
+    The legacy helper name remains for callers that were originally scoped to
+    local OAuth2. Add the permission only when an authentication mechanism
+    capable of producing scoped credentials is installed.
     """
-    if oauth2_provider_installed:
-        from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
+    installed_apps = get_setting("INSTALLED_APPS", [])
+    scope_authentication_apps = {"ansible_base.authentication", "ansible_base.oauth2_provider"}
+    if scope_authentication_apps.isdisjoint(installed_apps):
+        return permission_classes
 
-        return [OAuth2ScopePermission] + permission_classes
-    return permission_classes
+    return [TokenScopePermission] + permission_classes
 
 
 def check_service_token_auth(request, view):

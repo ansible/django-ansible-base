@@ -61,6 +61,7 @@ class AzureADConfiguration(BaseAuthenticatorConfiguration):
 class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, AzureADOAuth2, AbstractAuthenticatorPlugin):  # type: ignore[override]
     configuration_class = AzureADConfiguration
     type = "azuread"
+    display_name = _("Azure AD")
     logger = logger
     category = "sso"
     configuration_encrypted_fields = ['SECRET']

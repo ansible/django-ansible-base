@@ -257,7 +257,7 @@ class TestLogAuthException:
 
         log_auth_exception("Test exception message")
 
-        mock_auth_logger.exception.assert_called_once_with("Test exception message")
+        mock_auth_logger.error.assert_called_once_with("Test exception message\nNoneType: None\n")
 
     @mock.patch("ansible_base.lib.logging.get_auth_logger")
     def test_with_empty_message(self, mock_get_auth_logger):
@@ -267,7 +267,7 @@ class TestLogAuthException:
 
         log_auth_exception("")
 
-        mock_auth_logger.exception.assert_called_once_with("")
+        mock_auth_logger.error.assert_called_once_with("\nNoneType: None\n")
 
     @mock.patch("ansible_base.lib.logging.get_auth_logger")
     def test_with_multiline_message(self, mock_get_auth_logger):
@@ -278,7 +278,7 @@ class TestLogAuthException:
 
         log_auth_exception(multiline_message)
 
-        mock_auth_logger.exception.assert_called_once_with(multiline_message)
+        mock_auth_logger.error.assert_called_once_with(f"{multiline_message}\nNoneType: None\n")
 
     @mock.patch("ansible_base.lib.logging.get_auth_logger")
     def test_with_special_characters(self, mock_get_auth_logger):
@@ -289,4 +289,21 @@ class TestLogAuthException:
 
         log_auth_exception(special_message)
 
-        mock_auth_logger.exception.assert_called_once_with(special_message)
+        mock_auth_logger.error.assert_called_once_with(f"{special_message}\nNoneType: None\n")
+
+    @mock.patch("ansible_base.lib.logging.get_auth_logger")
+    def test_redacts_sensitive_values_from_exception_traceback(self, mock_get_auth_logger):
+        """A caller can preserve diagnostic traceback context without a credential value."""
+        mock_auth_logger = mock.Mock()
+        mock_get_auth_logger.return_value = mock_auth_logger
+        token = "sensitive-bearer-token"
+
+        try:
+            raise RuntimeError(f"plugin rejected {token}")
+        except RuntimeError:
+            log_auth_exception("Plugin failed", redact_values=(token,))
+
+        logged_traceback = mock_auth_logger.error.call_args.args[0]
+        assert "Plugin failed" in logged_traceback
+        assert "RuntimeError: plugin rejected [REDACTED]" in logged_traceback
+        assert token not in logged_traceback

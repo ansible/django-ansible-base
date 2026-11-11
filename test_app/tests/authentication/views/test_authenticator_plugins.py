@@ -16,9 +16,11 @@ def test_plugin_authenticator_view(admin_api_client):
     assert response.status_code == 200
     assert 'authenticators' in response.data
 
-    auth_types = [x['type'] for x in response.data['authenticators']]
-    assert 'ansible_base.authentication.authenticator_plugins.ldap' in auth_types
-    assert 'ansible_base.authentication.authenticator_plugins.local' in auth_types
+    by_type = {x['type']: x for x in response.data['authenticators']}
+    assert 'ansible_base.authentication.authenticator_plugins.ldap' in by_type
+    assert 'ansible_base.authentication.authenticator_plugins.local' in by_type
+    assert by_type['ansible_base.authentication.authenticator_plugins.github']['display_name'] == 'GitHub'
+    assert by_type['ansible_base.authentication.authenticator_plugins.oauth_bearer']['display_name'] == 'OAuth Bearer Token'
 
 
 def test_plugin_authenticator_view_import_error(admin_api_client, shut_up_logging, settings):
@@ -40,10 +42,12 @@ def test_plugin_authenticator_view_import_error(admin_api_client, shut_up_loggin
     assert response.status_code == 200
     assert 'authenticators' in response.data
 
-    auth_types = [x['type'] for x in response.data['authenticators']]
-    assert 'ansible_base.authentication.authenticator_plugins.ldap' in auth_types
-    assert 'ansible_base.authentication.authenticator_plugins.local' in auth_types
-    assert 'broken' not in auth_types
+    by_type = {x['type']: x for x in response.data['authenticators']}
+    assert 'ansible_base.authentication.authenticator_plugins.ldap' in by_type
+    assert 'ansible_base.authentication.authenticator_plugins.local' in by_type
+    assert 'broken' not in by_type
+    # Fixture custom plugin leaves display_name empty; API falls back to title-cased module name.
+    assert by_type[f'{fixture_module}.custom']['display_name'] == 'Custom'
 
     assert 'errors' in response.data
     assert f'The specified authenticator type {fixture_module}.broken could not be loaded' in response.data['errors']

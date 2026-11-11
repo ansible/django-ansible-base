@@ -1,5 +1,6 @@
 import threading
 import time
+from unittest.mock import MagicMock, Mock
 
 import psycopg
 import pytest
@@ -8,6 +9,7 @@ from django.db import connection
 from django.db.utils import OperationalError
 from django.test import override_settings
 
+from ansible_base.lib.utils import db
 from ansible_base.lib.utils.db import (
     advisory_lock,
     get_pg_notify_params,
@@ -29,6 +31,13 @@ class SkipIfSqlite:
     def skip_if_sqlite(self):
         if connection.vendor == 'sqlite':
             pytest.skip('Advisory lock is not written for sqlite')
+
+
+class SkipIfNotPostgreSQL:
+    @pytest.fixture(autouse=True)
+    def skip_if_not_postgresql(self):
+        if connection.vendor != 'postgresql':
+            pytest.skip('PostgreSQL-specific functionality')
 
 
 class TestPGNotifyConnection(SkipIfSqlite):
@@ -191,7 +200,7 @@ class TestAdvisoryLock(SkipIfSqlite):
 # Special transaction=True parameter is used, because we do not want in normal test transactions
 # because dropping the connection would break the transaction context, erroring at end of test
 @pytest.mark.django_db(transaction=True)
-class TestAdvisoryLockPostgresErrors(SkipIfSqlite):
+class TestAdvisoryLockPostgresErrors(SkipIfNotPostgreSQL):
     """Tests related to connection management and the advisory_lock"""
 
     def kick_connection(self):
@@ -236,3 +245,135 @@ class TestAdvisoryLockPostgresErrors(SkipIfSqlite):
         # consuming input failed: terminating connection due to idle-session timeout server closed the connection unexpectedly
         with connection.cursor() as cursor:
             cursor.execute('SELECT 1')
+
+
+def test_postgres_advisory_lock_closes_using_alias_after_operational_error(monkeypatch):
+    default_connection = Mock(vendor='postgresql')
+    replica_connection = Mock(vendor='postgresql')
+    monkeypatch.setattr(db, 'connection', default_connection)
+    monkeypatch.setattr(db, 'connections', {'default': default_connection, 'replica': replica_connection})
+    body_error = OperationalError('body failed')
+
+    with pytest.raises(OperationalError, match='body failed'):
+        with db.advisory_lock('lock', using='replica'):
+            raise body_error
+
+    replica_connection.close_if_unusable_or_obsolete.assert_called_once()
+    default_connection.close_if_unusable_or_obsolete.assert_not_called()
+
+
+def test_postgres_advisory_lock_restores_timeouts_after_operational_error(monkeypatch):
+    """An OperationalError that leaves the connection usable must still restore the caller's idle timeouts.
+
+    Otherwise the connection keeps the short lock timeout and postgres kills it
+    as soon as it goes idle.
+    """
+    replica_connection = MagicMock(vendor='postgresql')
+    # close_if_unusable_or_obsolete is a Mock, so the connection survives it
+    replica_connection.connection = Mock()
+    replica_connection.closed_in_transaction = False
+    cursor = MagicMock()
+    cursor.execute.return_value.fetchone.return_value = ('original_timeout',)
+    replica_connection.cursor.return_value.__enter__.return_value = cursor
+    monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+    body_error = OperationalError('body failed')
+
+    with pytest.raises(OperationalError, match='body failed'):
+        with db._postgres_advisory_lock(replica_connection, 'lock', False, True, 'replica', 5000):
+            raise body_error
+
+    replica_connection.close_if_unusable_or_obsolete.assert_called_once()
+    set_timeout_calls = [call for call in cursor.execute.call_args_list if call.args[0] == 'SET idle_session_timeout = %s']
+    # once to apply the lock timeout, once to restore the caller's value in the finally block
+    assert len(set_timeout_calls) == 2
+    assert set_timeout_calls[1].args == ('SET idle_session_timeout = %s', ('original_timeout',))
+
+
+def test_postgres_advisory_lock_restore_failure_after_operational_error_closes_connection(monkeypatch):
+    """If restoring the timeouts fails on a connection that already saw an OperationalError, discard it.
+
+    The original exception must reach the caller, not the restore failure.
+    """
+    replica_connection = MagicMock(vendor='postgresql')
+    replica_connection.connection = Mock()
+    replica_connection.closed_in_transaction = False
+    cursor = MagicMock()
+    ok = MagicMock()
+    ok.fetchone.return_value = ('original_timeout',)
+    # SHOW, SHOW, SET, SET succeed; the restore SET fails
+    cursor.execute.side_effect = [ok, ok, ok, ok, OperationalError('restore failed')]
+    replica_connection.cursor.return_value.__enter__.return_value = cursor
+    monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+    body_error = OperationalError('body failed')
+
+    with pytest.raises(OperationalError, match='body failed'):
+        with db._postgres_advisory_lock(replica_connection, 'lock', False, True, 'replica', 5000):
+            raise body_error
+
+    replica_connection.close.assert_called_once()
+
+
+def test_postgres_advisory_lock_restore_failure_without_internal_error_raises(monkeypatch):
+    """A restore failure on an otherwise-healthy connection propagates as its own error."""
+    replica_connection = MagicMock(vendor='postgresql')
+    replica_connection.connection = Mock()
+    replica_connection.closed_in_transaction = False
+    cursor = MagicMock()
+    ok = MagicMock()
+    ok.fetchone.return_value = ('original_timeout',)
+    # SHOW, SHOW, SET, SET succeed; the restore SET fails
+    cursor.execute.side_effect = [ok, ok, ok, ok, OperationalError('restore failed')]
+    replica_connection.cursor.return_value.__enter__.return_value = cursor
+    monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+    body_error = RuntimeError('body failed')
+
+    with pytest.raises(OperationalError, match='restore failed'):
+        with db._postgres_advisory_lock(replica_connection, 'lock', False, True, 'replica', 5000):
+            raise body_error
+
+    replica_connection.close.assert_not_called()
+
+
+def test_pglocks_acquisition_failure_closes_cursor(monkeypatch):
+    replica_connection = Mock(vendor='postgresql')
+    cursor = replica_connection.cursor.return_value
+    cursor.execute.side_effect = OperationalError('acquire failed')
+    monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+
+    with pytest.raises(OperationalError, match='acquire failed'):
+        with db.django_pglocks_advisory_lock('lock', using='replica'):
+            pass
+
+    cursor.close.assert_called_once()
+
+
+def test_advisory_lock_sqlite_is_noop(monkeypatch):
+    sqlite_connection = Mock(vendor='sqlite')
+    monkeypatch.setattr(db, 'connections', {'default': sqlite_connection})
+
+    with db.advisory_lock('lock') as acquired:
+        assert acquired is True
+
+
+def test_advisory_lock_unsupported_vendor_raises(monkeypatch):
+    other_connection = Mock(vendor='oracle')
+    monkeypatch.setattr(db, 'connections', {'default': other_connection})
+
+    with pytest.raises(RuntimeError, match='Advisory lock not implemented for database type oracle'):
+        with db.advisory_lock('lock'):
+            pass
+
+
+def test_postgres_lock_release_error_preserves_body_exception_and_closes_connection(monkeypatch):
+    replica_connection = Mock()
+    cursor = replica_connection.cursor.return_value
+    cursor.execute.side_effect = [None, OperationalError('release failed')]
+    monkeypatch.setattr(db, 'connections', {'replica': replica_connection})
+    body_error = RuntimeError('body failed')
+
+    with pytest.raises(RuntimeError, match='body failed'):
+        with db.django_pglocks_advisory_lock('lock', using='replica'):
+            raise body_error
+
+    replica_connection.close.assert_called_once()
+    cursor.close.assert_called_once()
