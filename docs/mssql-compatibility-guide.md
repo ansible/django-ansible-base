@@ -2,7 +2,7 @@
 
 django-ansible-base supports Microsoft SQL Server through the `ansible_base.backends.mssql` database engine, built on [mssql-django](https://github.com/microsoft/mssql-django). PostgreSQL remains the reference backend: every feature is developed and tested against PostgreSQL first, and the SQL Server support exists so that AAP components can run on either database. This guide covers the dependencies, collation, field, and backend behavior to review when deploying an application that uses DAB with SQL Server.
 
-**Current status:** the backend, its DDL, and the development environment are complete — every Django migration applies cleanly on SQL Server. The remaining gap is bulk-write data paths (tracked under AAP-98732): a first `manage.py migrate` exits non-zero *after* applying all migrations, because the `resource_registry` post-migrate backfill uses `bulk_create(ignore_conflicts=True)`, which mssql-django does not support (a second run succeeds with nothing to apply). Until the follow-up work lands, `DB_BACKEND=mssql ./test_app/scripts/bootstrap.sh` stops at that migrate step and the `py312-mssql` tox suite is not green.
+**Current status:** the backend, its DDL, the development environment, and the bulk-write data paths (AAP-98732) are complete — a first `manage.py migrate` succeeds on SQL Server, and the `py312-mssql` tox suite and CI matrix are green. Application code uses the standard Django ORM throughout; the small number of vendor-aware helpers is named in [the transparency floor](#the-transparency-floor) below.
 
 ## Python dependencies and ODBC driver
 
@@ -65,18 +65,32 @@ Consumer applications should apply the same rule to their own models: use `Bound
 All SQL Server-specific code in DAB lives in two contained packages:
 
 - `ansible_base/backends/mssql/` — the database engine (`base.py`), the compiler fix (`compiler.py`). Set `DATABASES[...]['ENGINE']` to `ansible_base.backends.mssql` to use it.
-- `ansible_base/lib/mssql/` — library code for database-agnostic callers: vendor detection (`vendor.py`), `advisory_lock()`'s `sp_getapplock` implementation (`locks.py`), and `get_sql_server_notify_params()` for dispatcherd's Service Broker broker (`notify.py`).
+- `ansible_base/lib/mssql/` — library code for database-agnostic callers: vendor detection (`vendor.py`), `advisory_lock()`'s `sp_getapplock` implementation (`locks.py`), transparent bulk writes (`bulk.py`), parameter-limit chunking (`params.py`), and the dispatcherd Service Broker helpers (`notify.py`).
 
 `advisory_lock()` in `ansible_base.lib.utils.db` dispatches transparently by database vendor, so callers keep a single import; PostgreSQL uses advisory locks, SQL Server uses `sp_getapplock`, and SQLite is a no-op.
+
+## Transparent bulk writes
+
+`bulk_create(..., ignore_conflicts=True)` raises `NotSupportedError` on SQL Server (mssql-django does not implement it). DAB closes that gap at the manager layer: the RBAC models carry `MSSQLSafeManager`, whose queryset rewrites `ignore_conflicts` bulk creates into an mssql-safe form, so application code keeps writing plain `model.objects.bulk_create(objs, ignore_conflicts=True)`. On PostgreSQL the manager is inert.
+
+Historical models (the migration-state models used inside `migrate`) cannot take the manager — Django hands migration code plain managers. Migration utilities therefore use the function form, `ansible_base.lib.mssql.bulk.bulk_create(model, objs, ignore_conflicts=True)`, which is a no-op passthrough to `model.objects.bulk_create` on other vendors. Both forms live in `ansible_base/lib/mssql/bulk.py`.
+
+## Cascade deletes of object roles
+
+Django's deletion collector NULLs nullable cascading foreign keys before deleting on databases that cannot defer constraint checks. For RBAC assignments this is wrong: nulling `object_role` turns object-scoped grants into global grants, and two grants with the same (actor, role definition) collide on the `unique_global_*_assignment` partial unique index. Every DAB deletion of `ObjectRole` rows routes through `delete_object_roles()` in `ansible_base/rbac/caching.py`: on SQL Server it removes assignment rows first (inside a transaction, locking the object-role rows); on other vendors it is a passthrough to `queryset.delete()`.
+
+## dispatcherd Service Broker connections
+
+`get_sql_server_notify_params()` returns pyodbc connection parameters for dispatcherd's `sql_server` broker, and `get_sql_server_notify_conn_string()` renders the same settings as a ready-made ODBC connection string for dispatcherd versions whose `connect()` pops a `connection_string` from its config. Both apply `SQL_SERVER_NOTIFY_DATABASES` overrides on top of the Django `DATABASES` entry. The Service Broker listener holds a long-lived connection, so give it its own pool bucket — set `SQL_SERVER_NOTIFY_DATABASES` to point at a distinct application name (the ODBC `APP`/`application_name` keyword) and bypass external poolers for it, the same way a pg LISTEN connection bypasses PgBouncer.
 
 ## The transparency floor
 
 Application code uses the standard Django ORM — there is no `*_db_safe` parallel API to adopt. A small number of operations are not transparent on SQL Server, and are named here so developers know the boundary:
 
-- `bulk_create(..., ignore_conflicts=True)` raises `NotSupportedError` on SQL Server (mssql-django does not implement it); DAB's own first-run `migrate` currently hits this in the `resource_registry` backfill (see Current status above). The remaining AAP-98732 work makes bulk writes transparent on SQL Server.
-- `__regex`/`__iregex` lookups rely on a database function SQL Server does not install by default.
+- `__regex`/`__iregex` lookups are not supported on SQL Server. `rest_filters` rejects them with a `ParseError` ("Regular expression lookups are not supported on SQL Server"); DAB's own code paths that need word-boundary matching (OIDC scope checks) narrow with `__contains` and apply the regex Python-side.
+- SQL Server caps a single query at ~2100 bound parameters. Plain `__in` lookups do not need help — mssql-django routes them through a temp table — but OR-ed `Q` pairs and `Case`/`When` expressions bind every value inline. DAB's internal batch paths use `in_chunks()` from `ansible_base.lib.mssql.params` for those; consumer code doing the same shapes should too.
+- `Cast` per query: SQL Server comparisons between `nvarchar` and typed columns do not implicitly convert the way PostgreSQL casts text, so `ansible_base/rbac/evaluations.py` wraps its cross-type `object_id` comparisons in explicit `Cast`s. These are vendor-neutral ORM and run unchanged on PostgreSQL.
 - `lock_session_timeout_milliseconds` means something different on SQL Server: on PostgreSQL it is an idle-session guard while the lock is held; on SQL Server it becomes the lock *acquisition* timeout (`sp_getapplock`'s `@LockTimeout`) and is ignored when `wait=False`. Callers that rely on the idle guard together with `wait=False` do not get that protection on SQL Server.
-- Very large `pk__in` lists can exceed SQL Server's ~2100 query-parameter limit and need chunking; this cannot be made transparent and will remain a named, contained helper.
 
 If the list of non-transparent operations grows beyond a handful, the design is revisited rather than extended.
 
