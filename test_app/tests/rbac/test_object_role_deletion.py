@@ -89,3 +89,27 @@ class TestDeleteObjectRolesDirect:
         assert deleted_count >= 1
         assert not ObjectRole.objects.filter(pk=object_role.pk).exists()
         assert not RoleTeamAssignment.objects.filter(object_role_id=object_role.pk).exists()
+
+
+@pytest.mark.django_db
+class TestRoleDefinitionDeletion:
+    def test_deleting_role_definition_removes_multi_object_assignments(self, rando, organization, inv_rd):
+        """Deleting a RoleDefinition cascades into its ObjectRoles through Django's
+        deletion collector. On SQL Server the collector NULLs the nullable
+        assignment.object_role foreign key before deleting, and two object-scoped
+        grants for one actor then violate unique_global_user_assignment — the same
+        collision delete_object_roles exists to prevent, reached through the
+        collector instead of the explicit cleanup paths."""
+        from test_app.models import Inventory
+
+        inventory_a = Inventory.objects.create(name='rd-delete-inv-a', organization=organization)
+        inventory_b = Inventory.objects.create(name='rd-delete-inv-b', organization=organization)
+        inv_rd.give_permission(rando, inventory_a)
+        inv_rd.give_permission(rando, inventory_b)
+
+        assert RoleUserAssignment.objects.filter(role_definition=inv_rd, user=rando).count() == 2
+
+        inv_rd.delete()
+
+        assert not ObjectRole.objects.filter(role_definition_id=inv_rd.id).exists()
+        assert not RoleUserAssignment.objects.filter(role_definition_id=inv_rd.id).exists()

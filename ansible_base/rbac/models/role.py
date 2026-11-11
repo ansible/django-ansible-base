@@ -7,7 +7,7 @@ from uuid import UUID
 
 # Django
 from django.conf import settings
-from django.db import models
+from django.db import connections, models, router
 from django.db.models import Count
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
@@ -230,6 +230,20 @@ class RoleDefinition(CommonModel):
         if self.managed:
             managed_str = ', managed=True'
         return f'RoleDefinition(pk={self.id}, name={self.name}{managed_str})'
+
+    def delete(self, using=None, keep_parents=False):
+        using = using or router.db_for_write(type(self), instance=self)
+        if connections[using].vendor == 'microsoft':
+            # SQL Server cannot defer constraint checks, so the deletion collector
+            # would NULL the nullable assignment.object_role foreign key before
+            # deleting those rows; two object-scoped grants for one actor then
+            # violate the global-assignment unique index. Deleting the object
+            # roles through delete_object_roles first (which removes the
+            # assignments itself) leaves the collector nothing to NULL.
+            from ansible_base.rbac.caching import delete_object_roles
+
+            delete_object_roles(ObjectRole.objects.using(using).filter(role_definition=self))
+        return super().delete(using=using, keep_parents=keep_parents)
 
     # See assignable_scope_q() below for what each of these scopes means.
     ASSIGNABLE_SCOPE_SYSTEM = 'system'
