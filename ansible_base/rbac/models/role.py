@@ -89,6 +89,9 @@ class RoleDefinitionQuerySet(MSSQLSafeQuerySet):
     """
 
     def delete(self):
+        # Route through the write alias, like Django's own QuerySet.delete:
+        # without _for_write, self.db resolves to the router's read database.
+        self._for_write = True
         if connections[self.db].vendor == 'microsoft':
             from ansible_base.rbac.caching import delete_object_roles
 
