@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 
 from ansible_base.lib.utils.apps import is_rbac_installed
+from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.resource_registry.models import Resource
 
 logger = logging.getLogger('ansible_base.rbac.role_sync_utils')
@@ -81,6 +83,77 @@ def _is_resource_registered(model) -> bool:
     return model._meta.label in registry.get_resources()
 
 
+def _recover_resource_from_remote(ansible_id, expected_model: str) -> Resource | None:
+    """Fallback for when ``Resource.objects.get(ansible_id=...)`` misses.
+
+    After an upgrade, Gateway and other services can hold different ansible_ids
+    for the same team or organization. Ask the resource server which object the ansible_id
+    refers to, find the local object by natural key (name, plus organization for teams) and
+    point its Resource row at the authoritative ansible_id.
+
+    Only teams and organizations are recovered. Returns None when the object cannot be
+    resolved, so callers fail exactly as they did before this fallback existed.
+    """
+    if expected_model not in ('team', 'organization'):
+        return None
+
+    try:
+        # make sure this method was called with an actual ansible_id, not an integer primary key
+        uuid.UUID(str(ansible_id))
+    except ValueError:
+        return None  # a plain primary key, nothing to look up remotely
+
+    from ansible_base.rbac.claims import _recover_resource_by_natural_key
+    from ansible_base.resource_registry.tasks.sync import create_api_client
+
+    try:
+        resp = create_api_client().get_resource(str(ansible_id))
+    except Exception:
+        logger.exception(f"Could not look up {expected_model} {ansible_id} on the resource server")
+        return None
+    if resp.status_code != 200:
+        return None
+
+    # we got a resource back from Gateway
+    data = resp.json()
+    if data.get('resource_type') != f'shared.{expected_model}':
+        return None
+    name = data['resource_data']['name']
+
+    extra_model_kwargs = {}
+    if expected_model == 'team':
+        # A team is only unique within its organization, so resolve (and if needed repair) the org first.
+        org_resource = _resolve_or_recover(data['resource_data']['organization'], 'organization')
+        if org_resource is None:
+            return None
+        extra_model_kwargs = {'organization': org_resource.content_object}
+
+    model_cls = get_team_model() if expected_model == 'team' else get_organization_model()
+
+    # find the local object that matches the Gateway object by name
+    resource, _obj = _recover_resource_by_natural_key(
+        Resource, model_cls, name, str(ansible_id), f'shared.{expected_model}', extra_model_kwargs=extra_model_kwargs
+    )
+    return resource
+
+
+def _resolve_or_recover(ansible_id, expected_model: str) -> Resource | None:
+    try:
+        return Resource.objects.get(ansible_id=ansible_id)
+    except (Resource.DoesNotExist, ValueError, ValidationError):
+        # component does not know this ansible_id, try to recover it from Gateway
+        return _recover_resource_from_remote(ansible_id, expected_model)
+
+
+def _resolve_actor(assignment_tuple: AssignmentTuple):
+    """Return the user or team an assignment tuple refers to, recovering a drifted team ansible_id if needed."""
+    expected_model = 'team' if assignment_tuple.assignment_type == 'team' else 'user'
+    resource = _resolve_or_recover(assignment_tuple.actor_ansible_id, expected_model)
+    if resource is None:
+        raise Resource.DoesNotExist(f"No resource found for {expected_model} actor {assignment_tuple.actor_ansible_id}")
+    return resource.content_object
+
+
 def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> Any:
     """Resolve the Django model instance for an assignment tuple's target object."""
     if not is_rbac_installed():
@@ -100,8 +173,10 @@ def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> An
                 content_type__model=expected_ct.model,
             )
         except (Resource.DoesNotExist, ValueError, ValidationError):
-            pass
-        else:
+            object_resource = None
+            if expected_ct.model in ('organization', 'team'):
+                object_resource = _recover_resource_from_remote(identifier, expected_ct.model)
+        if object_resource is not None:
             return object_resource.content_object
 
     try:
@@ -268,8 +343,7 @@ def delete_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
     try:
         role_definition = RoleDefinition.objects.get(name=assignment_tuple.role_definition_name)
 
-        resource = Resource.objects.get(ansible_id=assignment_tuple.actor_ansible_id)
-        actor = resource.content_object
+        actor = _resolve_actor(assignment_tuple)
 
         content_object = None
         if assignment_tuple.ansible_id_or_pk:
@@ -295,8 +369,7 @@ def create_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
     try:
         role_definition = RoleDefinition.objects.get(name=assignment_tuple.role_definition_name)
 
-        resource = Resource.objects.get(ansible_id=assignment_tuple.actor_ansible_id)
-        actor = resource.content_object
+        actor = _resolve_actor(assignment_tuple)
 
         content_object = None
         if assignment_tuple.ansible_id_or_pk:
