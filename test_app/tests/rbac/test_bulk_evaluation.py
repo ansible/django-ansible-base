@@ -1,13 +1,45 @@
 import pytest
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, Group
 from django.test import override_settings
+from rest_framework.exceptions import ValidationError
 
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.evaluations import get_object_permissions
 from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.triggers import defer_rbac_computations
 from test_app.models import Inventory, UUIDModel
 
 pytestmark = pytest.mark.django_db
+
+
+def test_bulk_permissions_requires_registered_model(rando, django_assert_num_queries):
+    with django_assert_num_queries(0), pytest.raises(ValidationError, match='group type is not registered with DAB RBAC'):
+        get_object_permissions(rando, Group, [1])
+
+
+def test_bulk_permissions_requires_user_or_team(inventory, django_assert_num_queries):
+    with django_assert_num_queries(0), pytest.raises(RuntimeError, match='Evaluation methods are for users or teams'):
+        get_object_permissions(inventory, Inventory, [inventory.pk])
+
+
+@pytest.mark.parametrize('operation', ['create', 'delete'])
+def test_bulk_permissions_with_deferred_changes(inventory, rando, org_inv_change_rd, operation, django_assert_num_queries):
+    organization = inventory.organization
+    org_inv_change_rd.give_permission(rando, organization)
+    ids = [inventory.pk]
+    expected = {inventory.pk: {'view_inventory', 'change_inventory'}}
+    with defer_rbac_computations():
+        assert get_object_permissions(rando, Inventory, ids) == expected
+        if operation == 'create':
+            created = Inventory.objects.create(name='Deferred inventory', organization=organization)
+            ids.append(created.pk)
+            expected[created.pk] = {'view_inventory', 'change_inventory'}
+        else:
+            expected[inventory.pk] = set()
+            inventory.delete()
+        with django_assert_num_queries(0), pytest.raises(RuntimeError, match='get_object_permissions cannot be called with deferred RBAC changes'):
+            get_object_permissions(rando, Inventory, ids)
+    assert get_object_permissions(rando, Inventory, ids) == expected
 
 
 @pytest.mark.parametrize('model', [Inventory, UUIDModel])
