@@ -246,6 +246,37 @@ several related objects and each of those related objects require "use" permissi
 Those cases are expected to make multiple calls to methods like `has_obj_perm` within the
 API code, including views, permission classes, serializer classes, templates, forms, etc.
 
+#### Displaying Permissions for a Page
+
+`get_object_permissions` returns a dictionary mapping object primary keys to
+sets of codenames granted to the supplied actor through object roles. Each
+requested key has an entry, with an empty set for objects with no grants.
+The ID argument accepts a list or a flat `values_list` queryset; paginate
+before calling it.
+
+```python
+from ansible_base.rbac.evaluations import get_object_permissions
+
+permissions_by_id = get_object_permissions(user, MyModel, [obj.pk for obj in page])
+object_role_codenames = permissions_by_id[obj.pk]
+```
+
+By default, the result includes all granted codenames. Pass
+`codenames={'change_mymodel', 'delete_mymodel'}` to restrict the query to those
+full codenames. An empty iterable returns empty grant sets without a query.
+Evaluate permissions outside the requested set separately: the filtered
+result provides information only about the requested codenames.
+
+The result describes object-role grants at query time. Keep it scoped to the
+supplied actor and rendered page. Use `user.has_obj_perm(obj, codename)` for
+authorization, including global roles and bypass flags. Applications define
+the mapping from permissions to UI actions and enforce any additional policies.
+
+For a materialized list of IDs, loading grants takes one query per model
+after content-type metadata is cached. PostgreSQL uses a correlated array
+subquery for each object, encouraging indexed per-object lookups. Other
+backends use a batched query returning object IDs and codenames.
+
 #### Models Without View Permission
 
 Your model's `Meta` can exclude the "view" permission by not listing it in
