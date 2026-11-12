@@ -352,8 +352,20 @@ def compute_team_member_roles(team_ids=None):
             team.member_roles.remove(*to_remove)
 
 
+def _evaluation_sort_key(evaluation):
+    """Sort key in the column order of the unique index one_entry_per_object_permission_and_role.
+
+    An insert that hits a row inserted by a still-open transaction waits for that
+    transaction. Two recomputes inserting overlapping rows in different orders can wait
+    on each other, a deadlock. Inserting in one canonical order makes those waits linear.
+    """
+    return (evaluation.object_id, evaluation.content_type_id, evaluation.codename, evaluation.role_id)
+
+
 def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
     """bulk_create RoleEvaluation rows, handling concurrent ObjectRole deletions.
+
+    Rows are inserted in unique-index order, see _evaluation_sort_key.
 
     ignore_conflicts (ON CONFLICT DO NOTHING) only suppresses unique-constraint
     violations.  A concurrent ObjectRole deletion causes an FK violation on
@@ -362,6 +374,7 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
     """
     if not evaluations:
         return
+    evaluations = sorted(evaluations, key=_evaluation_sort_key)
     try:
         with transaction.atomic():
             model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
