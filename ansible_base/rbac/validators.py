@@ -188,6 +188,9 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
         check_has_change_with_delete(codename_set, permissions_by_model)
 
     if (not managed) and (not settings.ALLOW_SHARED_RESOURCE_CUSTOM_ROLES):
+        allowed_shared_role_permissions = getattr(settings, 'ALLOW_SHARED_RESOURCE_CUSTOM_ROLE_PERMISSIONS', {})
+        role_content_type_slug = content_type.api_slug if content_type else None
+        role_allowed_permissions = set(allowed_shared_role_permissions.get(role_content_type_slug, []))
         for perm in permissions:
             # View permission for shared objects is interpreted as permission to view
             # the resource locally, which is needed to be able to view parent objects
@@ -196,7 +199,8 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
                 continue
             model = perm.content_type.model_class()
             if get_resource_prefix(model) == 'shared':
-                raise ValidationError({'permissions', 'Local custom roles can only include view permission for shared models'})
+                if perm.api_slug not in role_allowed_permissions:
+                    raise ValidationError({'permissions', 'Local custom roles can only include view permission for shared models'})
 
 
 def validate_codename_for_model(codename: str, model: Union[Model, Type[Model], Type[RemoteObject], RemoteObject]) -> str:
