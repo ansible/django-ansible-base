@@ -7,16 +7,19 @@ from typing import Union, cast
 
 from django.apps import apps as django_apps
 from django.conf import settings
-from django.db import connection, models, transaction
+from django.db import connection, connections, models, transaction
 from django.db.models import Q
 from django.db.models.constants import OnConflict
 from django.db.models.signals import post_save  # TEMPORARY: see _fire_post_save / AAP-90162 merge-order note (consumers must connect to ONE signal, not both)
 
+from ansible_base.lib.mssql import bulk as mssql_bulk
+from ansible_base.lib.mssql.params import in_chunks
 from ansible_base.lib.utils.models import current_user_or_system_user
 from ansible_base.rbac.caching import (
     bulk_ancestor_roles,
     compute_team_member_roles,
     defer_rbac_state,
+    delete_object_roles,
     recompute_role_evaluations,
 )
 from ansible_base.rbac.evaluations import bound_singleton_permissions
@@ -308,6 +311,14 @@ def _insert_new(assignments: list[AssignmentBase], actor_id_field: str, model: t
     Callers guard against the empty case (see _create_assignments), so ``assignments`` is
     always non-empty here.
     """
+    if connections[model.objects.db].vendor == 'microsoft':
+        # mssql-django accepts on_conflict=OnConflict.IGNORE in _insert but does not
+        # implement it: the statement surfaces as a raw duplicate-key error. The mssql-safe
+        # bulk path provides the same contract — only inserted rows, PKs backfilled, no
+        # signals — so dispatch to it instead. Sanctioned dispatch point; see
+        # docs/mssql-compatibility-guide.md.
+        return mssql_bulk.bulk_create(model, assignments, ignore_conflicts=True)
+
     opts = model._meta
     fields = [f for f in opts.concrete_fields if not f.generated and f is not opts.pk]
     returning_fields = [
@@ -560,17 +571,19 @@ def _find_assignments(
     back onto the fetched rows, so signal handlers can read them without a per-row query.
     The GFK content_object cannot be attached this way; it travels via content_objects.
     """
-    q = Q()
-    for ra in resolved:
-        if ra.content_type is None:
-            q |= Q(role_definition_id=ra.role_definition.pk, object_role__isnull=True, **{actor_field: ra.actor.pk})
-        else:
-            obj_role = lookup.get((ra.role_definition.pk, ra.object_id))
-            if obj_role is not None:
-                q |= Q(object_role_id=obj_role.pk, **{actor_field: ra.actor.pk})
-    if not q:
-        return []
-    assignments = list(model.objects.filter(q))
+    assignments: list[AssignmentBase] = []
+    # OR-ed Q pairs bind both values inline, so chunk under the SQL Server parameter limit
+    for chunk in in_chunks(resolved, params_per_value=2):
+        q = Q()
+        for ra in chunk:
+            if ra.content_type is None:
+                q |= Q(role_definition_id=ra.role_definition.pk, object_role__isnull=True, **{actor_field: ra.actor.pk})
+            else:
+                obj_role = lookup.get((ra.role_definition.pk, ra.object_id))
+                if obj_role is not None:
+                    q |= Q(object_role_id=obj_role.pk, **{actor_field: ra.actor.pk})
+        if q:
+            assignments.extend(model.objects.filter(q))
 
     actor_relation = actor_field.removesuffix('_id')
     actor_by_pk = {ra.actor.pk: ra.actor for ra in resolved}
@@ -603,7 +616,7 @@ def _recompute_after_remove(
         surviving_object_roles = ObjectRole.objects.filter(pk__in=[o.pk for o in object_roles_to_update])
         recompute_role_evaluations(surviving_object_roles)
 
-    ObjectRole.objects.filter(id__in=object_role_ids, users__isnull=True, teams__isnull=True).delete()
+    delete_object_roles(ObjectRole.objects.filter(id__in=object_role_ids, users__isnull=True, teams__isnull=True))
 
 
 def remove_assignments(

@@ -7,7 +7,7 @@ from uuid import UUID
 
 # Django
 from django.conf import settings
-from django.db import models
+from django.db import connections, models, router, transaction
 from django.db.models import Count
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
@@ -20,6 +20,7 @@ from rest_framework.exceptions import ValidationError
 # ansible_base lib functions
 from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommonModel
 from ansible_base.lib.fields import BoundedTextField
+from ansible_base.lib.mssql.bulk import MSSQLSafeManager, MSSQLSafeQuerySet
 
 # ansible_base RBAC logic imports
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
@@ -35,6 +36,7 @@ from .fields import FederatedForeignKey
 
 if TYPE_CHECKING:
     from ansible_base.rbac.prefetch import EvaluationsPrefetch
+
 from .permission import DABPermission
 
 # Conditionally import AuditableModel if activitystream is installed
@@ -78,7 +80,38 @@ class ManagedRoleManager:
             return rd
 
 
-class RoleDefinitionManager(models.Manager):
+class RoleDefinitionQuerySet(MSSQLSafeQuerySet):
+    """RoleDefinition queryset whose delete() routes mssql-safe object-role cleanup.
+
+    QuerySet.delete() bypasses Model.delete(), so without this a queryset
+    deletion would hit the same unique-assignment collision on SQL Server that
+    RoleDefinition.delete() prevents (see that method).
+    """
+
+    def delete(self):
+        # Route through the write alias, like Django's own QuerySet.delete:
+        # without _for_write, self.db resolves to the router's read database.
+        self._for_write = True
+        if connections[self.db].vendor == 'microsoft':
+            from ansible_base.rbac.caching import delete_object_roles
+
+            # Freeze the targets before cleanup: a filter spanning the
+            # object_roles relation stops matching once delete_object_roles has
+            # removed those roles, and super().delete() would then retain the
+            # role definitions while their grants are gone.
+            pks = list(self.values_list('pk', flat=True))
+            with transaction.atomic(using=self.db):
+                delete_object_roles(ObjectRole.objects.using(self.db).filter(role_definition_id__in=pks))
+                # _base_manager is a plain Manager, so this stock QuerySet.delete
+                # does not re-enter this override.
+                return self.model._base_manager.using(self.db).filter(pk__in=pks).delete()
+        return super().delete()
+
+
+class RoleDefinitionManager(MSSQLSafeManager):
+    def get_queryset(self):
+        return RoleDefinitionQuerySet(self.model, using=self._db, hints=self._hints)
+
     def contribute_to_class(self, cls: Type[models.Model], name: str) -> None:
         """After Django populates the model for the manager, attach the manager role manager"""
         super().contribute_to_class(cls, name)
@@ -228,6 +261,24 @@ class RoleDefinition(CommonModel):
         if self.managed:
             managed_str = ', managed=True'
         return f'RoleDefinition(pk={self.id}, name={self.name}{managed_str})'
+
+    def delete(self, using=None, keep_parents=False):
+        using = using or router.db_for_write(type(self), instance=self)
+        # One transaction for cleanup and deletion: in autocommit the cleanup
+        # would otherwise commit first, so a failure in the collector would
+        # leave the role definition alive with its grants already gone.
+        with transaction.atomic(using=using):
+            if connections[using].vendor == 'microsoft':
+                # SQL Server cannot defer constraint checks, so the deletion collector
+                # would NULL the nullable assignment.object_role foreign key before
+                # deleting those rows; two object-scoped grants for one actor then
+                # violate the global-assignment unique index. Deleting the object
+                # roles through delete_object_roles first (which removes the
+                # assignments itself) leaves the collector nothing to NULL.
+                from ansible_base.rbac.caching import delete_object_roles
+
+                delete_object_roles(ObjectRole.objects.using(using).filter(role_definition=self))
+            return super().delete(using=using, keep_parents=keep_parents)
 
     # See assignable_scope_q() below for what each of these scopes means.
     ASSIGNABLE_SCOPE_SYSTEM = 'system'
@@ -604,6 +655,8 @@ class ObjectRole(ObjectRoleFields):
     After this is created, users and teams can be added to gives those
     permissions to that user or team, for that content_object
     """
+
+    objects = MSSQLSafeManager()
 
     class Meta:
         app_label = 'dab_rbac'
@@ -1007,6 +1060,8 @@ class RoleEvaluationFields(models.Model):
 
 
 class RoleEvaluation(RoleEvaluationFields):
+    objects = MSSQLSafeManager()
+
     class Meta(RoleEvaluationMeta):
         constraints = [models.UniqueConstraint(name='one_entry_per_object_permission_and_role', fields=['object_id', 'content_type_id', 'codename', 'role'])]
         ordering = ['id']
@@ -1023,6 +1078,8 @@ class RoleEvaluation(RoleEvaluationFields):
 
 class RoleEvaluationUUID(RoleEvaluationFields):
     "Cache for UUID type models"
+
+    objects = MSSQLSafeManager()
 
     class Meta(RoleEvaluationMeta):
         constraints = [

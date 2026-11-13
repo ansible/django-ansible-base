@@ -21,6 +21,22 @@ def test_get_evaluation_model(uuid_obj):
     assert get_evaluation_model(uuid_obj.organization) == RoleEvaluation
 
 
+def test_get_evaluation_model_rejects_unknown_remote_pk_types():
+    """A remote type whose primary key is neither an integer nor a UUID must fail
+    loudly. StandInPK maps any non-UUID type to an integer field, so the
+    conversion in get_evaluation_model must not silently send an exotic remote
+    type to the integer evaluation table."""
+    from unittest.mock import Mock
+
+    from ansible_base.rbac.remote import RemoteObject
+
+    content_type = Mock(id=42, service='test_svc', app_label='test_app', model='oddity', pk_field_type='varchar(64)')
+    remote_obj = RemoteObject(content_type, '123')
+
+    with pytest.raises(RuntimeError):
+        get_evaluation_model(remote_obj)
+
+
 @pytest.mark.django_db
 def test_duplicate_assignment(rando, view_uuid_rd, uuid_obj):
     assignment = view_uuid_rd.give_permission(rando, uuid_obj)
