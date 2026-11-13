@@ -61,10 +61,13 @@ class MSSQLSafeQuerySet(models.QuerySet):
         batch_size=None,
         ignore_conflicts=False,
         update_conflicts=None,
-        unique_fields=None,
         update_fields=None,
+        unique_fields=None,
     ):
         objs = list(objs)
+        # Route through the write alias, like Django's own QuerySet.bulk_create:
+        # without _for_write, self.db resolves to the router's read database.
+        self._for_write = True
         connection = connections[self.db]
         if connection.vendor != "microsoft" or update_conflicts is not None:
             # Other vendors — and update_conflicts, which mssql-django does not

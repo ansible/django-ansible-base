@@ -135,6 +135,25 @@ class TestRoleDefinitionDeletion:
         assert not ObjectRole.objects.filter(role_definition_id=inv_rd.id).exists()
         assert not RoleUserAssignment.objects.filter(role_definition_id=inv_rd.id).exists()
 
+    def test_deleting_role_definition_queryset_with_relation_filter_removes_it(self, rando, organization, inv_rd):
+        """The mssql cleanup deletes the object roles before the queryset delete
+        re-evaluates the filter, so a filter that spans that relation
+        (object_roles__users=...) stops matching and the role definition would be
+        retained while its grants are removed — the deletion targets must be
+        frozen before cleanup."""
+        from test_app.models import Inventory
+
+        inventory_a = Inventory.objects.create(name='rd-rel-delete-inv-a', organization=organization)
+        inventory_b = Inventory.objects.create(name='rd-rel-delete-inv-b', organization=organization)
+        inv_rd.give_permission(rando, inventory_a)
+        inv_rd.give_permission(rando, inventory_b)
+
+        RoleDefinition.objects.filter(object_roles__users=rando, pk=inv_rd.pk).delete()
+
+        assert not RoleDefinition.objects.filter(pk=inv_rd.pk).exists()
+        assert not ObjectRole.objects.filter(role_definition_id=inv_rd.id).exists()
+        assert not RoleUserAssignment.objects.filter(role_definition_id=inv_rd.id).exists()
+
     @pytest.mark.django_db(transaction=True)
     def test_deleting_role_definition_is_atomic(self, rando, organization, inv_rd, monkeypatch):
         """A failure in the collector after the object-role cleanup must roll
@@ -207,8 +226,12 @@ def test_role_definition_queryset_delete_routes_cleanup_to_write_database(monkey
     monkeypatch.setattr(router, 'routers', [ReadReplicaRouter()])
     monkeypatch.setattr('ansible_base.rbac.caching.delete_object_roles', fake_delete_object_roles)
     monkeypatch.setattr(QuerySet, 'delete', super_delete)
+    # the freeze step evaluates the queryset before the (patched) delete
+    super_delete.return_value = (0, {})
+    queryset = RoleDefinition.objects.all()
+    queryset.values_list = Mock(return_value=iter([1]))
 
-    RoleDefinition.objects.all().delete()
+    queryset.delete()
 
     assert cleanup_dbs == ['default']
     super_delete.assert_called_once()
@@ -256,8 +279,55 @@ class TestContentTypeDeletion:
         assert RoleUserAssignment.objects.filter(role_definition=inv_rd, user=rando).count() == 2
 
         ct = DABContentType.objects.get_for_model(Inventory)
-        DABContentType.objects.filter(pk=ct.pk).delete()
+        DABContentType.objects.filter(objectrole__role_definition=inv_rd, pk=ct.pk).delete()
 
         assert not DABContentType.objects.filter(pk=ct.pk).exists()
         assert not ObjectRole.objects.filter(content_type_id=ct.id).exists()
         assert not RoleUserAssignment.objects.filter(role_definition_id=inv_rd.id).exists()
+
+
+def test_delete_object_roles_routes_to_write_database(monkeypatch):
+    """delete_object_roles resolves its database from queryset.db, which routes
+    through the router's read alias unless _for_write is set — the helper must
+    run its transaction on the same write database as the deletion itself."""
+    import types
+
+    from django.db import router
+
+    import ansible_base.rbac.caching as caching_module
+
+    class ReadReplicaRouter:
+        def db_for_read(self, model, **hints):
+            return 'replica'
+
+        def db_for_write(self, model, **hints):
+            return 'default'
+
+    class FakeConnection:
+        def __init__(self, vendor):
+            self.vendor = vendor
+
+    class FakeAtomic:
+        def __init__(self, using):
+            FakeAtomic.using = using
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(caching_module, 'connections', {'default': FakeConnection('microsoft'), 'replica': FakeConnection('postgresql')})
+    monkeypatch.setattr(caching_module, 'transaction', types.SimpleNamespace(atomic=FakeAtomic))
+    monkeypatch.setattr(router, 'routers', [ReadReplicaRouter()])
+
+    queryset = ObjectRole.objects.all()
+    # empty candidate set: the helper returns inside its transaction without
+    # touching the database, so the alias is the only observable routing fact
+    queryset.values_list = Mock(return_value=iter([]))
+    queryset.delete = Mock(return_value=(0, {}))
+
+    assert caching_module.delete_object_roles(queryset) == (0, {})
+    queryset.delete.assert_not_called()  # the passthrough means it ran on the replica
+
+    assert FakeAtomic.using == 'default'

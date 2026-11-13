@@ -36,11 +36,20 @@ class DABContentTypeQuerySet(MSSQLSafeQuerySet):
             from ansible_base.rbac.caching import delete_object_roles
             from ansible_base.rbac.models import ObjectRole
 
+            # Freeze the targets before cleanup: a filter spanning the
+            # objectrole or role_definition relations stops matching once
+            # delete_object_roles has removed those roles, and super().delete()
+            # would then retain the content types while their grants are gone.
+            pks = list(self.values_list('pk', flat=True))
             with transaction.atomic(using=self.db):
                 delete_object_roles(
-                    ObjectRole.objects.using(self.db).filter(django_models.Q(content_type__in=self) | django_models.Q(role_definition__content_type__in=self))
+                    ObjectRole.objects.using(self.db).filter(
+                        django_models.Q(content_type_id__in=pks) | django_models.Q(role_definition__content_type_id__in=pks)
+                    )
                 )
-                return super().delete()
+                # _base_manager is a plain Manager, so this stock QuerySet.delete
+                # does not re-enter this override.
+                return self.model._base_manager.using(self.db).filter(pk__in=pks).delete()
         return super().delete()
 
 

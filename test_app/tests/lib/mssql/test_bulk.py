@@ -547,3 +547,47 @@ class TestMigrationUtils:
             state_apps, historical_rd, users=[historical_user], object_id=object_role.object_id, content_type_id=object_role.content_type_id
         )
         assert RoleUserAssignment.objects.filter(user=user, object_role=object_role).count() == 1
+
+
+def test_bulk_create_positional_arguments_follow_django_order(monkeypatch):
+    """The override must keep Django's positional order (update_fields before
+    unique_fields) so a positional call binds the conflict target and the
+    updated fields the way callers of stock bulk_create expect."""
+    queryset, _ = make_queryset(monkeypatch)
+    spy = patch_super_bulk_create(monkeypatch, return_value=[])
+    objs = [make_event("a")]
+
+    # Django's signature order: (objs, batch_size, ignore_conflicts, update_conflicts, update_fields, unique_fields)
+    queryset.bulk_create(objs, None, False, False, ["updated"], ["unique"])
+
+    spy.assert_called_once_with(objs, batch_size=None, ignore_conflicts=False, update_conflicts=False, update_fields=["updated"], unique_fields=["unique"])
+
+
+def test_bulk_create_resolves_the_write_database(monkeypatch):
+    """QuerySet.db routes through db_for_read until _for_write is set, and
+    stock bulk_create sets it before resolving its connection; the override
+    must do the same so its fallback transactions and inserts run on the write
+    database rather than a read replica."""
+    from django.db import router
+
+    class ReadReplicaRouter:
+        def db_for_read(self, model, **hints):
+            return "replica"
+
+        def db_for_write(self, model, **hints):
+            return "default"
+
+    monkeypatch.setattr(bulk_module, "connections", {"default": make_connection(vendor="microsoft"), "replica": make_connection(vendor="postgresql")})
+    monkeypatch.setattr(router, "routers", [ReadReplicaRouter()])
+    atomic = patch_atomic(monkeypatch)
+    spy = patch_super_bulk_create(monkeypatch, return_value=[])
+    queryset = MSSQLSafeQuerySet(model=ExampleEvent)
+    queryset._prepare_for_bulk_create = Mock()
+    objs = [make_event("a")]
+
+    assert queryset.bulk_create(objs, ignore_conflicts=True) == []
+
+    # the mssql ignore-conflicts emulation ran (the stock call is made with
+    # ignore_conflicts disabled), and its transaction opened on the write database
+    spy.assert_called_once_with(objs, batch_size=None, ignore_conflicts=False)
+    atomic.assert_called_with(using="default")
