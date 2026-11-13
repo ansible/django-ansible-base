@@ -93,10 +93,15 @@ def can_change_user(
     elif target_user.is_superuser:
         return False  # target is a superuser and request user is not
 
+    # Own account, including password. Email and username checks pass
+    # can_self_edit=False and remain subject to MANAGE_ORGANIZATION_AUTH below.
+    if request_user.pk == target_user.pk and can_self_edit:
+        return True
+
     if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
         return False
 
-    if request_user.pk == target_user.pk and (can_self_edit or get_setting(self_edit_setting, False)):
+    if request_user.pk == target_user.pk and get_setting(self_edit_setting, False):
         return True
 
     # If the user is not in any organizations, answer can not consider organization permissions
