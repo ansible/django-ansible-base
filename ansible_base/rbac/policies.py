@@ -15,6 +15,32 @@ from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.remote import RemoteObject
 from ansible_base.rbac.validators import permissions_allowed_for_role
 
+RESOURCE_ADMIN_UNRESTRICTED_ACTORS = 'ANSIBLE_BASE_RESOURCE_ADMINS_CAN_ASSIGN_UNRESTRICTED_ACTORS'
+
+
+def resource_admins_can_assign_unrestricted_actors() -> bool:
+    """Whether resource admins may assign roles to users/teams they cannot view."""
+    return bool(getattr(settings, RESOURCE_ADMIN_UNRESTRICTED_ACTORS, False))
+
+
+def actors_for_role_assignment(request_user, actor_cls) -> QuerySet:
+    """Return actors eligible for role assignment given the requesting user.
+
+    When ANSIBLE_BASE_RESOURCE_ADMINS_CAN_ASSIGN_UNRESTRICTED_ACTORS is True,
+    any authenticated user may select any actor of the given class. Object-level
+    change permission is still enforced by assignment serializers.
+    When False (default), preserve historical visibility filtering.
+    """
+    if not getattr(request_user, 'is_authenticated', False):
+        return actor_cls.objects.none()
+    if resource_admins_can_assign_unrestricted_actors():
+        return actor_cls.objects.all()
+    # Compare against the registered user model, not the literal model_name
+    # "user", so custom user models with a different name still work.
+    if actor_cls._meta.concrete_model == permission_registry.user_model._meta.concrete_model:
+        return visible_users(request_user)
+    return visible_teams(request_user)
+
 
 def visible_teams(request_user, queryset=None) -> QuerySet:
     """Gives a queryset of teams that another user should be able to view.
