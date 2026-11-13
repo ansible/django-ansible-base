@@ -86,6 +86,9 @@ def delete_object_roles(queryset) -> tuple[int, dict[str, int]]:
     global-assignment unique constraint. Remove those assignment rows first so
     the ObjectRole cascade has no nullable foreign keys to update.
     """
+    # Route through the write alias, like Django's own QuerySet.delete:
+    # without _for_write, queryset.db resolves to the router's read database.
+    queryset._for_write = True
     using = queryset.db
     if not isinstance(using, str) or connections[using].vendor != "microsoft":
         return queryset.delete()

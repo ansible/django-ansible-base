@@ -95,9 +95,16 @@ class RoleDefinitionQuerySet(MSSQLSafeQuerySet):
         if connections[self.db].vendor == 'microsoft':
             from ansible_base.rbac.caching import delete_object_roles
 
+            # Freeze the targets before cleanup: a filter spanning the
+            # object_roles relation stops matching once delete_object_roles has
+            # removed those roles, and super().delete() would then retain the
+            # role definitions while their grants are gone.
+            pks = list(self.values_list('pk', flat=True))
             with transaction.atomic(using=self.db):
-                delete_object_roles(ObjectRole.objects.using(self.db).filter(role_definition__in=self))
-                return super().delete()
+                delete_object_roles(ObjectRole.objects.using(self.db).filter(role_definition_id__in=pks))
+                # _base_manager is a plain Manager, so this stock QuerySet.delete
+                # does not re-enter this override.
+                return self.model._base_manager.using(self.db).filter(pk__in=pks).delete()
         return super().delete()
 
 
