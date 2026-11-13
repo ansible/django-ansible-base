@@ -82,13 +82,16 @@ def _is_resource_registered(model) -> bool:
 
 
 def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> Any:
-    """Resolve the Django model instance for an assignment tuple's target object."""
+    """Resolve a local model instance or remote stand-in for the target object."""
     if not is_rbac_installed():
         raise RuntimeError("get_content_object requires ansible_base.rbac to be installed")
     if role_definition.content_type is None:
         raise ValueError("get_content_object requires a role_definition with a content_type")
     identifier = assignment_tuple.ansible_id_or_pk
     expected_ct = role_definition.content_type
+    if expected_ct.is_remote:
+        return expected_ct.get_object_for_this_type(pk=identifier)
+
     model = expected_ct.model_class()
     # Assignment identifiers can be Resource ansible_ids or local primary keys.
     # Resolve the Resource first, then validate the PK before querying the model.
