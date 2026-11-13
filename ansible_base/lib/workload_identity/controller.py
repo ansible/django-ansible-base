@@ -39,6 +39,7 @@ class AutomationControllerJobScope(BaseWorkloadIdentityScope):
     CLAIM_UNIFIED_JOB_TEMPLATE_ID = 'aap_controller_unified_job_template_id'
     CLAIM_INSTANCE_GROUP_NAME = 'aap_controller_instance_group_name'
     CLAIM_INSTANCE_GROUP_ID = 'aap_controller_instance_group_id'
+    CLAIM_GROUPS = 'aap_groups'
 
     @classmethod
     def list_claims(cls) -> list[str]:
