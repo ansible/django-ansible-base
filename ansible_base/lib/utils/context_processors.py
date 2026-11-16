@@ -36,7 +36,7 @@ def version(request):
     view = context.get('view')
     deprecation_metadata = _check_deprecation(view, getattr(request, 'method', ''))
     deprecated = deprecation_metadata is not None
-    deprecated_message = deprecation_metadata['detail'] if deprecation_metadata else ''
+    deprecated_message = deprecation_metadata.get('detail', '') if deprecation_metadata else ''
     api_version = 'Unknown'
     try:
         version_func = get_function_from_setting('ANSIBLE_BASE_PRODUCT_VERSION_FUNCTION')

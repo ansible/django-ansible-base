@@ -72,7 +72,7 @@ class AnsibleBaseView(APIView):
         if not deprecation_metadata and not is_legacy_deprecated:
             return
 
-        detail = deprecation_metadata['detail'] if deprecation_metadata else str(DEFAULT_DEPRECATION_MESSAGE)
+        detail = deprecation_metadata.get('detail', str(DEFAULT_DEPRECATION_MESSAGE)) if deprecation_metadata else str(DEFAULT_DEPRECATION_MESSAGE)
         mark_deprecated(response, detail)
 
         if is_legacy_deprecated:

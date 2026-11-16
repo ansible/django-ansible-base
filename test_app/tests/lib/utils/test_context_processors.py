@@ -144,15 +144,17 @@ class TestContextProcessors:
         assert result['api_version'] == 'Unknown'
 
     def test_version_with_deprecation_dict_missing_detail_key(self):
-        """Explicit deprecation metadata without the required detail raises KeyError."""
+        """Explicit deprecation metadata without a detail key produces an empty message."""
         view = Mock(spec=['deprecation', 'deprecated'])
         view.deprecation = {'reason': 'deprecated'}
         view.deprecated = False
         request = Mock(method='GET')
         request.parser_context = {'view': view}
 
-        with pytest.raises(KeyError):
-            version(request)
+        result = version(request)
+
+        assert result['deprecated'] is True
+        assert result['deprecated_message'] == ''
 
     @patch('ansible_base.lib.utils.context_processors.get_function_from_setting')
     def test_version_with_version_function_exception(self, mock_get_function):
