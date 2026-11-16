@@ -323,8 +323,6 @@ class NamedCommonModel(CommonModel):
     class Meta:
         abstract = True
 
-    objects = MSSQLSafeManager()
-
     name = models.CharField(
         max_length=512,
         help_text=_("The name of this resource."),
@@ -342,8 +340,6 @@ class NamedCommonModel(CommonModel):
 class UniqueNamedCommonModel(CommonModel):
     class Meta:
         abstract = True
-
-    objects = MSSQLSafeManager()
 
     name = models.CharField(
         max_length=512,

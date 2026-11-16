@@ -83,7 +83,7 @@ Django's deletion collector NULLs nullable cascading foreign keys before deletin
 
 ## dispatcherd Service Broker connections
 
-`get_sql_server_notify_params()` returns pyodbc connection parameters for dispatcherd's `sql_server` broker, and `get_sql_server_notify_conn_string()` renders the same settings as a ready-made ODBC connection string for dispatcherd versions whose `connect()` pops a `connection_string` from its config. Both apply `SQL_SERVER_NOTIFY_DATABASES` overrides on top of the Django `DATABASES` entry. The Service Broker listener holds a long-lived connection, so give it its own pool bucket — set `SQL_SERVER_NOTIFY_DATABASES` to point at a distinct application name (the ODBC `APP`/`application_name` keyword) and bypass external poolers for it, the same way a pg LISTEN connection bypasses PgBouncer.
+`get_sql_server_notify_conn_string()` renders a ready-made ODBC connection string for dispatcherd's `sql_server` broker, whose `connect()` pops a `connection_string` from its config and passes everything else to `pyodbc.connect` as kwargs (so server/database/credentials have to travel inside the string). It applies `SQL_SERVER_NOTIFY_DATABASES` overrides on top of the Django `DATABASES` entry — the MS SQL Server counterpart of `get_pg_notify_params()`. The Service Broker listener holds a long-lived connection, so give it its own pool bucket — set `SQL_SERVER_NOTIFY_DATABASES` to point at a distinct application name (the ODBC `APP`/`application_name` keyword) and bypass external poolers for it, the same way a pg LISTEN connection bypasses PgBouncer.
 
 ## The transparency floor
 

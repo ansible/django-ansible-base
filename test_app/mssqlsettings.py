@@ -66,5 +66,5 @@ load_envvars(DYNACONF)
 export(__name__, DYNACONF)
 
 # MS SQL Server doesn't need the PG_NOTIFY_DATABASES setting
-# Consumer apps should use get_sql_server_notify_params() instead
+# Consumer apps should use get_sql_server_notify_conn_string() instead
 # See ansible_base/lib/mssql/notify.py for dispatcherd Service Broker configuration

@@ -481,6 +481,9 @@ class RoleDefinition(CommonModel):
 class ObjectRoleFields(models.Model):
     "Fields for core functionality of object-roles"
 
+    # bulk_create/bulk_update transparently safe for SQL Server on every backend
+    objects = MSSQLSafeManager()
+
     class Meta:
         abstract = True
 
@@ -655,8 +658,6 @@ class ObjectRole(ObjectRoleFields):
     After this is created, users and teams can be added to gives those
     permissions to that user or team, for that content_object
     """
-
-    objects = MSSQLSafeManager()
 
     class Meta:
         app_label = 'dab_rbac'
@@ -954,6 +955,9 @@ class RoleEvaluationMeta:
 
 # COMPUTED DATA
 class RoleEvaluationFields(models.Model):
+    # bulk_create/bulk_update transparently safe for SQL Server on every backend
+    objects = MSSQLSafeManager()
+
     """
     Cached data that shows what permissions an ObjectRole gives its owners
     example:
@@ -1060,8 +1064,6 @@ class RoleEvaluationFields(models.Model):
 
 
 class RoleEvaluation(RoleEvaluationFields):
-    objects = MSSQLSafeManager()
-
     class Meta(RoleEvaluationMeta):
         constraints = [models.UniqueConstraint(name='one_entry_per_object_permission_and_role', fields=['object_id', 'content_type_id', 'codename', 'role'])]
         ordering = ['id']
@@ -1078,8 +1080,6 @@ class RoleEvaluation(RoleEvaluationFields):
 
 class RoleEvaluationUUID(RoleEvaluationFields):
     "Cache for UUID type models"
-
-    objects = MSSQLSafeManager()
 
     class Meta(RoleEvaluationMeta):
         constraints = [
