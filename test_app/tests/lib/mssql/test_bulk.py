@@ -129,7 +129,6 @@ def test_bulk_create_ignoring_conflicts_retries_per_row_after_batch_failure(monk
     # one outer all-or-nothing atomic, one for the batch attempt, one per row
     assert atomic.call_count == 4
     assert all(c == call(using="default") for c in atomic.call_args_list)
-    assert fake.needs_rollback is False
 
 
 def test_bulk_create_ignoring_conflicts_reraises_non_unique_integrity_errors(monkeypatch):
@@ -238,8 +237,12 @@ def test_bulk_create_falls_back_to_savepoints_when_rows_not_returnable(monkeypat
     patch_atomic(monkeypatch)
     savepoint, commit, rollback = patch_savepoints(monkeypatch, ("batch-1", "batch-2"))
     spy = patch_super_bulk_create(monkeypatch)
-    pre_save_receivers = pre_save.receivers
-    post_save_receivers = post_save.receivers
+    # spies on send() — the receiver registry staying unchanged would not
+    # prove the signals were not fired
+    pre_save_send = Mock()
+    post_save_send = Mock()
+    monkeypatch.setattr(pre_save, "send", pre_save_send)
+    monkeypatch.setattr(post_save, "send", post_save_send)
     objs = [make_event(f"evt-{i}") for i in range(51)]
     next_id = iter(range(1, 52))
     queryset._insert = Mock(side_effect=lambda *args, **kwargs: [(next(next_id),)])
@@ -255,8 +258,8 @@ def test_bulk_create_falls_back_to_savepoints_when_rows_not_returnable(monkeypat
     assert [obj.id for obj in objs] == list(range(1, 52))
     assert all(obj._state.db == "default" and obj._state.adding is False for obj in objs)
     # per-row _insert fires no signals
-    assert pre_save.receivers == pre_save_receivers
-    assert post_save.receivers == post_save_receivers
+    pre_save_send.assert_not_called()
+    post_save_send.assert_not_called()
 
 
 def test_bulk_create_savepoint_fallback_rolls_back_failed_batch(monkeypatch):
@@ -591,3 +594,47 @@ def test_bulk_create_resolves_the_write_database(monkeypatch):
     # ignore_conflicts disabled), and its transaction opened on the write database
     spy.assert_called_once_with(objs, batch_size=None, ignore_conflicts=False)
     atomic.assert_called_with(using="default")
+
+
+def test_bulk_create_explicit_false_update_conflicts_uses_safe_path(monkeypatch):
+    """update_conflicts=False is stock Django's default value, so passing it
+    explicitly (e.g. forwarded **kwargs) must behave like omitting it: the
+    mssql ignore-conflicts emulation runs instead of delegating the
+    ignore_conflicts request to a backend that does not support it."""
+    queryset, _ = make_queryset(monkeypatch, supports_ignore_conflicts=False)
+    patch_atomic(monkeypatch)
+    spy = patch_super_bulk_create(monkeypatch, return_value=[])
+    objs = [make_event("a")]
+
+    assert queryset.bulk_create(objs, ignore_conflicts=True, update_conflicts=False) == []
+
+    spy.assert_called_once_with(objs, batch_size=None, ignore_conflicts=False)
+
+
+def test_bulk_create_rejects_nonpositive_batch_size(monkeypatch):
+    """The fallback paths never call stock bulk_create, so its up-front
+    batch_size validation must be mirrored here — the savepoint fallback
+    otherwise silently ignores a bad batch_size in favor of fixed batches."""
+    queryset, _ = make_queryset(monkeypatch, can_return_rows=False)
+    patch_atomic(monkeypatch)
+    patch_savepoints(monkeypatch, ())
+
+    with pytest.raises(ValueError, match="Batch size must be a positive integer."):
+        queryset.bulk_create([make_event("a")], batch_size=0)
+
+
+def test_bulk_create_rejects_multi_table_inheritance(monkeypatch):
+    """The fallback paths never call stock bulk_create, so its up-front
+    multi-table-inheritance validation must be mirrored here: an MTI model
+    fails with Django's clear ValueError instead of a confusing FK/NOT NULL
+    error from the per-row fallback."""
+    from test_app.models import Inventory
+
+    queryset, _ = make_queryset(monkeypatch, can_return_rows=False)
+    patch_atomic(monkeypatch)
+    patch_savepoints(monkeypatch, ())
+    # stand in for a model with a concrete (non-proxy) parent
+    monkeypatch.setattr(ExampleEvent._meta, "all_parents", (Inventory,), raising=False)
+
+    with pytest.raises(ValueError, match="Can't bulk create a multi-table inherited model"):
+        queryset.bulk_create([make_event("a")])

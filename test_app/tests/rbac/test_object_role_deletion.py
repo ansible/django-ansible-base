@@ -111,10 +111,14 @@ class TestRoleDefinitionDeletion:
 
         assert RoleUserAssignment.objects.filter(role_definition=inv_rd, user=rando).count() == 2
 
+        # Model.delete() clears pk on the instance, so capture it first —
+        # asserting on inv_rd.id after the delete would compile to
+        # role_definition_id IS NULL and pass vacuously.
+        rd_id = inv_rd.id
         inv_rd.delete()
 
-        assert not ObjectRole.objects.filter(role_definition_id=inv_rd.id).exists()
-        assert not RoleUserAssignment.objects.filter(role_definition_id=inv_rd.id).exists()
+        assert not ObjectRole.objects.filter(role_definition_id=rd_id).exists()
+        assert not RoleUserAssignment.objects.filter(role_definition_id=rd_id).exists()
 
     def test_deleting_role_definition_queryset_removes_multi_object_assignments(self, rando, organization, inv_rd):
         """QuerySet.delete() bypasses Model.delete(), so the queryset form needs
@@ -218,6 +222,7 @@ def test_role_definition_queryset_delete_routes_cleanup_to_write_database(monkey
 
     def fake_delete_object_roles(queryset):
         cleanup_dbs.append(queryset.db)
+        return 0, {}
 
     super_delete = Mock()
 
@@ -258,10 +263,11 @@ class TestContentTypeDeletion:
         assert RoleUserAssignment.objects.filter(role_definition=inv_rd, user=rando).count() == 2
 
         ct = DABContentType.objects.get_for_model(Inventory)
+        ct_id = ct.id  # Model.delete() clears pk on the instance
         ct.delete()
 
-        assert not DABContentType.objects.filter(pk=ct.pk).exists()
-        assert not ObjectRole.objects.filter(content_type_id=ct.id).exists()
+        assert not DABContentType.objects.filter(pk=ct_id).exists()
+        assert not ObjectRole.objects.filter(content_type_id=ct_id).exists()
         assert not RoleUserAssignment.objects.filter(role_definition_id=inv_rd.id).exists()
 
     def test_deleting_content_type_queryset_removes_multi_object_assignments(self, rando, organization, inv_rd):
@@ -331,3 +337,97 @@ def test_delete_object_roles_routes_to_write_database(monkeypatch):
     queryset.delete.assert_not_called()  # the passthrough means it ran on the replica
 
     assert FakeAtomic.using == 'default'
+
+
+@pytest.mark.django_db
+class TestObjectRoleQuerySetDeletion:
+    def test_deleting_object_role_queryset_removes_multi_object_assignments(self, rando, organization, inv_rd):
+        """Deleting ObjectRoles through a queryset bypasses Model.delete() and
+        hits Django's collector directly. On SQL Server the collector NULLs the
+        nullable assignment.object_role foreign key before deleting, and two
+        object-scoped grants for one actor then violate unique_global_user_assignment
+        — the same collision delete_object_roles exists to prevent, reached by
+        deleting the object roles themselves."""
+        from test_app.models import Inventory
+
+        inventory_a = Inventory.objects.create(name='or-qs-delete-inv-a', organization=organization)
+        inventory_b = Inventory.objects.create(name='or-qs-delete-inv-b', organization=organization)
+        inv_rd.give_permission(rando, inventory_a)
+        inv_rd.give_permission(rando, inventory_b)
+
+        assert RoleUserAssignment.objects.filter(role_definition=inv_rd, user=rando).count() == 2
+
+        ObjectRole.objects.filter(role_definition=inv_rd).delete()
+
+        assert not ObjectRole.objects.filter(role_definition_id=inv_rd.id).exists()
+        assert not RoleUserAssignment.objects.filter(role_definition_id=inv_rd.id).exists()
+
+
+@pytest.mark.django_db
+class TestDeleteCountsVendorParity:
+    """The mssql cleanup deletes rows the collector would otherwise count, so
+    every deletion entry point must fold the cleanup counts into its return
+    value — the same deletion reports the same totals on every vendor."""
+
+    def _grant_two(self, rando, organization, inv_rd):
+        from test_app.models import Inventory
+
+        inventory_a = Inventory.objects.create(name='counts-inv-a', organization=organization)
+        inventory_b = Inventory.objects.create(name='counts-inv-b', organization=organization)
+        inv_rd.give_permission(rando, inventory_a)
+        inv_rd.give_permission(rando, inventory_b)
+
+    def test_role_definition_instance_delete_reports_all_deleted_rows(self, rando, organization, inv_rd):
+        self._grant_two(rando, organization, inv_rd)
+
+        deleted_count, deleted_by_model = inv_rd.delete()
+
+        assert deleted_by_model.get('dab_rbac.RoleDefinition') == 1
+        assert deleted_by_model.get('dab_rbac.ObjectRole') == 2
+        assert deleted_by_model.get('dab_rbac.RoleUserAssignment') == 2
+        assert deleted_count == sum(deleted_by_model.values())
+
+    def test_role_definition_queryset_delete_reports_all_deleted_rows(self, rando, organization, inv_rd):
+        self._grant_two(rando, organization, inv_rd)
+
+        deleted_count, deleted_by_model = RoleDefinition.objects.filter(pk=inv_rd.pk).delete()
+
+        assert deleted_by_model.get('dab_rbac.RoleDefinition') == 1
+        assert deleted_by_model.get('dab_rbac.ObjectRole') == 2
+        assert deleted_by_model.get('dab_rbac.RoleUserAssignment') == 2
+        assert deleted_count == sum(deleted_by_model.values())
+
+    def test_object_role_queryset_delete_reports_all_deleted_rows(self, rando, organization, inv_rd):
+        self._grant_two(rando, organization, inv_rd)
+
+        deleted_count, deleted_by_model = ObjectRole.objects.filter(role_definition=inv_rd).delete()
+
+        assert deleted_by_model.get('dab_rbac.ObjectRole') == 2
+        assert deleted_by_model.get('dab_rbac.RoleUserAssignment') == 2
+        assert deleted_count == sum(deleted_by_model.values())
+
+    def test_content_type_instance_delete_reports_all_deleted_rows(self, rando, organization, inv_rd):
+        from ansible_base.rbac.models import DABContentType
+        from test_app.models import Inventory
+
+        self._grant_two(rando, organization, inv_rd)
+        ct = DABContentType.objects.get_for_model(Inventory)
+
+        deleted_count, deleted_by_model = ct.delete()
+
+        assert deleted_by_model.get('dab_rbac.ObjectRole') == 2
+        assert deleted_by_model.get('dab_rbac.RoleUserAssignment') == 2
+        assert deleted_count == sum(deleted_by_model.values())
+
+    def test_content_type_queryset_delete_reports_all_deleted_rows(self, rando, organization, inv_rd):
+        from ansible_base.rbac.models import DABContentType
+        from test_app.models import Inventory
+
+        self._grant_two(rando, organization, inv_rd)
+        ct = DABContentType.objects.get_for_model(Inventory)
+
+        deleted_count, deleted_by_model = DABContentType.objects.filter(pk=ct.pk).delete()
+
+        assert deleted_by_model.get('dab_rbac.ObjectRole') == 2
+        assert deleted_by_model.get('dab_rbac.RoleUserAssignment') == 2
+        assert deleted_count == sum(deleted_by_model.values())

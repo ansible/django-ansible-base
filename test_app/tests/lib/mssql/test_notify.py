@@ -91,7 +91,7 @@ def test_conn_string_applies_notify_database_overrides_and_extra_options():
     }
     overrides = {"default": {"HOST": "listener.example", "OPTIONS": {"Encrypt": "yes"}}}
     with override_settings(DATABASES=databases, SQL_SERVER_NOTIFY_DATABASES=overrides):
-        conn_string = notify.get_sql_server_notify_conn_string(application_name="dispatcherd")
+        conn_string = notify.get_sql_server_notify_conn_string(APP="dispatcherd")
 
     parsed = parse_odbc_connection_string(conn_string)
     assert parsed["SERVER"] == "listener.example,1434"
@@ -99,7 +99,7 @@ def test_conn_string_applies_notify_database_overrides_and_extra_options():
     assert parsed["UID"] == "user"
     assert parsed["PWD"] == "password"
     assert parsed["Encrypt"] == "yes"
-    assert parsed["application_name"] == "dispatcherd"
+    assert parsed["APP"] == "dispatcherd"
 
 
 def test_conn_string_defaults_host_port_and_driver():

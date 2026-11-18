@@ -77,6 +77,17 @@ def bulk_ancestor_roles(team_pks: Iterable[int]) -> set['ObjectRole']:
     return set(ObjectRole.objects.filter(permission_partials__in=ancestor_evals))
 
 
+def _merge_delete_results(*results: tuple[int, dict[str, int]]) -> tuple[int, dict[str, int]]:
+    """Combine (count, {model_label: count}) pairs the way Django's collector does."""
+    total = 0
+    by_model: dict[str, int] = {}
+    for count, model_counts in results:
+        total += count
+        for label, model_count in model_counts.items():
+            by_model[label] = by_model.get(label, 0) + model_count
+    return total, by_model
+
+
 def delete_object_roles(queryset) -> tuple[int, dict[str, int]]:
     """Delete ObjectRoles and their assignments safely on SQL Server.
 
@@ -112,7 +123,9 @@ def delete_object_roles(queryset) -> tuple[int, dict[str, int]]:
             for label, model_count in model_counts.items():
                 deleted_by_model[label] = deleted_by_model.get(label, 0) + model_count
 
-        count, model_counts = ObjectRole.objects.using(using).filter(pk__in=object_role_ids).delete()
+        # _base_manager is a plain Manager: ObjectRole's own queryset delete
+        # routes through delete_object_roles, so going through it here would recurse.
+        count, model_counts = ObjectRole._base_manager.using(using).filter(pk__in=object_role_ids).delete()
         deleted_count += count
         for label, model_count in model_counts.items():
             deleted_by_model[label] = deleted_by_model.get(label, 0) + model_count

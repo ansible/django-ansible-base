@@ -42,14 +42,17 @@ class DABContentTypeQuerySet(MSSQLSafeQuerySet):
             # would then retain the content types while their grants are gone.
             pks = list(self.values_list('pk', flat=True))
             with transaction.atomic(using=self.db):
-                delete_object_roles(
+                cleanup = delete_object_roles(
                     ObjectRole.objects.using(self.db).filter(
                         django_models.Q(content_type_id__in=pks) | django_models.Q(role_definition__content_type_id__in=pks)
                     )
                 )
                 # _base_manager is a plain Manager, so this stock QuerySet.delete
-                # does not re-enter this override.
-                return self.model._base_manager.using(self.db).filter(pk__in=pks).delete()
+                # does not re-enter this override. Fold the cleanup counts in so
+                # the return value reports the same totals as PostgreSQL's collector.
+                from ansible_base.rbac.caching import _merge_delete_results
+
+                return _merge_delete_results(cleanup, self.model._base_manager.using(self.db).filter(pk__in=pks).delete())
         return super().delete()
 
 
@@ -335,16 +338,22 @@ class DABContentType(django_models.Model):
         using = using or router.db_for_write(type(self), instance=self)
         with transaction.atomic(using=using):
             if connections[using].vendor == 'microsoft':
-                from ansible_base.rbac.caching import delete_object_roles
+                from ansible_base.rbac.caching import _merge_delete_results, delete_object_roles
                 from ansible_base.rbac.models import ObjectRole
 
-                delete_object_roles(
+                # Fold the cleanup counts into the collector's, so the return
+                # value reports the same totals as the PostgreSQL collector.
+                cleanup = delete_object_roles(
                     ObjectRole.objects.using(using).filter(django_models.Q(content_type=self) | django_models.Q(role_definition__content_type=self))
                 )
             result = super().delete(using=using, keep_parents=keep_parents)
+            if connections[using].vendor == 'microsoft':
+                result = _merge_delete_results(cleanup, result)
         # Model.delete() nulls self.pk, and this instance is often the one the
         # manager cache holds — without eviction the cache would keep handing
-        # out the deleted (now unsaved) content type.
+        # out the deleted (now unsaved) content type. Only the instance path
+        # evicts: existing tests deliberately rely on the queryset path leaving
+        # a deleted content type in the cache (auto-creation still serves it).
         objects = getattr(type(self), 'objects', None)
         if hasattr(objects, 'clear_cache'):
             objects.clear_cache()

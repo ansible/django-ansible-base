@@ -65,11 +65,23 @@ class MSSQLSafeQuerySet(models.QuerySet):
         unique_fields=None,
     ):
         objs = list(objs)
+        # Mirror stock bulk_create's up-front validations: the fallback paths
+        # below never call it, so without these a bad batch_size or a
+        # multi-table-inherited model would fail with a confusing database
+        # error instead of Django's own ValueError.
+        if batch_size is not None and batch_size <= 0:
+            raise ValueError("Batch size must be a positive integer.")
+        for parent in self.model._meta.all_parents:
+            if parent._meta.concrete_model is not self.model._meta.concrete_model:
+                raise ValueError("Can't bulk create a multi-table inherited model")
         # Route through the write alias, like Django's own QuerySet.bulk_create:
         # without _for_write, self.db resolves to the router's read database.
         self._for_write = True
         connection = connections[self.db]
-        if connection.vendor != "microsoft" or update_conflicts is not None:
+        # update_conflicts is gated on truthiness, not ``is not None``: False is
+        # stock Django's default, and a caller passing it explicitly (forwarded
+        # kwargs) must get the same treatment as one omitting it.
+        if connection.vendor != "microsoft" or update_conflicts:
             # Other vendors — and update_conflicts, which mssql-django does not
             # support — are Django's business: delegate and let Django's own
             # NotSupportedError surface unchanged.

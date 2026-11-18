@@ -61,7 +61,6 @@ class FieldLookupBackend(BaseFilterBackend):
             path, suffix = lookup.rsplit('__', 1)
             if suffix not in supported_lookups:
                 raise ParseError(_('Regular expression lookups are not supported on SQL Server.'))
-            path, suffix = lookup.rsplit('__', 1)
         else:
             path = lookup
             suffix = 'exact'

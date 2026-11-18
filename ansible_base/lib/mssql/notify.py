@@ -77,7 +77,8 @@ def get_sql_server_notify_conn_string(alias: str = DEFAULT_DB_ALIAS, **extra_opt
     MS SQL Server counterpart of :func:`ansible_base.lib.utils.db.get_pg_notify_params`:
     it starts from Django's ``DATABASES[alias]``, applies optional overrides from
     the ``SQL_SERVER_NOTIFY_DATABASES`` setting (parallel to ``PG_NOTIFY_DATABASES``)
-    and any ``**extra_options`` (e.g. ``application_name``), then renders the
+    and any ``**extra_options`` (e.g. ``APP``, the ODBC application-name
+    keyword), then renders the
     merged settings via :func:`sql_server_conn_string_from_settings_dict`.
     Default host, port, and driver are localhost, 1433, and ODBC Driver 18.
 

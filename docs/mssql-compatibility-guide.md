@@ -69,11 +69,20 @@ All SQL Server-specific code in DAB lives in two contained packages:
 
 `advisory_lock()` in `ansible_base.lib.utils.db` dispatches transparently by database vendor, so callers keep a single import; PostgreSQL uses advisory locks, SQL Server uses `sp_getapplock`, and SQLite is a no-op.
 
+Beyond those two packages, the vendor dispatch surface is exactly this list — every place outside `backends/mssql` and `lib/mssql` with a vendor branch, kept enumerable so it can be audited:
+
+- The shared abstract model bases carry `MSSQLSafeManager` (`CommonModel`, `ImmutableCommonModel`, `ObjectRoleFields`, `RoleEvaluationFields`, and `Resource`), which routes `bulk_create`/`bulk_update` (and, for the rbac models, `delete`) through the SQL Server-safe implementations in `lib/mssql/bulk.py` and `rbac/caching.py`.
+- Five deletion entry points route through `delete_object_roles()` on SQL Server: `RoleDefinition.delete()` and its queryset, `DABContentType.delete()` and its queryset, and `ObjectRole`'s queryset delete.
+- `_insert_new` in `ansible_base/rbac/pipeline.py` inserts role assignments through the mssql-safe bulk path.
+- `get_supported_lookups` in `ansible_base/rest_filters` drops `regex`/`iregex` from the supported lookups on SQL Server (see below).
+
 ## Transparent bulk writes
 
 `bulk_create(..., ignore_conflicts=True)` raises `NotSupportedError` on SQL Server (mssql-django does not implement it). DAB closes that gap at the manager layer: the shared abstract model bases (the `CommonModel` family — every DAB model, and any consumer model inheriting from them) carry `MSSQLSafeManager`, whose queryset rewrites `ignore_conflicts` bulk creates into an mssql-safe form, so application code keeps writing plain `model.objects.bulk_create(objs, ignore_conflicts=True)`. On PostgreSQL the manager is inert. Only duplicate-key conflicts are ignored — a foreign-key or check-constraint violation still raises, matching `ON CONFLICT DO NOTHING` semantics — and the fallback runs inside one transaction, so a failure never leaves a prefix of the rows committed (all-or-nothing, like the native statement).
 
 One return-value difference remains: with `ignore_conflicts=True`, Django on PostgreSQL returns the input objects (without primary keys set), while the SQL Server path returns only the rows that were actually inserted, with primary keys populated. Code that uses the return value of `bulk_create(..., ignore_conflicts=True)` must not assume the same list on both vendors.
+
+A consumer model that declares its own `objects` manager replaces the inherited `MSSQLSafeManager` and does not get the SQL Server-safe bulk path — `bulk_create(..., ignore_conflicts=True)` will raise `NotSupportedError` on SQL Server. Custom managers need to subclass `MSSQLSafeManager` (and return an `MSSQLSafeQuerySet` subclass) to keep it, which is what DAB's own rbac managers do.
 
 Historical models (the migration-state models used inside `migrate`) cannot take the manager — Django hands migration code plain managers. Migration utilities therefore use the function form, `ansible_base.lib.mssql.bulk.bulk_create(model, objs, ignore_conflicts=True)`, which applies the same dispatch by building the safe queryset directly (and so bypasses any custom manager on the model); on other vendors it delegates to the stock `bulk_create`. Both forms live in `ansible_base/lib/mssql/bulk.py`.
 
@@ -83,7 +92,7 @@ Django's deletion collector NULLs nullable cascading foreign keys before deletin
 
 ## dispatcherd Service Broker connections
 
-`get_sql_server_notify_conn_string()` renders a ready-made ODBC connection string for dispatcherd's `sql_server` broker, whose `connect()` pops a `connection_string` from its config and passes everything else to `pyodbc.connect` as kwargs (so server/database/credentials have to travel inside the string). It applies `SQL_SERVER_NOTIFY_DATABASES` overrides on top of the Django `DATABASES` entry — the MS SQL Server counterpart of `get_pg_notify_params()`. The Service Broker listener holds a long-lived connection, so give it its own pool bucket — set `SQL_SERVER_NOTIFY_DATABASES` to point at a distinct application name (the ODBC `APP`/`application_name` keyword) and bypass external poolers for it, the same way a pg LISTEN connection bypasses PgBouncer.
+`get_sql_server_notify_conn_string()` renders a ready-made ODBC connection string for dispatcherd's `sql_server` broker, whose `connect()` pops a `connection_string` from its config and passes everything else to `pyodbc.connect` as kwargs (so server/database/credentials have to travel inside the string). It applies `SQL_SERVER_NOTIFY_DATABASES` overrides on top of the Django `DATABASES` entry — the MS SQL Server counterpart of `get_pg_notify_params()`. The Service Broker listener holds a long-lived connection, so give it its own pool bucket — set `SQL_SERVER_NOTIFY_DATABASES` to point at a distinct application name (the ODBC `APP` keyword — not libpq's `application_name`, which the Microsoft ODBC driver does not accept) and bypass external poolers for it, the same way a pg LISTEN connection bypasses PgBouncer.
 
 ## The transparency floor
 

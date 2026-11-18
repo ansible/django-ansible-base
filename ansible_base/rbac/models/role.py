@@ -93,7 +93,7 @@ class RoleDefinitionQuerySet(MSSQLSafeQuerySet):
         # without _for_write, self.db resolves to the router's read database.
         self._for_write = True
         if connections[self.db].vendor == 'microsoft':
-            from ansible_base.rbac.caching import delete_object_roles
+            from ansible_base.rbac.caching import _merge_delete_results, delete_object_roles
 
             # Freeze the targets before cleanup: a filter spanning the
             # object_roles relation stops matching once delete_object_roles has
@@ -101,10 +101,11 @@ class RoleDefinitionQuerySet(MSSQLSafeQuerySet):
             # role definitions while their grants are gone.
             pks = list(self.values_list('pk', flat=True))
             with transaction.atomic(using=self.db):
-                delete_object_roles(ObjectRole.objects.using(self.db).filter(role_definition_id__in=pks))
+                cleanup = delete_object_roles(ObjectRole.objects.using(self.db).filter(role_definition_id__in=pks))
                 # _base_manager is a plain Manager, so this stock QuerySet.delete
-                # does not re-enter this override.
-                return self.model._base_manager.using(self.db).filter(pk__in=pks).delete()
+                # does not re-enter this override. Fold the cleanup counts in so
+                # the return value reports the same totals as PostgreSQL's collector.
+                return _merge_delete_results(cleanup, self.model._base_manager.using(self.db).filter(pk__in=pks).delete())
         return super().delete()
 
 
@@ -275,10 +276,15 @@ class RoleDefinition(CommonModel):
                 # violate the global-assignment unique index. Deleting the object
                 # roles through delete_object_roles first (which removes the
                 # assignments itself) leaves the collector nothing to NULL.
-                from ansible_base.rbac.caching import delete_object_roles
+                from ansible_base.rbac.caching import _merge_delete_results, delete_object_roles
 
-                delete_object_roles(ObjectRole.objects.using(using).filter(role_definition=self))
-            return super().delete(using=using, keep_parents=keep_parents)
+                # Fold the cleanup counts into the collector's, so the return
+                # value reports the same totals as the PostgreSQL collector.
+                cleanup = delete_object_roles(ObjectRole.objects.using(using).filter(role_definition=self))
+            result = super().delete(using=using, keep_parents=keep_parents)
+            if connections[using].vendor == 'microsoft':
+                result = _merge_delete_results(cleanup, result)
+            return result
 
     # See assignable_scope_q() below for what each of these scopes means.
     ASSIGNABLE_SCOPE_SYSTEM = 'system'
@@ -648,6 +654,36 @@ class RoleTeamAssignment(AssignmentBase):
         return self.team
 
 
+class ObjectRoleQuerySet(MSSQLSafeQuerySet):
+    """ObjectRole queryset whose delete() routes mssql-safe assignment cleanup.
+
+    QuerySet.delete() bypasses Model.delete(), and deleting object roles
+    through Django's collector NULLs the nullable assignment.object_role
+    foreign key before the delete — the collision delete_object_roles exists
+    to prevent (see that function). Only ObjectRole gets this override: the
+    assignment models share ObjectRoleFields but must keep the plain manager,
+    because delete_object_roles interprets its queryset as object roles.
+    """
+
+    def delete(self):
+        # Route through the write alias, like Django's own QuerySet.delete:
+        # without _for_write, self.db resolves to the router's read database.
+        self._for_write = True
+        if connections[self.db].vendor == 'microsoft':
+            from ansible_base.rbac.caching import delete_object_roles
+
+            # delete_object_roles evaluates this queryset up front and deletes
+            # by fixed ids, so relation-based filters cannot go stale mid-delete.
+            with transaction.atomic(using=self.db):
+                return delete_object_roles(self)
+        return super().delete()
+
+
+class ObjectRoleManager(MSSQLSafeManager):
+    def get_queryset(self):
+        return ObjectRoleQuerySet(self.model, using=self._db, hints=self._hints)
+
+
 class ObjectRole(ObjectRoleFields):
     """
     This is the successor to the Role model in the old AWX RBAC system
@@ -658,6 +694,8 @@ class ObjectRole(ObjectRoleFields):
     After this is created, users and teams can be added to gives those
     permissions to that user or team, for that content_object
     """
+
+    objects = ObjectRoleManager()
 
     class Meta:
         app_label = 'dab_rbac'
