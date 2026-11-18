@@ -618,9 +618,10 @@ def test_bulk_create_rejects_nonpositive_batch_size(monkeypatch):
     queryset, _ = make_queryset(monkeypatch, can_return_rows=False)
     patch_atomic(monkeypatch)
     patch_savepoints(monkeypatch, ())
+    obj = make_event("a")
 
     with pytest.raises(ValueError, match="Batch size must be a positive integer."):
-        queryset.bulk_create([make_event("a")], batch_size=0)
+        queryset.bulk_create([obj], batch_size=0)
 
 
 def test_bulk_create_rejects_multi_table_inheritance(monkeypatch):
@@ -635,6 +636,7 @@ def test_bulk_create_rejects_multi_table_inheritance(monkeypatch):
     patch_savepoints(monkeypatch, ())
     # stand in for a model with a concrete (non-proxy) parent
     monkeypatch.setattr(ExampleEvent._meta, "all_parents", (Inventory,), raising=False)
+    obj = make_event("a")
 
     with pytest.raises(ValueError, match="Can't bulk create a multi-table inherited model"):
-        queryset.bulk_create([make_event("a")])
+        queryset.bulk_create([obj])
