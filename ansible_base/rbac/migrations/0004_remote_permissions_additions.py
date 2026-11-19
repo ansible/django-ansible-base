@@ -4,6 +4,8 @@ import ansible_base.rbac.models.content_type
 import ansible_base.rbac.remote
 from django.db import migrations, models
 
+from ansible_base.lib.fields import BoundedTextField
+
 
 class Migration(migrations.Migration):
 
@@ -59,7 +61,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='objectrole',
             name='parent_reference',
-            field=models.TextField(blank=True, db_index=True, help_text='The ansible_id or object_id of the parent resource.'),
+            field=BoundedTextField(blank=True, db_index=True, help_text='The ansible_id or object_id of the parent resource.', sql_server_max_length=64),
         ),
         # Add new fields with a temporary name
         migrations.AddField(

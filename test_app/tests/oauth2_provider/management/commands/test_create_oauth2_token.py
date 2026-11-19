@@ -37,7 +37,8 @@ class TestOAuth2CreateCommand:
                 call_command('create_oauth2_token', arg, stdout=out)
             assert 'The user does not exist.' in str(excinfo.value)
 
-    def test_correct_user(self, random_user, unauthenticated_api_client):
+    def test_correct_user(self, random_user, unauthenticated_api_client, settings):
+        settings.allow_local_pat_creation = False
         user_username = random_user.username
         with StringIO() as out:
             arg = '--user=' + user_username
@@ -46,7 +47,10 @@ class TestOAuth2CreateCommand:
 
         hashed_token = hash_string(generated_token, hasher=hashlib.sha256, algo="sha256")
         assert OAuth2AccessToken.objects.filter(user=random_user, token=hashed_token).count() == 1
-        assert OAuth2AccessToken.objects.get(user=random_user, token=hashed_token).scope == 'write'
+        created_token = OAuth2AccessToken.objects.get(user=random_user, token=hashed_token)
+        assert created_token.scope == 'write'
+        # A command-issued token is a personal token, not bound to an OAuth2 application (TC-9 item 13).
+        assert created_token.application is None
 
         url = get_relative_url("user-me")
         response = unauthenticated_api_client.get(

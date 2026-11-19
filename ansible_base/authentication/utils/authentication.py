@@ -14,6 +14,7 @@ from ansible_base.authentication.authenticator_plugins.utils import get_authenti
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy
 from ansible_base.authentication.utils.user import normalize_and_get_email
+from ansible_base.lib.logging import log_auth_event
 
 logger = logging.getLogger('ansible_base.authentication.utils.authentication')
 
@@ -39,6 +40,11 @@ class FakeBackend:
             if name in self.settings:
                 return self.settings[name]
         return default
+
+
+def get_social_auth_setting(name: str, default=None):
+    """Read a global social-auth setting, including dynamically supplied values."""
+    return FakeBackend().setting(name, default)
 
 
 def raise_auth_exception(message: str, backend: Optional[Authenticator] = None):
@@ -201,7 +207,10 @@ def _handle_email_fallback_strategy(uid: str, email: Union[str, list[str], None]
         raise AuthException(f"Found more than 1 user matching {uid}/{email}, unable to determine which user to merge with!")
     # PROPOSAL FLOW: Are there multiple AAP users with this Email? No only 1
     elif user_count == 1:
-        return existing_user_match.first().username
+        existing_user = existing_user_match.first()
+        message = f"Authenticator {authenticator.name} is linking user {uid} to existing user {existing_user.username} via email {normalized_email}"
+        log_auth_event(message)
+        return existing_user.username
     # PROPOSAL FLOW: Does an AAP User with this email exist? No
     else:
         new_username = get_local_username({'username': uid})
@@ -267,7 +276,9 @@ def determine_username_from_uid(
         exact_match = AuthenticatorUser.objects.filter(uid=uid, provider=authenticator)
     if exact_match.exists():
         new_username = exact_match.first().user.username
-        logger.info(f"Authenticator {authenticator.name} already authenticated {uid} as {new_username}")
+        # Reusing an existing provider-to-user link is the normal successful
+        # request path, so it should not create production log noise.
+        logger.debug(f"Authenticator {authenticator.name} already authenticated {uid} as {new_username}")
         return new_username
 
     logger.debug(f"Authentication merge strategy is {merge_strategy}")
@@ -300,8 +311,45 @@ def _validate_username_for_new_user(username: str, authenticator: Authenticator)
     return True  # Validation passed
 
 
+def _determine_authenticator_username(uid: str, username: str | None, email: str | None, authenticator: Authenticator) -> str:
+    """Resolve the local username, preferring an existing migrated identity."""
+    preferred_username = username or uid
+    migrated_username = migrate_from_existing_authenticator(
+        uid=uid,
+        alt_uid=None,
+        authenticator=authenticator,
+        preferred_username=preferred_username,
+    )
+    if migrated_username:
+        return migrated_username
+
+    uid_filter = [preferred_username] if preferred_username == uid else [preferred_username, uid]
+    return determine_username_from_uid(uid=preferred_username, uid_filter=uid_filter, email=email, authenticator=authenticator)
+
+
+def _update_existing_authenticator_user(uid: str, authenticator: Authenticator, email: str | None, extra_data: dict) -> AuthenticatorUser | None:
+    """Update an existing provider identity, or return None when it is new."""
+    try:
+        auth_user = AuthenticatorUser.objects.get(uid=uid, provider=authenticator)
+    except AuthenticatorUser.DoesNotExist:
+        return None
+
+    auth_user.extra_data = extra_data
+    if email is None:
+        auth_user.save(update_fields=["extra_data"])
+    else:
+        auth_user.email = email
+        auth_user.save()
+    return auth_user
+
+
 def get_or_create_authenticator_user(
-    uid: str, email: str, authenticator: Authenticator, user_details: dict = dict, extra_data: dict = dict
+    uid: str,
+    email: str | None,
+    authenticator: Authenticator,
+    user_details: dict = dict,
+    extra_data: dict = dict,
+    username: str | None = None,
 ) -> Tuple[Optional[AbstractUser], Optional[AuthenticatorUser], Optional[bool]]:
     """
     Create the user object in the database along with it's associated AuthenticatorUser class.
@@ -322,43 +370,32 @@ def get_or_create_authenticator_user(
         raise
 
     # Step 1: Determine the username, running the migration logic FIRST. This is the key fix.
-    if migrated_username := migrate_from_existing_authenticator(uid=uid, alt_uid=None, authenticator=authenticator, preferred_username=uid):
-        username = migrated_username
-    else:
-        username = determine_username_from_uid(uid=uid, uid_filter=[uid], email=email, authenticator=authenticator)
+    local_username = _determine_authenticator_username(uid, username, email, authenticator)
 
     # Step 2: Now that the username is finalized, try to find the AuthenticatorUser.
-    auth_user = None
-    created = None
-    try:
-        auth_user = AuthenticatorUser.objects.get(uid=uid, provider=authenticator)
-        auth_user.extra_data = extra_data
-        auth_user.email = email
-        auth_user.save()
-        created = False
-    except AuthenticatorUser.DoesNotExist:
-        # If the AuthenticatorUser doesn't exist, validate the username before creating a new one.
-        if not _validate_username_for_new_user(username, authenticator):
-            return None, None, None
+    auth_user = _update_existing_authenticator_user(uid, authenticator, email, extra_data)
+    created = auth_user is None
+    if auth_user is None and not _validate_username_for_new_user(local_username, authenticator):
+        return None, None, None
 
     # Step 3: Get or create the main User model instance.
     details = {k: user_details.get(k, "") for k in ["first_name", "last_name", "email"]}
-    local_user, user_created = get_user_model().objects.get_or_create(username=username, defaults=details)
+    local_user, user_created = get_user_model().objects.get_or_create(username=local_username, defaults=details)
     if user_created:
-        logger.info(f"Authenticator {authenticator.name} created User {username}")
+        logger.info(f"Authenticator {authenticator.name} created User {local_username}")
 
     # Step 4: If the AuthenticatorUser was not found in Step 2, create it now.
-    if created is None:
+    if created:
         auth_user, created = AuthenticatorUser.objects.get_or_create(
             user=local_user,
-            email=email,
+            email=email or "",
             uid=uid,
             provider=authenticator,
             defaults={'extra_data': extra_data},
         )
         if created:
             extra = ' attaching to existing user' if not user_created else ''
-            logger.debug(f"Authenticator {authenticator.name} created AuthenticatorUser for {username}{extra}")
+            logger.debug(f"Authenticator {authenticator.name} created AuthenticatorUser for {local_username}{extra}")
 
     # Ensure the returned user object is the one linked to the auth_user.
     final_user = auth_user.user if auth_user else local_user

@@ -53,22 +53,23 @@ If you want to manually add the URLs without dynamic urls, see the `oauth2_provi
 Additional settings are required to enable OAuth2 for your rest endpoints.
 This will happen automatically if using [dynamic_settings](../Installation.md)
 
-To manually configure the settings in your application 
+To manually configure the settings in an application that also enables
+`ansible_base.authentication`, use the unified Bearer authenticator:
 ```
 OAUTH2_PROVIDER = {
-    'ACCESS_TOKEN_EXPIRE_SECONDS': 31536000000
-    'AUTHORIZATION_CODE_EXPIRE_SECONDS': 600
-    'REFRESH_TOKEN_EXPIRE_SECONDS': 2628000
-    'APPLICATION_MODEL': 'dab_oauth2_provider.OAuth2Application'
-    'ACCESS_TOKEN_MODEL': 'dab_oauth2_provider.OAuth2AccessToken'
+    'ACCESS_TOKEN_EXPIRE_SECONDS': 31536000000,
+    'AUTHORIZATION_CODE_EXPIRE_SECONDS': 600,
+    'REFRESH_TOKEN_EXPIRE_SECONDS': 2628000,
+    'APPLICATION_MODEL': 'dab_oauth2_provider.OAuth2Application',
+    'ACCESS_TOKEN_MODEL': 'dab_oauth2_provider.OAuth2AccessToken',
 }
 
-REST_FRAMEWORK = [
+REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication',
+        'ansible_base.authentication.bearer_authentication.BearerAuthentication',
         ...
-    ]
-]
+    ],
+}
 OAUTH2_PROVIDER_APPLICATION_MODEL = 'dab_oauth2_provider.OAuth2Application'
 OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = 'dab_oauth2_provider.OAuth2AccessToken'
 OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = "dab_oauth2_provider.OAuth2RefreshToken"
@@ -76,6 +77,11 @@ OAUTH2_PROVIDER_ID_TOKEN_MODEL = "dab_oauth2_provider.OAuth2IDToken"
 
 ALLOW_OAUTH2_FOR_EXTERNAL_USERS = False
 ```
+
+Applications that enable only `ansible_base.oauth2_provider` can continue to
+use `ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication`.
+See [OAuth bearer-token authentication](authentication/oauth_bearer.md) to
+configure an external OAuth or OpenID Connect issuer.
 
 ### Runtime settings
 You may want to allow for some of the settings above to be runtime instead of hard coded. These might include the EXPIRE_SECONDS and ALLOW_OATUH2_FOR_EXTERNAL_USERS.
@@ -354,6 +360,10 @@ endpoint.  Personal access tokens can be identified by the `application` field b
 > Note: Users can only see the token or refresh-token _value_ at the time of creation ONLY.  
 
 #### Using OAuth2 Token System for Personal Access Tokens (PAT)
+Local PAT creation through the API is enabled by default. Set `allow_local_pat_creation`
+to `False` to block API creation of tokens without an application. Application tokens
+and PATs created with the `create_oauth2_token` management command remain available.
+
 The most common usage of OAuth2 is authenticating users. The `token` field of a token is used
 as part of the HTTP authentication header, in the format `Authorization: Bearer <token field value>`.  This _Bearer_
 token can be obtained by doing a curl to the `/o/token/` endpoint. For example:  

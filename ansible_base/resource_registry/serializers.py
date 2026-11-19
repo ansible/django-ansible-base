@@ -10,6 +10,11 @@ from ansible_base.resource_registry.models import Resource, ResourceType
 logger = logging.getLogger('ansible_base.serializers')
 
 
+class ServiceIndexMetadataSerializer(serializers.Serializer):
+    service_id = serializers.UUIDField()
+    service_type = serializers.CharField()
+
+
 class ResourceDataField(serializers.JSONField):
     """
     Inspects the content object. If it has a managed serializer,

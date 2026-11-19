@@ -5,7 +5,7 @@ import importlib
 import logging
 import re
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, Optional, Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -45,6 +45,24 @@ class TriggerResult(Enum):
     SKIP = auto()
 
 
+def merge_groups_from_claim_sources(groups_claim: str, *claim_sources: Mapping[str, Any] | None) -> list[str]:
+    """Return the ordered, de-duplicated string groups from each claims source."""
+    if not groups_claim:
+        return []
+
+    groups = []
+    seen = set()
+    for source in claim_sources:
+        claim_groups = source.get(groups_claim, []) if source else []
+        if not isinstance(claim_groups, list):
+            continue
+        for group in claim_groups:
+            if isinstance(group, str) and group not in seen:
+                seen.add(group)
+                groups.append(group)
+    return groups
+
+
 def create_claims(authenticator: Authenticator, username: str, attrs: dict, groups: list[str]) -> dict:
     """
     Given an authenticator and a username, attrs and groups determine what the user has access to
@@ -66,9 +84,11 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     # debug tracking ID
     tracking_id = str(uuid4())
 
-    logger.info(f"[{tracking_id}] Creating mapping for user {username} through authenticator {authenticator.name}")
-    logger.debug(f"[{tracking_id}] {username}'s groups: {groups}")
-    logger.debug(f"[{tracking_id}] {username}'s attrs: {attrs}")
+    # Evaluating maps occurs for every successful authentication. Do not emit
+    # routine request activity at INFO or expose claim values in debug logs.
+    logger.debug(f"[{tracking_id}] Evaluating maps for user {username} through authenticator {authenticator.name}")
+    logger.debug(f"[{tracking_id}] {username} has {len(groups)} group(s)")
+    logger.debug(f"[{tracking_id}] {username}'s claim keys: {sorted(attrs)}")
 
     # load the maps (materialize to avoid extra count() query)
     maps = list(AuthenticatorMap.objects.filter(authenticator=authenticator.pk).order_by("order"))
@@ -762,7 +782,8 @@ def create_organizations_and_teams(results) -> None:
 class ReconcileUser:
     @classmethod
     def reconcile_user_claims(cls, user: AbstractUser, authenticator_user: AuthenticatorUser) -> None:
-        logger.info("Reconciling user claims")
+        # Reconciliation is normal per-request work, not an operational event.
+        logger.debug("Reconciling user claims")
 
         claims = getattr(user, 'claims', authenticator_user.claims)
 

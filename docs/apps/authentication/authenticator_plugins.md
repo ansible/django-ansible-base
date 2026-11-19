@@ -19,7 +19,11 @@ The abstract class can be found in ansible_base.authentication.authenticator_plu
 `configuration_encrypted_fields`: An array of fields from the configuration_class that are to be stored encrypted in the database. Putting the name of the field in here will automatically perform the encryption/decryption of the field through the serializer.
 `type`: The specific type name for this authenticator_plugin, i.e. SAML. This should be unique across the authenticator_plugins.
 `logger`: The plugin will default to a logger of `ansible_base.authentication.models.abstract_authenticator` but you can set logger to be more specific for your plugin. i.e. `ansible_base.authentication.authenticator_plugins.saml`. Note: this takes the logger class, not a string of the logger name.
-`category`: Currently there are two supported categories: `password` and `sso`. This field indicates to the UI if the username/password fields should be displayed on the login form or if there should be an SSO icon for any authenticator of this type. Additional categories may be added in the future but are out of scope for this document.
+`category`: Supported categories include `password`, `sso`, and `api_auth`.
+`password` controls username/password login presentation, `sso` provides a
+browser-login flow, and `api_auth` validates API credentials without a browser
+redirect. The built-in OAuth bearer-token authenticator is an `api_auth`
+plugin; see [OAuth bearer-token authentication](oauth_bearer.md).
 
 
 #### Customizable Methods

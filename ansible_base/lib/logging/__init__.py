@@ -1,6 +1,8 @@
 import logging
+import sys
 import threading
-from typing import Optional
+import traceback
+from typing import Iterable, Optional
 
 from ansible_base.lib.utils.settings import get_setting
 
@@ -31,6 +33,10 @@ def log_auth_warning(message: str):
     log_auth_event(message, logging.WARNING)
 
 
-def log_auth_exception(message: str):
+def log_auth_exception(message: str, redact_values: Iterable[str] = ()):
+    """Log the active exception, replacing known credential values when supplied."""
     auth_logger = get_auth_logger()
-    auth_logger.exception(message)
+    exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
+    for value in filter(None, redact_values):
+        exception_traceback = exception_traceback.replace(value, "[REDACTED]")
+    auth_logger.error(f"{message}\n{exception_traceback}")

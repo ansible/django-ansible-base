@@ -66,6 +66,8 @@ INSTALLED_APPS = [
     'ansible_base.resource_registry',
     'ansible_base.rest_pagination',
     'ansible_base.rbac',
+    # oauth2_provider (upstream library) must be before ansible_base.oauth2_provider
+    'oauth2_provider',
     'ansible_base.oauth2_provider',
     'test_app',
     'django_extensions',
@@ -109,16 +111,35 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'ansible_base.lib.utils.schema.DABAutoSchema',
 }
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-        "PORT": os.getenv("DB_PORT", 55432),
-        "USER": os.getenv("DB_USER", "dab"),
-        "PASSWORD": os.getenv("DB_PASSWORD", "dabing"),
-        "NAME": os.getenv("DB_NAME", "dab_db"),
+# Database configuration - supports PostgreSQL (default) and MS SQL Server
+# Set DB_BACKEND=mssql to use MS SQL Server
+db_backend = os.getenv("DB_BACKEND", "postgresql")
+
+if db_backend == "mssql":
+    DATABASES = {
+        "default": {
+            "ENGINE": "ansible_base.backends.mssql",
+            "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+            "PORT": int(os.getenv("DB_PORT", "1433")),  # tox-docker supplies its host-mapped port; local Compose uses mssqlsettings.py
+            "USER": os.getenv("DB_USER", "sa"),
+            "PASSWORD": os.getenv("DB_PASSWORD", "DabingPass!1234"),  # Matches tools/dev_mssql/Dockerfile; local Compose uses mssqlsettings.py
+            "NAME": os.getenv("DB_NAME", "dab_db"),
+            "OPTIONS": {"driver": 'ODBC Driver 18 for SQL Server', "extra_params": "Encrypt=yes;TrustServerCertificate=yes"},
+        }
     }
-}
+else:
+    # Host-side PostgreSQL default matches `make postgres` (55432:5432).
+    # docker-compose.yml overrides DB_PORT=5432 for its internal network.
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+            "PORT": int(os.getenv("DB_PORT", "55432")),
+            "USER": os.getenv("DB_USER", "dab"),
+            "PASSWORD": os.getenv("DB_PASSWORD", "dabing"),
+            "NAME": os.getenv("DB_NAME", "dab_db"),
+        }
+    }
 
 AUTH_USER_MODEL = 'test_app.User'
 

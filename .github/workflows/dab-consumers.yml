@@ -130,7 +130,7 @@ jobs:
       TOX_DOCKER_GATEWAY: "0.0.0.0"
     services:
       redis:
-        image: redis
+        image: 'quay.io/fedora/redis-6:latest'
         ports:
           - 6379:6379
     steps:
@@ -205,6 +205,11 @@ jobs:
 
       - name: Install tox
         run: pip install --only-binary ':all:' tox==4.53.0
+
+      - name: Preload PostgreSQL image from mirror
+        run: |
+          docker pull mirror.gcr.io/library/postgres:16
+          docker tag mirror.gcr.io/library/postgres:16 postgres:16
 
       - name: Run Hub unit tests
         working-directory: hub

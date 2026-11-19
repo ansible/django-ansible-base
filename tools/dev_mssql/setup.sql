@@ -1,0 +1,2 @@
+CREATE DATABASE dab_db COLLATE Latin1_General_100_CS_AS;
+GO

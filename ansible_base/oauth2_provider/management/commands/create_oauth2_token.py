@@ -31,5 +31,6 @@ class Command(BaseCommand):
                 self.user = user
 
         serializer_obj.context['request'] = FakeRequest()
+        serializer_obj.context['creating_pat_from_management_command'] = True
         serializer_obj.create(config)
         self.stdout.write(serializer_obj.unencrypted_token)

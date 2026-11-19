@@ -1,5 +1,6 @@
 import logging
 
+from django.utils.translation import gettext_lazy as _
 from social_core.backends.github import GithubTeamOAuth2
 
 from ansible_base.authentication.authenticator_configurators.github import GithubTeamConfiguration
@@ -13,5 +14,6 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Gith
     configuration_class = GithubTeamConfiguration
     logger = logger
     type = "github-team"
+    display_name = _("GitHub Team")
     category = "sso"
     configuration_encrypted_fields = ['SECRET']

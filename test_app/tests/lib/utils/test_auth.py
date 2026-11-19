@@ -1,10 +1,18 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import UUID
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-from ansible_base.lib.utils.auth import get_model_from_settings, get_object_by_ansible_id, get_user_by_ansible_id
+from ansible_base.authentication.challenge import ChallengeAwareAuthenticationMixin
+from ansible_base.lib.utils.auth import (
+    get_authentication_challenge,
+    get_model_from_settings,
+    get_object_by_ansible_id,
+    get_user_by_ansible_id,
+    record_authentication_challenge,
+)
 from test_app.models import Organization, User
 
 
@@ -66,3 +74,40 @@ def test_get_by_ansible_id(organization, arg_type):
         uuid_obj = arg_type(resource.ansible_id)
     assert isinstance(uuid_obj, arg_type)
     assert get_object_by_ansible_id(Organization.objects.all(), organization.resource.ansible_id) == organization
+
+
+def test_authentication_challenge_keeps_the_first_authenticator_to_claim_the_request():
+    request = SimpleNamespace()
+
+    record_authentication_challenge(request, "ServiceToken")
+    record_authentication_challenge(request, 'Bearer realm="api"')
+
+    assert get_authentication_challenge(request) == "ServiceToken"
+
+
+def test_authentication_challenge_uses_the_provided_default_when_no_authenticator_claims_the_request():
+    assert get_authentication_challenge(SimpleNamespace(), default="Session") == "Session"
+
+
+def test_authentication_challenge_is_shared_between_drf_and_django_request_objects():
+    django_request = SimpleNamespace()
+    drf_request = SimpleNamespace(_request=django_request)
+
+    record_authentication_challenge(drf_request, 'Basic realm="api"')
+
+    assert get_authentication_challenge(drf_request) == 'Basic realm="api"'
+    assert get_authentication_challenge(django_request) == 'Basic realm="api"'
+
+
+def test_challenge_aware_authenticator_returns_the_first_recorded_challenge():
+    class TestAuthentication(ChallengeAwareAuthenticationMixin):
+        def get_default_authentication_challenge(self, request):
+            return "Session"
+
+    request = SimpleNamespace()
+    authenticator = TestAuthentication()
+    authenticator.record_authentication_challenge(request, "ServiceToken")
+    authenticator.record_authentication_challenge(request, 'Bearer realm="api"')
+
+    assert authenticator.authenticate_header(request) == "ServiceToken"
+    assert authenticator.authenticate_header(SimpleNamespace()) == "Session"

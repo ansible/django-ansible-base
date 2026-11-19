@@ -2,6 +2,8 @@
 
 from django.db import migrations, models
 
+from ansible_base.lib.fields import BoundedTextField
+
 
 class Migration(migrations.Migration):
 
@@ -13,6 +15,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='resource',
             name='object_id',
-            field=models.TextField(db_index=True),
+            field=BoundedTextField(db_index=True, sql_server_max_length=64),
         ),
     ]

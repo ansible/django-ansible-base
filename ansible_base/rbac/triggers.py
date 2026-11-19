@@ -35,10 +35,16 @@ _SENTINEL = object()
 As the caching module will fill in cached data,
 this module shall manage the calling of the caching methods.
 Sounds simple, but is actually more complicated that the caching logic itself.
+
+The bulk assignment signals (dab_rbac_assignments_created, dab_rbac_assignments_pre_delete)
+are documented in docs/apps/rbac/bulk_operations.md#assignment-signals.
 """
 
 
 dab_post_migrate = Signal()
+
+dab_rbac_assignments_created = Signal()
+dab_rbac_assignments_pre_delete = Signal()
 
 
 def _recompute_team_ids_for_assignment(
