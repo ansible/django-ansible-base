@@ -122,6 +122,11 @@ class MSSQLSafeQuerySet(models.QuerySet):
         return super().bulk_create(objs, **kwargs)
 
     def bulk_update(self, objs, fields, batch_size=None):
+        # Mirror stock bulk_update's validation: the clamp below runs before
+        # stock on SQL Server, and a batch_size of 0 is falsy — without this
+        # check it would be silently replaced with the max batch.
+        if batch_size is not None and batch_size <= 0:
+            raise ValueError("Batch size must be a positive integer.")
         connection = connections[self.db]
         if connection.vendor != "microsoft":
             return super().bulk_update(objs, fields, batch_size=batch_size)

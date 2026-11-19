@@ -640,3 +640,21 @@ def test_bulk_create_rejects_multi_table_inheritance(monkeypatch):
 
     with pytest.raises(ValueError, match="Can't bulk create a multi-table inherited model"):
         queryset.bulk_create([obj])
+
+
+def test_bulk_update_rejects_nonpositive_batch_size(monkeypatch):
+    """The mssql clamp runs before stock bulk_update, so its batch_size
+    validation must be mirrored here — a batch_size of 0 is falsy and would
+    otherwise be silently replaced with the max batch."""
+    queryset, _ = make_queryset(monkeypatch)
+    spy = Mock(return_value=0)
+    monkeypatch.setattr(QuerySet, "bulk_update", spy)
+    obj = make_event("a", pk=1)
+
+    with pytest.raises(ValueError, match="Batch size must be a positive integer."):
+        queryset.bulk_update([obj], ["f1"], batch_size=0)
+
+    with pytest.raises(ValueError, match="Batch size must be a positive integer."):
+        queryset.bulk_update([obj], ["f1"], batch_size=-1)
+
+    spy.assert_not_called()
