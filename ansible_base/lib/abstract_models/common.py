@@ -9,6 +9,7 @@ from django.utils.translation import gettext_lazy as _
 from inflection import underscore
 
 from ansible_base.lib.abstract_models.immutable import ImmutableModel
+from ansible_base.lib.mssql.bulk import MSSQLSafeManager
 from ansible_base.lib.utils.encryption import ansible_encryption
 from ansible_base.lib.utils.models import current_user_or_system_user, is_system_user
 from ansible_base.lib.utils.response import get_relative_url
@@ -311,6 +312,9 @@ class CommonModel(AbstractCommonModel, CreatableModel, ModifiableModel):
     Includes fields for tracking creation and last-modification metadata.
     """
 
+    # bulk_create/bulk_update transparently safe for SQL Server on every backend
+    objects = MSSQLSafeManager()
+
     class Meta:
         abstract = True
 
@@ -358,6 +362,8 @@ class ImmutableCommonModel(ImmutableModel, AbstractCommonModel, CreatableModel):
     Functionally similar to CommonModel, but does not allow modification of the object after creation
     and does not include the modified/modifed_by fields.
     """
+
+    objects = MSSQLSafeManager()
 
     class Meta:
         abstract = True

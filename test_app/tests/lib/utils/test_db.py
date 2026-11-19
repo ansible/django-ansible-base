@@ -40,7 +40,7 @@ class SkipIfNotPostgreSQL:
             pytest.skip('PostgreSQL-specific functionality')
 
 
-class TestPGNotifyConnection(SkipIfSqlite):
+class TestPGNotifyConnection(SkipIfSqlite, SkipIfNotPostgreSQL):
     TEST_DATABASE_DICT = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
