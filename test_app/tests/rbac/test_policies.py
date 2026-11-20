@@ -2,7 +2,8 @@ import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.test import override_settings
 
-from ansible_base.rbac.policies import can_change_user, visible_users
+from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.policies import actors_for_role_assignment, can_change_user, visible_users
 from test_app.models import User
 
 
@@ -196,3 +197,27 @@ def test_visible_users_anonymous_user():
 
     qs = visible_users(AnonymousUser())
     assert not qs.exists()
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_RESOURCE_ADMINS_CAN_ASSIGN_UNRESTRICTED_ACTORS=False)
+def test_actors_for_role_assignment_respects_visibility_when_disabled(organization, org_member_rd):
+    alice = User.objects.create(username='alice-actor')
+    bob = User.objects.create(username='bob-hidden')
+    org_member_rd.give_permission(alice, organization)
+    # bob is not in alice's org; default filtering should hide bob from alice
+    assert not actors_for_role_assignment(alice, User).filter(pk=bob.pk).exists()
+    assert not actors_for_role_assignment(AnonymousUser(), User).exists()
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_RESOURCE_ADMINS_CAN_ASSIGN_UNRESTRICTED_ACTORS=True)
+def test_actors_for_role_assignment_unrestricted_when_enabled(organization):
+    alice = User.objects.create(username='alice-actor')
+    bob = User.objects.create(username='bob-other-org')
+    team = permission_registry.team_model.objects.create(name='other-team', organization=organization)
+
+    user_qs = actors_for_role_assignment(alice, User)
+    assert user_qs.filter(pk=bob.pk).exists()
+    assert actors_for_role_assignment(alice, permission_registry.team_model).filter(pk=team.pk).exists()
+    assert not actors_for_role_assignment(AnonymousUser(), User).exists()
