@@ -162,6 +162,67 @@ class TestUserDetailView:
 
 
 @pytest.mark.django_db
+class TestUserSelfEditAAP66511:
+    """Regression coverage for AAP-66511: a normal local user must be able to
+    manage their own record (e.g. change their own password) regardless of
+    MANAGE_ORGANIZATION_AUTH, while admin-only fields (is_active) stay
+    protected. Payload shape mirrors what ansible-ui actually sends: the
+    whole user object, with unrelated fields (is_active) resent unchanged
+    and no password key at all unless the user is genuinely changing it.
+    """
+
+    @override_settings(MANAGE_ORGANIZATION_AUTH=False)
+    def test_self_edit_whole_object_payload_succeeds(self, user, user_api_client):
+        url = get_relative_url('user-detail', kwargs={'pk': user.pk})
+        response = user_api_client.patch(url, data={'first_name': 'Updated', 'is_active': user.is_active})
+        assert response.status_code == 200, response.data
+
+        user.refresh_from_db()
+        assert user.first_name == 'Updated'
+        assert user.is_active is True
+
+    @override_settings(MANAGE_ORGANIZATION_AUTH=False)
+    def test_self_password_change_succeeds(self, user, user_api_client):
+        url = get_relative_url('user-detail', kwargs={'pk': user.pk})
+        response = user_api_client.patch(url, data={'password': 'NewSecurePass1!'})
+        assert response.status_code == 200, response.data
+
+    @override_settings(MANAGE_ORGANIZATION_AUTH=False)
+    def test_self_edit_cannot_also_flip_is_active(self, user, user_api_client):
+        """A whole-object self-edit must not let a regular user smuggle in an
+        is_active change alongside an otherwise-legitimate profile update."""
+        url = get_relative_url('user-detail', kwargs={'pk': user.pk})
+        response = user_api_client.patch(url, data={'first_name': 'Updated', 'is_active': not user.is_active})
+        assert response.status_code == 403, response.data
+
+        user.refresh_from_db()
+        assert user.first_name != 'Updated'
+        assert user.is_active is True
+
+    @override_settings(MANAGE_ORGANIZATION_AUTH=True)
+    def test_self_edit_still_works_with_manage_org_auth_enabled(self, user, user_api_client):
+        """Sanity check: the fix is additive, not a behavior change when
+        MANAGE_ORGANIZATION_AUTH is enabled (the normal/default case)."""
+        url = get_relative_url('user-detail', kwargs={'pk': user.pk})
+        response = user_api_client.patch(url, data={'password': 'NewSecurePass1!'})
+        assert response.status_code == 200, response.data
+
+    @override_settings(MANAGE_ORGANIZATION_AUTH=False)
+    def test_self_password_change_is_recorded_in_activity_stream(self, user, user_api_client):
+        """AC #7: fixing the access issue must not bypass audit logging --
+        a self-service password change still produces an activity stream
+        entry, with the value masked rather than leaked in plaintext."""
+        url = get_relative_url('user-detail', kwargs={'pk': user.pk})
+        response = user_api_client.patch(url, data={'password': 'NewSecurePass1!'})
+        assert response.status_code == 200, response.data
+
+        entry = user.activity_stream_entries.last()
+        assert entry is not None
+        assert 'password' in entry.changes['changed_fields']
+        assert 'NewSecurePass1!' not in str(entry.changes)
+
+
+@pytest.mark.django_db
 class TestRoleBasedAssignment:
     @override_settings(ALLOW_LOCAL_ASSIGNING_JWT_ROLES=True)
     def test_org_admins_can_add_members(self, user, user_api_client, organization, org_member_rd, org_admin_rd):

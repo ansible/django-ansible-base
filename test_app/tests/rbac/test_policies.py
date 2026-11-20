@@ -2,7 +2,7 @@ import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.test import override_settings
 
-from ansible_base.rbac.policies import can_change_user, visible_users
+from ansible_base.rbac.policies import can_change_user, check_can_remove_assignment, visible_users
 from test_app.models import User
 
 
@@ -93,22 +93,45 @@ def test_setting_does_not_affect_other_user_changes():
 @pytest.mark.django_db
 @override_settings(ALLOW_USER_EMAIL_SELF_EDIT=True, MANAGE_ORGANIZATION_AUTH=False)
 def test_self_edit_setting_requires_manage_org_auth():
-    """ALLOW_USER_EMAIL_SELF_EDIT should not bypass the MANAGE_ORGANIZATION_AUTH gate."""
+    """ALLOW_USER_EMAIL_SELF_EDIT should not bypass the MANAGE_ORGANIZATION_AUTH gate
+    for the opt-in self_edit_setting path (can_self_edit=False), e.g. email/username."""
     alice = User.objects.create(username='alice')
-    assert not can_change_user(alice, alice)
+    assert not can_change_user(alice, alice, can_self_edit=False)
+
+
+@pytest.mark.django_db
+@override_settings(MANAGE_ORGANIZATION_AUTH=False)
+def test_unconditional_self_edit_bypasses_manage_org_auth_gate():
+    """Unconditional self-edit (can_self_edit=True, the default) must work regardless
+    of MANAGE_ORGANIZATION_AUTH -- this is the AAP-66511 regression: a normal user must
+    always be able to manage their own record (e.g. change their own password)."""
+    alice = User.objects.create(username='alice')
+    assert can_change_user(alice, alice)
+
+
+@pytest.mark.django_db
+@override_settings(MANAGE_ORGANIZATION_AUTH=False)
+def test_email_self_edit_setting_does_not_grant_is_active_self_edit():
+    """ALLOW_USER_EMAIL_SELF_EDIT must not cross-wire into unrelated opt-in
+    self-edit settings, like a hypothetical is_active override."""
+    with override_settings(ALLOW_USER_EMAIL_SELF_EDIT=True):
+        alice = User.objects.create(username='alice')
+        assert not can_change_user(alice, alice, can_self_edit=False, self_edit_setting='ALLOW_USER_IS_ACTIVE_SELF_EDIT')
 
 
 @pytest.mark.django_db
 @override_settings(MANAGE_ORGANIZATION_AUTH=False)
 def test_org_admin_cannot_change_email_when_manage_org_auth_disabled(org_admin_rd, org_member_rd, organization):
-    """Org admins cannot change their own or others' email when MANAGE_ORGANIZATION_AUTH is off."""
+    """Org admins cannot change others' email (nor their own, via the admin-only
+    self_edit_setting path) when MANAGE_ORGANIZATION_AUTH is off. Unconditional
+    self-edit (can_self_edit=True, the default) is unaffected by this setting."""
     org_admin = User.objects.create(username='org-admin')
     member = User.objects.create(username='member')
     org_admin_rd.give_permission(org_admin, organization)
     org_member_rd.give_permission(member, organization)
     assert not can_change_user(org_admin, org_admin, can_self_edit=False)
     assert not can_change_user(org_admin, member, can_self_edit=False)
-    assert not can_change_user(org_admin, org_admin)
+    assert can_change_user(org_admin, org_admin)
     assert not can_change_user(org_admin, member)
 
 
@@ -134,7 +157,7 @@ def test_non_superuser_cannot_change_user_when_manage_org_auth_disabled():
     alice = User.objects.create(username='alice')
     bob = User.objects.create(username='bob')
     assert not can_change_user(alice, bob)
-    assert not can_change_user(alice, alice)
+    assert can_change_user(alice, alice)
     assert not can_change_user(alice, alice, can_self_edit=False)
 
 
@@ -187,6 +210,41 @@ def test_deferred_only_load_enforces_email_policy(org_member_rd, organization):
 
     member.refresh_from_db()
     assert member.email == 'original@example.com'
+
+
+@pytest.mark.django_db
+@override_settings(MANAGE_ORGANIZATION_AUTH=False)
+def test_user_can_remove_own_role_assignment_when_manage_org_auth_disabled(org_member_rd, organization):
+    """check_can_remove_assignment calls can_change_user with the default
+    can_self_edit=True, same as it always has. Since MANAGE_ORGANIZATION_AUTH's
+    registered default is True, this unconditional self-removal was already the
+    real-world behavior before AAP-66511 (see test_remove_object_assignment_yourself
+    in test_assignment_permissions.py) -- it was only ever blocked by the
+    sequencing bug when the setting was explicitly disabled. The AAP-66511 fix
+    makes this consistent across both states of the setting; it does not grant
+    a new capability."""
+    alice = User.objects.create(username='alice')
+    assignment = org_member_rd.give_permission(alice, organization)
+
+    # Sanity check: alice has no change permission on the organization itself,
+    # so if this succeeds it is solely through the self-edit path.
+    assert not alice.has_obj_perm(organization, 'change')
+
+    check_can_remove_assignment(alice, assignment)  # does not raise
+
+
+@pytest.mark.django_db
+@override_settings(MANAGE_ORGANIZATION_AUTH=False)
+def test_user_cannot_remove_others_role_assignment_when_manage_org_auth_disabled(org_member_rd, organization):
+    """The self-edit fix must not extend to removing someone else's assignment."""
+    from rest_framework.exceptions import PermissionDenied
+
+    alice = User.objects.create(username='alice')
+    bob = User.objects.create(username='bob')
+    assignment = org_member_rd.give_permission(bob, organization)
+
+    with pytest.raises(PermissionDenied):
+        check_can_remove_assignment(alice, assignment)
 
 
 @pytest.mark.django_db

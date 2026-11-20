@@ -381,3 +381,58 @@ class UsernameAdminOnlyMixin:
             raise PermissionDenied("Username updates are restricted to administrators.")
 
         return value
+
+
+class IsActiveAdminOnlyMixin:
+    """Mixin for User serializers that restricts is_active changes to admins.
+
+    Clients (e.g. the Ansible UI) resubmit the full user object on every save,
+    including is_active at its current value, so this must no-op on an
+    unchanged value before applying the admin-only check -- otherwise every
+    self-edit of any field would be rejected. Uses its own self_edit_setting
+    name (not shared with email/username) so an unrelated
+    ALLOW_USER_EMAIL_SELF_EDIT deployment setting can't incidentally grant
+    self-service activation/deactivation.
+    """
+
+    def validate_is_active(self, value):
+        if self.instance is None or value == self.instance.is_active:
+            return value
+
+        request = self.context.get('request')
+        if request is None:
+            return value
+
+        from ansible_base.rbac.policies import can_change_user
+
+        if not can_change_user(request.user, self.instance, can_self_edit=False, self_edit_setting='ALLOW_USER_IS_ACTIVE_SELF_EDIT'):
+            raise PermissionDenied("Active status updates are restricted to administrators.")
+
+        return value
+
+
+class ExternalAuthPasswordMixin:
+    """Mixin for User serializers that blocks setting a password for users
+    associated with a non-local (external) authenticator.
+
+    This is independent of can_change_user and applies regardless of who is
+    making the request (self or admin): a user authenticating through SAML,
+    LDAP, etc. must not gain a usable local password, since that would hand
+    them a second, local-auth path into the same account.
+    """
+
+    def validate_password(self, value):
+        if self.instance is None or not value:
+            return value
+
+        # authenticator_users only exists when ansible_base.authentication is installed
+        # (it's an optional app); without it there is no external-auth concept to check.
+        if not hasattr(self.instance, 'authenticator_users'):
+            return value
+
+        from ansible_base.oauth2_provider.utils import is_external_account
+
+        if is_external_account(self.instance):
+            raise PermissionDenied("Users associated with an external authenticator cannot set a local password.")
+
+        return value
