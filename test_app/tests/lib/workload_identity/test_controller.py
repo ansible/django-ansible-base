@@ -29,6 +29,7 @@ def test_list_claims():
         'aap_controller_unified_job_template_id',
         'aap_controller_instance_group_name',
         'aap_controller_instance_group_id',
+        'aap_groups',
     }
 
     scope = AutomationControllerJobScope()
