@@ -3,6 +3,8 @@ from typing import Iterable, Optional, Type
 
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
+from django.db import connections
+from django.db.models import OuterRef
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
 from rest_framework.serializers import ValidationError
@@ -135,6 +137,54 @@ def bound_has_obj_perm(self, obj, codename) -> bool:
     if has_super_permission(self, full_codename):
         return True
     return get_evaluation_model(obj).has_obj_perm(self, obj, full_codename)
+
+
+def get_object_permissions(actor, model, object_ids: Iterable, *, codenames: Iterable[str] | None = None) -> dict:
+    """Return object-role codenames for each requested primary key.
+
+    Accepts a list of IDs or a flat values_list queryset. Missing grants yield
+    empty sets. By default all codenames are returned; an optional iterable of
+    full codenames restricts the query.
+    Global roles and bypass flags are evaluated by has_obj_perm, separately
+    from this snapshot of object-role grants. Call after pagination.
+    """
+    from ansible_base.rbac.caching import defer_rbac_state
+
+    if defer_rbac_state.active and defer_rbac_state.has_deferred_data:
+        raise RuntimeError('get_object_permissions cannot be called with deferred RBAC changes. Evaluations may be stale.')
+    if not permission_registry.is_registered(model):
+        raise ValidationError(f'Object of {model._meta.model_name} type is not registered with DAB RBAC')
+    ids = set(object_ids)
+    result = {pk: set() for pk in ids}
+    if not ids or isinstance(actor, AnonymousUser):
+        return result
+    # With no codename, has_super_permission validates the actor type.
+    has_super_permission(actor)
+    if codenames is not None:
+        codenames = set(codenames)
+        if not codenames:
+            return result
+    evaluation_model = get_evaluation_model(model)
+    grants = evaluation_model.objects.filter(
+        role_id__in=evaluation_model.actor_role_ids(actor),
+        content_type_id=permission_registry.content_type_model.objects.get_for_model(model).pk,
+    ).order_by()
+    if codenames is not None:
+        grants = grants.filter(codename__in=codenames)
+    if connections[grants.db].vendor == 'postgresql':
+        from django.contrib.postgres.expressions import ArraySubquery
+
+        # Correlate grants to each page object to encourage per-object index
+        # lookups. The object-first unique index covers the subquery's object
+        # IDs, codenames, and role IDs.
+        permission_array = ArraySubquery(grants.filter(object_id=OuterRef('pk')).values('codename').distinct())
+        rows = model._base_manager.using(grants.db).filter(pk__in=ids).order_by().annotate(_permissions=permission_array).values_list('pk', '_permissions')
+    else:
+        # Batch object/codename rows on backends without ARRAY subqueries.
+        rows = ((pk, [codename]) for pk, codename in grants.filter(object_id__in=ids).values_list('object_id', 'codename').distinct())
+    for pk, granted_names in rows:
+        result[pk].update(granted_names)
+    return result
 
 
 def connect_rbac_methods(cls):
