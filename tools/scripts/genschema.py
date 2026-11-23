@@ -65,7 +65,7 @@ def _stabilize_yaml(path):
                 block.append(lines[j])
                 j += 1
             if len(block) > 1:
-                block.sort(key=lambda l: enum_line_re.match(l).group(2))
+                block.sort(key=lambda line: enum_line_re.match(line).group(2))
                 lines[i:j] = block
             i += len(block)
         else:
