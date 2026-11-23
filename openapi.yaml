@@ -1801,6 +1801,18 @@ paths:
         required: true
       tags:
       - authenticator_maps
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticatorAssociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuthenticatorAssociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AuthenticatorAssociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -1808,7 +1820,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatorAssociate'
+          description: ''
       x-ai-description: Associate authenticators with an authenticator map
   /api/v1/authenticator_maps/{id}/authenticators/disassociate/:
     post:
@@ -1832,6 +1848,18 @@ paths:
         required: true
       tags:
       - authenticator_maps
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticatorDisassociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuthenticatorDisassociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AuthenticatorDisassociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -1839,7 +1867,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatorDisassociate'
+          description: ''
       x-ai-description: Disassociate authenticators from an authenticator map
   /api/v1/authenticator_plugins/:
     get:
@@ -5962,6 +5994,18 @@ paths:
         required: true
       tags:
       - organizations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -5969,7 +6013,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAssociate'
+          description: ''
       x-ai-description: Associate admins with an organization
   /api/v1/organizations/{id}/admins/disassociate/:
     post:
@@ -5993,6 +6041,18 @@ paths:
         required: true
       tags:
       - organizations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -6000,7 +6060,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDisassociate'
+          description: ''
       x-ai-description: Disassociate admins from an organization
   /api/v1/organizations/{id}/cows/:
     get:
@@ -6529,6 +6593,18 @@ paths:
         required: true
       tags:
       - organizations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -6536,7 +6612,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAssociate'
+          description: ''
       x-ai-description: Associate members with an organization
   /api/v1/organizations/{id}/members/disassociate/:
     post:
@@ -6560,6 +6640,18 @@ paths:
         required: true
       tags:
       - organizations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -6567,7 +6659,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDisassociate'
+          description: ''
       x-ai-description: Disassociate members from an organization
   /api/v1/organizations/{id}/namespaces/:
     get:
@@ -8349,6 +8445,18 @@ paths:
         required: true
       tags:
       - related_fields_test_models
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamAssociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TeamAssociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TeamAssociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -8356,7 +8464,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamAssociate'
+          description: ''
       x-ai-description: Associate teams with a related fields test model
   /api/v1/related_fields_test_models/{id}/teams/disassociate/:
     post:
@@ -8380,6 +8492,18 @@ paths:
         required: true
       tags:
       - related_fields_test_models
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamDisassociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TeamDisassociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TeamDisassociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -8387,7 +8511,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamDisassociate'
+          description: ''
       x-ai-description: Disassociate teams from a related fields test model
   /api/v1/related_fields_test_models/{id}/user/:
     get:
@@ -8697,6 +8825,18 @@ paths:
         required: true
       tags:
       - related_fields_test_models
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -8704,7 +8844,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAssociate'
+          description: ''
       x-ai-description: Associate user with a related fields test model
   /api/v1/related_fields_test_models/{id}/user/disassociate/:
     post:
@@ -8728,6 +8872,18 @@ paths:
         required: true
       tags:
       - related_fields_test_models
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -8735,7 +8891,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDisassociate'
+          description: ''
       x-ai-description: Disassociate user from a related fields test model
   /api/v1/role_definitions/:
     get:
@@ -11759,6 +11919,18 @@ paths:
         required: true
       tags:
       - teams
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -11766,7 +11938,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAssociate'
+          description: ''
       x-ai-description: Associate admins with a team
   /api/v1/teams/{id}/admins/disassociate/:
     post:
@@ -11790,6 +11966,18 @@ paths:
         required: true
       tags:
       - teams
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -11797,7 +11985,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDisassociate'
+          description: ''
       x-ai-description: Disassociate admins from a team
   /api/v1/teams/{id}/members/:
     get:
@@ -12107,6 +12299,18 @@ paths:
         required: true
       tags:
       - teams
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserAssociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -12114,7 +12318,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAssociate'
+          description: ''
       x-ai-description: Associate members with a team
   /api/v1/teams/{id}/members/disassociate/:
     post:
@@ -12138,6 +12346,18 @@ paths:
         required: true
       tags:
       - teams
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserDisassociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -12145,7 +12365,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDisassociate'
+          description: ''
       x-ai-description: Disassociate members from a team
   /api/v1/teams/{id}/parents/:
     get:
@@ -12365,6 +12589,18 @@ paths:
         required: true
       tags:
       - teams
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamAssociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TeamAssociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TeamAssociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -12372,7 +12608,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamAssociate'
+          description: ''
       x-ai-description: Associate parents with a team
   /api/v1/teams/{id}/parents/disassociate/:
     post:
@@ -12396,6 +12636,18 @@ paths:
         required: true
       tags:
       - teams
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamDisassociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TeamDisassociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TeamDisassociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -12403,7 +12655,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamDisassociate'
+          description: ''
       x-ai-description: Disassociate parents from a team
   /api/v1/teams/{id}/role_assignments/:
     get:
@@ -13864,6 +14120,18 @@ paths:
         required: true
       tags:
       - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationAssociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OrganizationAssociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OrganizationAssociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -13871,7 +14139,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationAssociate'
+          description: ''
       x-ai-description: Associate organizations with an user
   /api/v1/users/{id}/organizations/disassociate/:
     post:
@@ -13895,6 +14167,18 @@ paths:
         required: true
       tags:
       - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationDisassociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OrganizationDisassociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OrganizationDisassociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -13902,7 +14186,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationDisassociate'
+          description: ''
       x-ai-description: Disassociate organizations from an user
   /api/v1/users/{id}/personal_tokens/:
     get:
@@ -14149,6 +14437,18 @@ paths:
         required: true
       tags:
       - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamAssociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TeamAssociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TeamAssociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -14156,7 +14456,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamAssociate'
+          description: ''
       x-ai-description: Associate teams with an user
   /api/v1/users/{id}/teams/disassociate/:
     post:
@@ -14180,6 +14484,18 @@ paths:
         required: true
       tags:
       - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamDisassociate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TeamDisassociate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TeamDisassociate'
+        required: true
       security:
       - BearerAuthentication: []
       - OAuth2_Authentication: []
@@ -14187,7 +14503,11 @@ paths:
       - LoggedBasicAuthentication: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamDisassociate'
+          description: ''
       x-ai-description: Disassociate teams from an user
   /api/v1/users/{id}/tokens/:
     get:
@@ -14498,19 +14818,20 @@ components:
           maxLength: 512
         kind:
           enum:
-          - dog
           - cat
+          - dog
           - fish
           type: string
           description: |-
-            * `dog` - Dog
             * `cat` - Cat
+            * `dog` - Dog
             * `fish` - Fish
           x-spec-enum-id: d5d07544d16c20d0
         age:
           type: integer
-          maximum: 2147483647
+          maximum: 9223372036854775807
           minimum: 0
+          format: int64
           nullable: true
         modified_by:
           type: integer
@@ -14590,45 +14911,46 @@ components:
           description: The required configuration for this source.
         type:
           enum:
-          - ansible_base.authentication.authenticator_plugins.oidc
-          - ansible_base.authentication.authenticator_plugins.ldap
-          - ansible_base.authentication.authenticator_plugins.local
-          - ansible_base.authentication.authenticator_plugins.github_team
-          - ansible_base.authentication.authenticator_plugins.saml
+          - ansible_base.authentication.authenticator_plugins.azuread
+          - ansible_base.authentication.authenticator_plugins.github
+          - ansible_base.authentication.authenticator_plugins.github_enterprise
           - ansible_base.authentication.authenticator_plugins.github_enterprise_org
+          - ansible_base.authentication.authenticator_plugins.github_enterprise_team
+          - ansible_base.authentication.authenticator_plugins.github_org
+          - ansible_base.authentication.authenticator_plugins.github_team
           - ansible_base.authentication.authenticator_plugins.google_oauth2
           - ansible_base.authentication.authenticator_plugins.keycloak
-          - ansible_base.authentication.authenticator_plugins.radius
-          - ansible_base.authentication.authenticator_plugins.github_enterprise_team
-          - ansible_base.authentication.authenticator_plugins.github
-          - ansible_base.authentication.authenticator_plugins.azuread
+          - ansible_base.authentication.authenticator_plugins.ldap
+          - ansible_base.authentication.authenticator_plugins.local
           - ansible_base.authentication.authenticator_plugins.oauth_bearer
+          - ansible_base.authentication.authenticator_plugins.oidc
+          - ansible_base.authentication.authenticator_plugins.radius
+          - ansible_base.authentication.authenticator_plugins.saml
           - ansible_base.authentication.authenticator_plugins.tacacs
-          - ansible_base.authentication.authenticator_plugins.github_enterprise
-          - ansible_base.authentication.authenticator_plugins.github_org
           type: string
           description: |-
-            * `ansible_base.authentication.authenticator_plugins.oidc` - ansible_base.authentication.authenticator_plugins.oidc
-            * `ansible_base.authentication.authenticator_plugins.ldap` - ansible_base.authentication.authenticator_plugins.ldap
-            * `ansible_base.authentication.authenticator_plugins.local` - ansible_base.authentication.authenticator_plugins.local
-            * `ansible_base.authentication.authenticator_plugins.github_team` - ansible_base.authentication.authenticator_plugins.github_team
-            * `ansible_base.authentication.authenticator_plugins.saml` - ansible_base.authentication.authenticator_plugins.saml
+            * `ansible_base.authentication.authenticator_plugins.azuread` - ansible_base.authentication.authenticator_plugins.azuread
+            * `ansible_base.authentication.authenticator_plugins.github` - ansible_base.authentication.authenticator_plugins.github
+            * `ansible_base.authentication.authenticator_plugins.github_enterprise` - ansible_base.authentication.authenticator_plugins.github_enterprise
             * `ansible_base.authentication.authenticator_plugins.github_enterprise_org` - ansible_base.authentication.authenticator_plugins.github_enterprise_org
+            * `ansible_base.authentication.authenticator_plugins.github_enterprise_team` - ansible_base.authentication.authenticator_plugins.github_enterprise_team
+            * `ansible_base.authentication.authenticator_plugins.github_org` - ansible_base.authentication.authenticator_plugins.github_org
+            * `ansible_base.authentication.authenticator_plugins.github_team` - ansible_base.authentication.authenticator_plugins.github_team
             * `ansible_base.authentication.authenticator_plugins.google_oauth2` - ansible_base.authentication.authenticator_plugins.google_oauth2
             * `ansible_base.authentication.authenticator_plugins.keycloak` - ansible_base.authentication.authenticator_plugins.keycloak
-            * `ansible_base.authentication.authenticator_plugins.radius` - ansible_base.authentication.authenticator_plugins.radius
-            * `ansible_base.authentication.authenticator_plugins.github_enterprise_team` - ansible_base.authentication.authenticator_plugins.github_enterprise_team
-            * `ansible_base.authentication.authenticator_plugins.github` - ansible_base.authentication.authenticator_plugins.github
-            * `ansible_base.authentication.authenticator_plugins.azuread` - ansible_base.authentication.authenticator_plugins.azuread
+            * `ansible_base.authentication.authenticator_plugins.ldap` - ansible_base.authentication.authenticator_plugins.ldap
+            * `ansible_base.authentication.authenticator_plugins.local` - ansible_base.authentication.authenticator_plugins.local
             * `ansible_base.authentication.authenticator_plugins.oauth_bearer` - ansible_base.authentication.authenticator_plugins.oauth_bearer
+            * `ansible_base.authentication.authenticator_plugins.oidc` - ansible_base.authentication.authenticator_plugins.oidc
+            * `ansible_base.authentication.authenticator_plugins.radius` - ansible_base.authentication.authenticator_plugins.radius
+            * `ansible_base.authentication.authenticator_plugins.saml` - ansible_base.authentication.authenticator_plugins.saml
             * `ansible_base.authentication.authenticator_plugins.tacacs` - ansible_base.authentication.authenticator_plugins.tacacs
-            * `ansible_base.authentication.authenticator_plugins.github_enterprise` - ansible_base.authentication.authenticator_plugins.github_enterprise
-            * `ansible_base.authentication.authenticator_plugins.github_org` - ansible_base.authentication.authenticator_plugins.github_org
           x-spec-enum-id: 6fd0a47777de138b
         order:
           type: integer
-          maximum: 2147483647
-          minimum: -2147483648
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
           description: The order in which an authenticator will be tried. This only
             pertains to username/password authenticators.
         slug:
@@ -14649,6 +14971,29 @@ components:
       - configuration
       - name
       - type
+    AuthenticatorAssociate:
+      type: object
+      description: Serializer used for adding objects to a many-to-many relationship
+      properties:
+        instances:
+          type: array
+          items:
+            type: integer
+          description: A list of authenticators to add to this relationship.
+      required:
+      - instances
+    AuthenticatorDisassociate:
+      type: object
+      description: Serializer used for removing objects that are currently associated
+        via a many-to-many relationship
+      properties:
+        instances:
+          type: array
+          items:
+            type: integer
+          description: A list of authenticators to remove from this relationship.
+      required:
+      - instances
     AuthenticatorMap:
       type: object
       properties:
@@ -14700,8 +15045,8 @@ components:
           enum:
           - allow
           - is_superuser
-          - role
           - organization
+          - role
           - team
           type: string
           x-spec-enum-id: 4064e71cef1ae1e7
@@ -14710,8 +15055,8 @@ components:
 
             * `allow` - allow
             * `is_superuser` - is_superuser
-            * `role` - role
             * `organization` - organization
+            * `role` - role
             * `team` - team
         role:
           type: string
@@ -14740,8 +15085,9 @@ components:
             one top-level key per request.
         order:
           type: integer
-          maximum: 2147483647
+          maximum: 9223372036854775807
           minimum: 0
+          format: int64
           description: The order in which this rule should be processed, smaller numbers
             are of higher precedence. Items with the same order will be executed in
             random order.
@@ -14810,48 +15156,49 @@ components:
           description: The required configuration for this source.
         type:
           enum:
-          - ansible_base.authentication.authenticator_plugins.oidc
-          - ansible_base.authentication.authenticator_plugins.ldap
-          - ansible_base.authentication.authenticator_plugins.local
-          - ansible_base.authentication.authenticator_plugins.github_team
-          - ansible_base.authentication.authenticator_plugins.saml
+          - ansible_base.authentication.authenticator_plugins.azuread
+          - ansible_base.authentication.authenticator_plugins.github
+          - ansible_base.authentication.authenticator_plugins.github_enterprise
           - ansible_base.authentication.authenticator_plugins.github_enterprise_org
+          - ansible_base.authentication.authenticator_plugins.github_enterprise_team
+          - ansible_base.authentication.authenticator_plugins.github_org
+          - ansible_base.authentication.authenticator_plugins.github_team
           - ansible_base.authentication.authenticator_plugins.google_oauth2
           - ansible_base.authentication.authenticator_plugins.keycloak
-          - ansible_base.authentication.authenticator_plugins.radius
-          - ansible_base.authentication.authenticator_plugins.github_enterprise_team
-          - ansible_base.authentication.authenticator_plugins.github
-          - ansible_base.authentication.authenticator_plugins.azuread
+          - ansible_base.authentication.authenticator_plugins.ldap
+          - ansible_base.authentication.authenticator_plugins.local
           - ansible_base.authentication.authenticator_plugins.oauth_bearer
+          - ansible_base.authentication.authenticator_plugins.oidc
+          - ansible_base.authentication.authenticator_plugins.radius
+          - ansible_base.authentication.authenticator_plugins.saml
           - ansible_base.authentication.authenticator_plugins.tacacs
-          - ansible_base.authentication.authenticator_plugins.github_enterprise
-          - ansible_base.authentication.authenticator_plugins.github_org
           type: string
           x-spec-enum-id: 6fd0a47777de138b
           readOnly: true
           description: |-
             The type of authentication service this is.
 
-            * `ansible_base.authentication.authenticator_plugins.oidc` - ansible_base.authentication.authenticator_plugins.oidc
-            * `ansible_base.authentication.authenticator_plugins.ldap` - ansible_base.authentication.authenticator_plugins.ldap
-            * `ansible_base.authentication.authenticator_plugins.local` - ansible_base.authentication.authenticator_plugins.local
-            * `ansible_base.authentication.authenticator_plugins.github_team` - ansible_base.authentication.authenticator_plugins.github_team
-            * `ansible_base.authentication.authenticator_plugins.saml` - ansible_base.authentication.authenticator_plugins.saml
+            * `ansible_base.authentication.authenticator_plugins.azuread` - ansible_base.authentication.authenticator_plugins.azuread
+            * `ansible_base.authentication.authenticator_plugins.github` - ansible_base.authentication.authenticator_plugins.github
+            * `ansible_base.authentication.authenticator_plugins.github_enterprise` - ansible_base.authentication.authenticator_plugins.github_enterprise
             * `ansible_base.authentication.authenticator_plugins.github_enterprise_org` - ansible_base.authentication.authenticator_plugins.github_enterprise_org
+            * `ansible_base.authentication.authenticator_plugins.github_enterprise_team` - ansible_base.authentication.authenticator_plugins.github_enterprise_team
+            * `ansible_base.authentication.authenticator_plugins.github_org` - ansible_base.authentication.authenticator_plugins.github_org
+            * `ansible_base.authentication.authenticator_plugins.github_team` - ansible_base.authentication.authenticator_plugins.github_team
             * `ansible_base.authentication.authenticator_plugins.google_oauth2` - ansible_base.authentication.authenticator_plugins.google_oauth2
             * `ansible_base.authentication.authenticator_plugins.keycloak` - ansible_base.authentication.authenticator_plugins.keycloak
-            * `ansible_base.authentication.authenticator_plugins.radius` - ansible_base.authentication.authenticator_plugins.radius
-            * `ansible_base.authentication.authenticator_plugins.github_enterprise_team` - ansible_base.authentication.authenticator_plugins.github_enterprise_team
-            * `ansible_base.authentication.authenticator_plugins.github` - ansible_base.authentication.authenticator_plugins.github
-            * `ansible_base.authentication.authenticator_plugins.azuread` - ansible_base.authentication.authenticator_plugins.azuread
+            * `ansible_base.authentication.authenticator_plugins.ldap` - ansible_base.authentication.authenticator_plugins.ldap
+            * `ansible_base.authentication.authenticator_plugins.local` - ansible_base.authentication.authenticator_plugins.local
             * `ansible_base.authentication.authenticator_plugins.oauth_bearer` - ansible_base.authentication.authenticator_plugins.oauth_bearer
+            * `ansible_base.authentication.authenticator_plugins.oidc` - ansible_base.authentication.authenticator_plugins.oidc
+            * `ansible_base.authentication.authenticator_plugins.radius` - ansible_base.authentication.authenticator_plugins.radius
+            * `ansible_base.authentication.authenticator_plugins.saml` - ansible_base.authentication.authenticator_plugins.saml
             * `ansible_base.authentication.authenticator_plugins.tacacs` - ansible_base.authentication.authenticator_plugins.tacacs
-            * `ansible_base.authentication.authenticator_plugins.github_enterprise` - ansible_base.authentication.authenticator_plugins.github_enterprise
-            * `ansible_base.authentication.authenticator_plugins.github_org` - ansible_base.authentication.authenticator_plugins.github_org
         order:
           type: integer
-          maximum: 2147483647
-          minimum: -2147483648
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
           description: The order in which an authenticator will be tried. This only
             pertains to username/password authenticators.
         slug:
@@ -14966,8 +15313,9 @@ components:
           maxLength: 100
         population:
           type: integer
-          maximum: 2147483647
+          maximum: 9223372036854775807
           minimum: 0
+          format: int64
           nullable: true
         extra_data:
           nullable: true
@@ -15171,21 +15519,21 @@ components:
           description: The user who created this resource.
         operation:
           enum:
-          - create
-          - update
-          - delete
           - associate
+          - create
+          - delete
           - disassociate
+          - update
           type: string
           x-spec-enum-id: 9d2b7b6e53dc82e9
           description: |-
             The type of change recorded by the entry (i.e. create/update/delete/etc).
 
-            * `create` - Entity created
-            * `update` - Entity updated
-            * `delete` - Entity deleted
             * `associate` - Entity was associated with another entity
+            * `create` - Entity created
+            * `delete` - Entity deleted
             * `disassociate` - Entity was disassociated with another entity
+            * `update` - Entity updated
         changes:
           type: object
           additionalProperties:
@@ -15353,13 +15701,13 @@ components:
         algorithm:
           enum:
           - ''
-          - RS256
           - HS256
+          - RS256
           type: string
           description: |-
             * `` - No OIDC support
-            * `RS256` - RSA with SHA-2 256
             * `HS256` - HMAC with SHA-2 256
+            * `RS256` - RSA with SHA-2 256
           x-spec-enum-id: efb8c99632a46c3d
         user:
           type: integer
@@ -15552,6 +15900,29 @@ components:
           description: The user who created this resource.
       required:
       - name
+    OrganizationAssociate:
+      type: object
+      description: Serializer used for adding objects to a many-to-many relationship
+      properties:
+        instances:
+          type: array
+          items:
+            type: integer
+          description: A list of organizations to add to this relationship.
+      required:
+      - instances
+    OrganizationDisassociate:
+      type: object
+      description: Serializer used for removing objects that are currently associated
+        via a many-to-many relationship
+      properties:
+        instances:
+          type: array
+          items:
+            type: integer
+          description: A list of organizations to remove from this relationship.
+      required:
+      - instances
     PaginatedAnimalList:
       type: object
       required:
@@ -16439,19 +16810,20 @@ components:
           maxLength: 512
         kind:
           enum:
-          - dog
           - cat
+          - dog
           - fish
           type: string
           description: |-
-            * `dog` - Dog
             * `cat` - Cat
+            * `dog` - Dog
             * `fish` - Fish
           x-spec-enum-id: d5d07544d16c20d0
         age:
           type: integer
-          maximum: 2147483647
+          maximum: 9223372036854775807
           minimum: 0
+          format: int64
           nullable: true
         modified_by:
           type: integer
@@ -16521,8 +16893,8 @@ components:
           enum:
           - allow
           - is_superuser
-          - role
           - organization
+          - role
           - team
           type: string
           x-spec-enum-id: 4064e71cef1ae1e7
@@ -16531,8 +16903,8 @@ components:
 
             * `allow` - allow
             * `is_superuser` - is_superuser
-            * `role` - role
             * `organization` - organization
+            * `role` - role
             * `team` - team
         role:
           type: string
@@ -16561,8 +16933,9 @@ components:
             one top-level key per request.
         order:
           type: integer
-          maximum: 2147483647
+          maximum: 9223372036854775807
           minimum: 0
+          format: int64
           description: The order in which this rule should be processed, smaller numbers
             are of higher precedence. Items with the same order will be executed in
             random order.
@@ -16627,48 +17000,49 @@ components:
           description: The required configuration for this source.
         type:
           enum:
-          - ansible_base.authentication.authenticator_plugins.oidc
-          - ansible_base.authentication.authenticator_plugins.ldap
-          - ansible_base.authentication.authenticator_plugins.local
-          - ansible_base.authentication.authenticator_plugins.github_team
-          - ansible_base.authentication.authenticator_plugins.saml
+          - ansible_base.authentication.authenticator_plugins.azuread
+          - ansible_base.authentication.authenticator_plugins.github
+          - ansible_base.authentication.authenticator_plugins.github_enterprise
           - ansible_base.authentication.authenticator_plugins.github_enterprise_org
+          - ansible_base.authentication.authenticator_plugins.github_enterprise_team
+          - ansible_base.authentication.authenticator_plugins.github_org
+          - ansible_base.authentication.authenticator_plugins.github_team
           - ansible_base.authentication.authenticator_plugins.google_oauth2
           - ansible_base.authentication.authenticator_plugins.keycloak
-          - ansible_base.authentication.authenticator_plugins.radius
-          - ansible_base.authentication.authenticator_plugins.github_enterprise_team
-          - ansible_base.authentication.authenticator_plugins.github
-          - ansible_base.authentication.authenticator_plugins.azuread
+          - ansible_base.authentication.authenticator_plugins.ldap
+          - ansible_base.authentication.authenticator_plugins.local
           - ansible_base.authentication.authenticator_plugins.oauth_bearer
+          - ansible_base.authentication.authenticator_plugins.oidc
+          - ansible_base.authentication.authenticator_plugins.radius
+          - ansible_base.authentication.authenticator_plugins.saml
           - ansible_base.authentication.authenticator_plugins.tacacs
-          - ansible_base.authentication.authenticator_plugins.github_enterprise
-          - ansible_base.authentication.authenticator_plugins.github_org
           type: string
           x-spec-enum-id: 6fd0a47777de138b
           readOnly: true
           description: |-
             The type of authentication service this is.
 
-            * `ansible_base.authentication.authenticator_plugins.oidc` - ansible_base.authentication.authenticator_plugins.oidc
-            * `ansible_base.authentication.authenticator_plugins.ldap` - ansible_base.authentication.authenticator_plugins.ldap
-            * `ansible_base.authentication.authenticator_plugins.local` - ansible_base.authentication.authenticator_plugins.local
-            * `ansible_base.authentication.authenticator_plugins.github_team` - ansible_base.authentication.authenticator_plugins.github_team
-            * `ansible_base.authentication.authenticator_plugins.saml` - ansible_base.authentication.authenticator_plugins.saml
+            * `ansible_base.authentication.authenticator_plugins.azuread` - ansible_base.authentication.authenticator_plugins.azuread
+            * `ansible_base.authentication.authenticator_plugins.github` - ansible_base.authentication.authenticator_plugins.github
+            * `ansible_base.authentication.authenticator_plugins.github_enterprise` - ansible_base.authentication.authenticator_plugins.github_enterprise
             * `ansible_base.authentication.authenticator_plugins.github_enterprise_org` - ansible_base.authentication.authenticator_plugins.github_enterprise_org
+            * `ansible_base.authentication.authenticator_plugins.github_enterprise_team` - ansible_base.authentication.authenticator_plugins.github_enterprise_team
+            * `ansible_base.authentication.authenticator_plugins.github_org` - ansible_base.authentication.authenticator_plugins.github_org
+            * `ansible_base.authentication.authenticator_plugins.github_team` - ansible_base.authentication.authenticator_plugins.github_team
             * `ansible_base.authentication.authenticator_plugins.google_oauth2` - ansible_base.authentication.authenticator_plugins.google_oauth2
             * `ansible_base.authentication.authenticator_plugins.keycloak` - ansible_base.authentication.authenticator_plugins.keycloak
-            * `ansible_base.authentication.authenticator_plugins.radius` - ansible_base.authentication.authenticator_plugins.radius
-            * `ansible_base.authentication.authenticator_plugins.github_enterprise_team` - ansible_base.authentication.authenticator_plugins.github_enterprise_team
-            * `ansible_base.authentication.authenticator_plugins.github` - ansible_base.authentication.authenticator_plugins.github
-            * `ansible_base.authentication.authenticator_plugins.azuread` - ansible_base.authentication.authenticator_plugins.azuread
+            * `ansible_base.authentication.authenticator_plugins.ldap` - ansible_base.authentication.authenticator_plugins.ldap
+            * `ansible_base.authentication.authenticator_plugins.local` - ansible_base.authentication.authenticator_plugins.local
             * `ansible_base.authentication.authenticator_plugins.oauth_bearer` - ansible_base.authentication.authenticator_plugins.oauth_bearer
+            * `ansible_base.authentication.authenticator_plugins.oidc` - ansible_base.authentication.authenticator_plugins.oidc
+            * `ansible_base.authentication.authenticator_plugins.radius` - ansible_base.authentication.authenticator_plugins.radius
+            * `ansible_base.authentication.authenticator_plugins.saml` - ansible_base.authentication.authenticator_plugins.saml
             * `ansible_base.authentication.authenticator_plugins.tacacs` - ansible_base.authentication.authenticator_plugins.tacacs
-            * `ansible_base.authentication.authenticator_plugins.github_enterprise` - ansible_base.authentication.authenticator_plugins.github_enterprise
-            * `ansible_base.authentication.authenticator_plugins.github_org` - ansible_base.authentication.authenticator_plugins.github_org
         order:
           type: integer
-          maximum: 2147483647
-          minimum: -2147483648
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
           description: The order in which an authenticator will be tried. This only
             pertains to username/password authenticators.
         slug:
@@ -16725,8 +17099,9 @@ components:
           maxLength: 100
         population:
           type: integer
-          maximum: 2147483647
+          maximum: 9223372036854775807
           minimum: 0
+          format: int64
           nullable: true
         extra_data:
           nullable: true
@@ -16936,13 +17311,13 @@ components:
         algorithm:
           enum:
           - ''
-          - RS256
           - HS256
+          - RS256
           type: string
           description: |-
             * `` - No OIDC support
-            * `RS256` - RSA with SHA-2 256
             * `HS256` - HMAC with SHA-2 256
+            * `RS256` - RSA with SHA-2 256
           x-spec-enum-id: efb8c99632a46c3d
         user:
           type: integer
@@ -18378,6 +18753,29 @@ components:
       required:
       - name
       - organization
+    TeamAssociate:
+      type: object
+      description: Serializer used for adding objects to a many-to-many relationship
+      properties:
+        instances:
+          type: array
+          items:
+            type: integer
+          description: A list of teams to add to this relationship.
+      required:
+      - instances
+    TeamDisassociate:
+      type: object
+      description: Serializer used for removing objects that are currently associated
+        via a many-to-many relationship
+      properties:
+        instances:
+          type: array
+          items:
+            type: integer
+          description: A list of teams to remove from this relationship.
+      required:
+      - instances
     UIAuthResponse:
       type: object
       description: Serializer for UI authentication configuration response.
@@ -18612,6 +19010,29 @@ components:
           readOnly: true
       required:
       - username
+    UserAssociate:
+      type: object
+      description: Serializer used for adding objects to a many-to-many relationship
+      properties:
+        instances:
+          type: array
+          items:
+            type: integer
+          description: A list of users to add to this relationship.
+      required:
+      - instances
+    UserDisassociate:
+      type: object
+      description: Serializer used for removing objects that are currently associated
+        via a many-to-many relationship
+      properties:
+        instances:
+          type: array
+          items:
+            type: integer
+          description: A list of users to remove from this relationship.
+      required:
+      - instances
     WeirdPerm:
       type: object
       description: |-
