@@ -1,0 +1,46 @@
+---
+# Regenerate the committed OpenAPI spec after merges so that
+# oasdiff breaking-change detection always compares against
+# an up-to-date baseline.
+name: "API: Update OpenAPI Spec"
+
+on:
+  push:
+    branches:
+      - devel
+      - "stable-*"
+
+permissions:
+  contents: write
+
+jobs:
+  update-spec:
+    name: "Regenerate openapi.yaml"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          show-progress: false
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev
+
+      - name: Install python 3.12
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: 3.12
+
+      - name: Install requirements
+        run: pip3.12 install -r requirements/requirements_all.txt -r requirements/requirements_dev.txt
+
+      - name: Generate OpenAPI spec
+        run: ./manage.py spectacular --format openapi --file openapi.yaml
+
+      - name: Commit updated spec
+        run: |
+          git diff --quiet openapi.yaml && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add openapi.yaml
+          git commit -m "chore: regenerate openapi.yaml [skip ci]"
+          git push
