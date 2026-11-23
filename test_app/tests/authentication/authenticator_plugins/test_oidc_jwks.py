@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from django.core.cache import cache
 from jwt.exceptions import PyJWKClientConnectionError
 
@@ -25,10 +25,18 @@ def _keypair(kid):
     return key, jwk
 
 
-def _token(key, kid=None):
+def _ec_keypair(kid):
+    """Return a P-256 key and a JWK that omits ``alg``; PyJWT must infer ES256."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    jwk = json.loads(jwt.algorithms.ECAlgorithm.to_jwk(key.public_key()))
+    jwk.update({"kid": kid})
+    return key, jwk
+
+
+def _token(key, kid=None, algorithm="RS256"):
     claims = {"sub": "oidc-user", "exp": datetime.now(timezone.utc) + timedelta(minutes=5)}
     headers = {"kid": kid} if kid else None
-    return jwt.encode(claims, key, algorithm="RS256", headers=headers)
+    return jwt.encode(claims, key, algorithm=algorithm, headers=headers)
 
 
 def _plugin(authenticator, **configuration_overrides):
@@ -253,6 +261,18 @@ def test_find_valid_key_rejects_a_key_the_refresh_does_not_replace(oidc_authenti
         assert plugin.find_valid_key(_token(unrelated_key, "k1")) is None
 
     assert fetch_data.call_count == 2
+
+
+@pytest.mark.django_db
+def test_find_valid_key_infers_algorithm_when_the_jwk_omits_alg(oidc_authenticator):
+    key, jwk = _ec_keypair("ec1")
+    plugin = _plugin(oidc_authenticator)
+
+    with patch(FETCH_DATA, return_value={"keys": [jwk]}):
+        found = plugin.find_valid_key(_token(key, "ec1", algorithm="ES256"))
+
+    assert found["kid"] == "ec1"
+    assert found["alg"] == "ES256"
 
 
 @pytest.mark.django_db

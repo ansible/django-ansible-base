@@ -2,24 +2,26 @@ import logging
 import ssl
 
 import jwt
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
 from jwt import PyJWK, get_unverified_header
 from jwt.exceptions import PyJWTError
 from jwt.utils import base64url_decode
 from social_core.backends.open_id_connect import OpenIdConnectAuth
 
-from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.jwk_client import CachedJWKClient
+from ansible_base.authentication.authenticator_plugins.base import (
+    AbstractAuthenticatorPlugin,
+    BaseAuthenticatorConfiguration,
+    jwks_cache_timeout_field,
+    jwks_url_timeout_field,
+)
+from ansible_base.authentication.jwk_client import DEFAULT_JWKS_CACHE_TIMEOUT, DEFAULT_JWKS_URL_TIMEOUT, CachedJWKClient
 from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, DictField, IntegerField, ListField, URLField
 from ansible_base.lib.serializers.validators import JWTAlgorithmListFieldValidator
 from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.oidc")
-
-DEFAULT_JWKS_CACHE_TIMEOUT = 3600
-DEFAULT_JWKS_URL_TIMEOUT = 5
 
 
 class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
@@ -135,24 +137,9 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("JWKS URI"),
     )
 
-    JWKS_URL_TIMEOUT = IntegerField(
-        help_text=_("Timeout for JWKS URL requests in seconds."),
-        default=DEFAULT_JWKS_URL_TIMEOUT,
-        allow_null=False,
-        validators=[MinValueValidator(1), MaxValueValidator(300)],
-        ui_field_label=_("JWKS URL Timeout"),
-    )
+    JWKS_URL_TIMEOUT = jwks_url_timeout_field()
 
-    JWKS_CACHE_TIMEOUT = IntegerField(
-        help_text=_(
-            "How long to cache the provider's signing keys, in seconds. Set to 0 to disable caching, which requests the JWKS for every login. "
-            "Cached keys are refreshed automatically when the provider rotates them."
-        ),
-        default=DEFAULT_JWKS_CACHE_TIMEOUT,
-        allow_null=False,
-        validators=[MinValueValidator(0)],
-        ui_field_label=_("JWKS Cache Timeout (seconds)"),
-    )
+    JWKS_CACHE_TIMEOUT = jwks_cache_timeout_field()
 
     PUBLIC_KEY = CharField(
         help_text=_("The public key from your IDP. Only necessary if using keycloak for OIDC."),

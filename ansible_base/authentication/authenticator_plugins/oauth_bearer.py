@@ -13,9 +13,14 @@ from jwt.exceptions import ExpiredSignatureError, InvalidSignatureError, PyJWKCl
 from rest_framework.serializers import ValidationError
 from urllib3.exceptions import InsecureRequestWarning
 
-from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
+from ansible_base.authentication.authenticator_plugins.base import (
+    AbstractAuthenticatorPlugin,
+    BaseAuthenticatorConfiguration,
+    jwks_cache_timeout_field,
+    jwks_url_timeout_field,
+)
 from ansible_base.authentication.bearer_authentication import BearerAuthenticationResult, BearerTokenValidationError, ScopedBearerToken
-from ansible_base.authentication.jwk_client import CachedJWKClient
+from ansible_base.authentication.jwk_client import DEFAULT_JWKS_CACHE_TIMEOUT, DEFAULT_JWKS_URL_TIMEOUT, CachedJWKClient
 from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user, get_social_auth_setting
 from ansible_base.authentication.utils.claims import merge_groups_from_claim_sources, update_user_claims
 from ansible_base.authentication.utils.user import normalize_and_get_email
@@ -30,7 +35,6 @@ OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration"
 OIDC_DISCOVERY_TIMEOUT_SETTING = "ANSIBLE_BASE_EXTERNAL_OAUTH_DISCOVERY_TIMEOUT"
 OIDC_DISCOVERY_TIMEOUT_DEFAULT = 5
 OIDC_DISCOVERY_LOG_BODY_MAX = 512
-DEFAULT_JWKS_URL_TIMEOUT = 5
 
 _BASELINE_ATTRIBUTES = [
     "email",
@@ -197,13 +201,7 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("JWKS URI"),
     )
 
-    JWKS_URL_TIMEOUT = IntegerField(
-        help_text=_("Timeout for JWKS URL requests in seconds."),
-        default=DEFAULT_JWKS_URL_TIMEOUT,
-        allow_null=False,
-        validators=[MinValueValidator(1), MaxValueValidator(300)],
-        ui_field_label=_("JWKS URL Timeout"),
-    )
+    JWKS_URL_TIMEOUT = jwks_url_timeout_field()
 
     USERINFO_URL_TIMEOUT = IntegerField(
         help_text=_("Timeout for UserInfo requests in seconds."),
@@ -240,16 +238,7 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
     )
 
     # Min 0 (no cache) / default 3600 come from the ANSTRAT-1611 P1 configuration schema.
-    JWKS_CACHE_TIMEOUT = IntegerField(
-        help_text=_(
-            "How long to cache JWKS keys, in seconds. Minimum 0 (cache disabled); this makes a JWKS call for every request. "
-            "No maximum — longer TTLs are fine for stable IdPs; token validation refreshes keys on signature failure so rotation still works."
-        ),
-        default=3600,
-        allow_null=False,
-        validators=[MinValueValidator(0)],
-        ui_field_label=_("JWKS Cache Timeout (seconds)"),
-    )
+    JWKS_CACHE_TIMEOUT = jwks_cache_timeout_field()
 
     ID_KEY = CharField(
         help_text=_(
@@ -465,7 +454,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         modified: object,
     ) -> None:
         """Invalidate superseded JWKS state when the cache policy changes."""
-        if previous_configuration.get("JWKS_CACHE_TIMEOUT", 3600) != configuration.get("JWKS_CACHE_TIMEOUT", 3600):
+        if previous_configuration.get("JWKS_CACHE_TIMEOUT", DEFAULT_JWKS_CACHE_TIMEOUT) != configuration.get("JWKS_CACHE_TIMEOUT", DEFAULT_JWKS_CACHE_TIMEOUT):
             CachedJWKClient.invalidate_cache_namespace(f"authenticator:{authenticator_id}:{previous_modified.isoformat()}")
 
     def get_login_url(self, authenticator: Any) -> None:
@@ -732,7 +721,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         return CachedJWKClient(
             jwks_uri,
             cache_namespace=f"authenticator:{self.database_instance.pk}:{self.database_instance.modified.isoformat()}",
-            lifespan=configuration.get("JWKS_CACHE_TIMEOUT", 3600),
+            lifespan=configuration.get("JWKS_CACHE_TIMEOUT", DEFAULT_JWKS_CACHE_TIMEOUT),
             timeout=configuration.get("JWKS_URL_TIMEOUT", DEFAULT_JWKS_URL_TIMEOUT),
             ssl_context=ssl_context,
         )
