@@ -1,18 +1,25 @@
 import logging
+import ssl
 
 import jwt
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.translation import gettext_lazy as _
+from jwt import PyJWK, get_unverified_header
 from jwt.exceptions import PyJWTError
+from jwt.utils import base64url_decode
 from social_core.backends.open_id_connect import OpenIdConnectAuth
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
+from ansible_base.authentication.jwk_client import CachedJWKClient
 from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, DictField, IntegerField, ListField, URLField
 from ansible_base.lib.serializers.validators import JWTAlgorithmListFieldValidator
 from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.oidc")
+
+DEFAULT_JWKS_CACHE_TIMEOUT = 3600
+DEFAULT_JWKS_URL_TIMEOUT = 5
 
 
 class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
@@ -128,6 +135,25 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("JWKS URI"),
     )
 
+    JWKS_URL_TIMEOUT = IntegerField(
+        help_text=_("Timeout for JWKS URL requests in seconds."),
+        default=DEFAULT_JWKS_URL_TIMEOUT,
+        allow_null=False,
+        validators=[MinValueValidator(1), MaxValueValidator(300)],
+        ui_field_label=_("JWKS URL Timeout"),
+    )
+
+    JWKS_CACHE_TIMEOUT = IntegerField(
+        help_text=_(
+            "How long to cache the provider's signing keys, in seconds. Set to 0 to disable caching, which requests the JWKS for every login. "
+            "Cached keys are refreshed automatically when the provider rotates them."
+        ),
+        default=DEFAULT_JWKS_CACHE_TIMEOUT,
+        allow_null=False,
+        validators=[MinValueValidator(0)],
+        ui_field_label=_("JWKS Cache Timeout (seconds)"),
+    )
+
     PUBLIC_KEY = CharField(
         help_text=_("The public key from your IDP. Only necessary if using keycloak for OIDC."),
         required=False,
@@ -229,6 +255,114 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
         # This is a copy of super without caching, which avoids data
         # from one OIDC based authenticator showing up in another
         return self.get_json(self.oidc_endpoint() + "/.well-known/openid-configuration")
+
+    def _jwks_cache_namespace(self) -> str | None:
+        """Return a cache namespace tied to this authenticator's persisted configuration version.
+
+        Including ``modified`` means any save -- including enable/disable -- moves
+        this authenticator to a new namespace, so earlier key material is no longer
+        reachable from any worker. Without a persisted instance, ``CachedJWKClient``
+        falls back to scoping the cache by JWKS URI.
+        """
+        instance = self.database_instance
+        if instance is None or getattr(instance, "pk", None) is None:
+            return None
+        modified = getattr(instance, "modified", None)
+        if modified is None:
+            return None
+        return f"authenticator:{instance.pk}:{modified.isoformat()}"
+
+    def _jwk_client(self) -> CachedJWKClient:
+        """Build a JWKS client backed by DAB's shared, Django-cache-backed JWKS cache."""
+        ssl_context = None
+        if not self.setting("VERIFY_SSL", True):
+            ssl_context = ssl.create_default_context()  # NOSONAR(S5527) -- this context must disable hostname checks for configured local self-signed IdPs.
+            ssl_context.check_hostname = False  # NOSONAR(S5527) -- required with CERT_NONE for configured local self-signed IdPs.
+            ssl_context.verify_mode = ssl.CERT_NONE  # NOSONAR(S4830) -- configured local-development support for self-signed IdPs.
+        return CachedJWKClient(
+            self.jwks_uri(),
+            cache_namespace=self._jwks_cache_namespace(),
+            lifespan=self.setting("JWKS_CACHE_TIMEOUT", DEFAULT_JWKS_CACHE_TIMEOUT),
+            timeout=self.setting("JWKS_URL_TIMEOUT", DEFAULT_JWKS_URL_TIMEOUT),
+            ssl_context=ssl_context,
+        )
+
+    @staticmethod
+    def _jwk_data(signing_key: PyJWK) -> dict:
+        """Return the JSON-safe JWK for a resolved signing key."""
+        key = dict(signing_key._jwk_data)
+        key.setdefault("alg", signing_key.algorithm_name)
+        return key
+
+    @staticmethod
+    def _signature_matches(id_token: str, key: dict) -> bool:
+        """Return whether ``key`` verifies the signature on ``id_token``."""
+        try:
+            message, encoded_signature = id_token.rsplit(".", 1)
+            signing_key = PyJWK(key)
+            decoded_signature = base64url_decode(encoded_signature.encode("utf-8"))
+            return signing_key.Algorithm.verify(message.encode("utf-8"), signing_key.key, decoded_signature)
+        except (PyJWTError, ValueError):
+            return False
+
+    def _find_valid_key_without_kid(self, jwk_client: CachedJWKClient, id_token: str) -> dict | None:
+        """Try every provider key when the token header omits ``kid``."""
+        for refresh in (False, True):
+            try:
+                jwk_set = jwk_client.get_jwk_set(refresh=refresh)
+            except PyJWTError as e:
+                logger.warning(f"Unable to retrieve JWKS keys for authenticator {self.name}: {e}")
+                return None
+            for signing_key in jwk_set.keys:
+                key = self._jwk_data(signing_key)
+                if self._signature_matches(id_token, key):
+                    return key
+        return None
+
+    def find_valid_key(self, id_token):
+        """Return the provider key that verifies ``id_token`` using the shared JWKS cache.
+
+        social-auth-core resolves signing keys through ``get_jwks_keys``, whose
+        ``@cache(ttl=86400)`` decorator is a module-global, per-process cache keyed
+        only by backend class. That shares one authenticator's key material with
+        every other Generic OIDC authenticator in the worker and keeps serving
+        removed keys when a refresh fails. Resolving keys through
+        ``CachedJWKClient`` scopes them to this authenticator's configuration
+        version, shares them across workers through Django's cache, and honors
+        the configured TTL.
+
+        Returning ``None`` preserves social-auth-core's contract that an unused
+        or unverifiable key fails token validation. A failed refresh never falls
+        back to previously cached key material.
+        """
+        try:
+            kid = get_unverified_header(id_token).get("kid")
+        except PyJWTError as e:
+            logger.warning(f"Unable to inspect token header for authenticator {self.name}: {e}")
+            return None
+
+        jwk_client = self._jwk_client()
+        if kid is None:
+            return self._find_valid_key_without_kid(jwk_client, id_token)
+
+        key = None
+        try:
+            key = self._jwk_data(jwk_client.get_signing_key_from_jwt(id_token))
+        except PyJWTError as e:
+            logger.debug(f"No usable cached JWKS key for authenticator {self.name}: {e}")
+
+        if key is None or not self._signature_matches(id_token, key):
+            # An unknown kid or a reused kid whose key changed means the provider
+            # rotated keys. Force one coordinated refresh and retry validation.
+            try:
+                key = self._jwk_data(jwk_client.refresh_signing_key_from_jwt(id_token))
+            except PyJWTError as e:
+                logger.warning(f"Unable to refresh JWKS keys for authenticator {self.name}: {e}")
+                return None
+
+        if self._signature_matches(id_token, key):
+            return key
+        return None
 
     def public_key(self):
         key = self.setting("PUBLIC_KEY")
