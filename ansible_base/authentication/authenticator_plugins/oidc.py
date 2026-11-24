@@ -1,4 +1,5 @@
 import logging
+import os
 import ssl
 
 import jwt
@@ -261,18 +262,31 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
 
     def _jwk_client(self) -> CachedJWKClient:
         """Build a JWKS client backed by DAB's shared, Django-cache-backed JWKS cache."""
-        ssl_context = None
-        if not self.setting("VERIFY_SSL", True):
-            ssl_context = ssl.create_default_context()  # NOSONAR(S5527) -- this context must disable hostname checks for configured local self-signed IdPs.
-            ssl_context.check_hostname = False  # NOSONAR(S5527) -- required with CERT_NONE for configured local self-signed IdPs.
-            ssl_context.verify_mode = ssl.CERT_NONE  # NOSONAR(S4830) -- configured local-development support for self-signed IdPs.
         return CachedJWKClient(
             self.jwks_uri(),
             cache_namespace=self._jwks_cache_namespace(),
             lifespan=self.setting("JWKS_CACHE_TIMEOUT", DEFAULT_JWKS_CACHE_TIMEOUT),
             timeout=self.setting("JWKS_URL_TIMEOUT", DEFAULT_JWKS_URL_TIMEOUT),
-            ssl_context=ssl_context,
+            ssl_context=self._jwks_ssl_context(),
         )
+
+    def _jwks_ssl_context(self) -> ssl.SSLContext | None:
+        """Return the TLS context used to fetch JWKS documents.
+
+        social-auth-core fetched JWKS documents through ``requests``, which trusts
+        ``REQUESTS_CA_BUNDLE``/``CURL_CA_BUNDLE`` while verification is enabled.
+        ``urlopen`` ignores those variables, so load the same bundle explicitly to
+        keep trusting identity providers signed by a configured internal CA.
+        """
+        if not self.setting("VERIFY_SSL", True):
+            ssl_context = ssl.create_default_context()  # NOSONAR(S5527) -- this context must disable hostname checks for configured local self-signed IdPs.
+            ssl_context.check_hostname = False  # NOSONAR(S5527) -- required with CERT_NONE for configured local self-signed IdPs.
+            ssl_context.verify_mode = ssl.CERT_NONE  # NOSONAR(S4830) -- configured local-development support for self-signed IdPs.
+            return ssl_context
+        ca_bundle = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("CURL_CA_BUNDLE")
+        if ca_bundle:
+            return ssl.create_default_context(cafile=ca_bundle)
+        return None
 
     @staticmethod
     def _jwk_data(signing_key: PyJWK) -> dict:

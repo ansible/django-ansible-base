@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 import jwt
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from django.core.cache import cache
 from jwt.exceptions import PyJWKClientConnectionError
@@ -43,6 +45,30 @@ def _ec_keypair(kid):
     jwk = json.loads(jwt.algorithms.ECAlgorithm.to_jwk(key.public_key()))
     jwk.update({"kid": kid})
     return key, jwk
+
+
+def _write_ca_certificate(path, common_name="internal-ca"):
+    """Write a self-signed CA certificate and return its subject common name."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, common_name)])
+    now = datetime.now(timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    return common_name
+
+
+def _loaded_ca_names(ssl_context):
+    return {value for certificate in ssl_context.get_ca_certs() for rdn in certificate["subject"] for _type, value in rdn}
 
 
 def _token(key, kid=None, algorithm="RS256"):
@@ -172,7 +198,9 @@ def test_jwk_client_uses_configured_cache_and_url_timeouts(oidc_authenticator):
         pytest.param(False, False, id="skip-ssl-verification"),
     ],
 )
-def test_jwk_client_honors_verify_ssl(oidc_authenticator, verify_ssl, ca_bundle_is_default):
+def test_jwk_client_honors_verify_ssl(oidc_authenticator, monkeypatch, verify_ssl, ca_bundle_is_default):
+    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+    monkeypatch.delenv("CURL_CA_BUNDLE", raising=False)
     client = _plugin(oidc_authenticator, VERIFY_SSL=verify_ssl)._jwk_client()
 
     if ca_bundle_is_default:
@@ -180,6 +208,34 @@ def test_jwk_client_honors_verify_ssl(oidc_authenticator, verify_ssl, ca_bundle_
     else:
         assert client.ssl_context is not None
         assert client.ssl_context.verify_mode == ssl.CERT_NONE
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("variable", ["REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"])
+def test_jwk_client_trusts_the_configured_ca_bundle(oidc_authenticator, monkeypatch, tmp_path, variable):
+    """The requests-based fetch honored these variables; the JWKS fetch must keep doing so."""
+    ca_file = tmp_path / "internal-ca.pem"
+    common_name = _write_ca_certificate(ca_file)
+    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+    monkeypatch.delenv("CURL_CA_BUNDLE", raising=False)
+    monkeypatch.setenv(variable, str(ca_file))
+
+    client = _plugin(oidc_authenticator)._jwk_client()
+
+    assert client.ssl_context is not None
+    assert client.ssl_context.verify_mode == ssl.CERT_REQUIRED
+    assert common_name in _loaded_ca_names(client.ssl_context)
+
+
+@pytest.mark.django_db
+def test_jwk_client_ignores_the_ca_bundle_when_verification_is_disabled(oidc_authenticator, monkeypatch, tmp_path):
+    ca_file = tmp_path / "internal-ca.pem"
+    _write_ca_certificate(ca_file)
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", str(ca_file))
+
+    client = _plugin(oidc_authenticator, VERIFY_SSL=False)._jwk_client()
+
+    assert client.ssl_context.verify_mode == ssl.CERT_NONE
 
 
 @pytest.mark.django_db
