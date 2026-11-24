@@ -86,6 +86,11 @@ class CachedJWKClient(PyJWKClient):
         """Return the short-lived lock used while one request fetches a JWKS document."""
         return f"jwks_fetch:{self._cache_namespace}"
 
+    @property
+    def _jwk_set_key_ids_cache_key(self) -> str:
+        """Return the shared cache key for the key IDs the provider publishes."""
+        return f"jwk_set_kids:{self._cache_namespace}"
+
     @classmethod
     def invalidate_cache_namespace(cls, cache_namespace: str) -> None:
         """Delete known shared-cache entries for a superseded namespace.
@@ -95,7 +100,14 @@ class CachedJWKClient(PyJWKClient):
         to a new namespace and expire according to their original TTL.
         """
         namespace = hashlib.sha256(cache_namespace.encode()).hexdigest()
-        cache.delete_many((f"jwk_set:{namespace}", f"jwks_refresh:{namespace}", f"jwks_fetch:{namespace}"))
+        cache.delete_many(
+            (
+                f"jwk_set:{namespace}",
+                f"jwk_set_kids:{namespace}",
+                f"jwks_refresh:{namespace}",
+                f"jwks_fetch:{namespace}",
+            )
+        )
 
     def _signing_key_cache_key(self, kid: str) -> str:
         """Return a cache key that safely scopes an individual signing key to this URI."""
@@ -112,12 +124,37 @@ class CachedJWKClient(PyJWKClient):
         except PyJWKSetError as exc:
             raise PyJWKClientError("The JWKS endpoint returned an unusable key set") from exc
 
+    @staticmethod
+    def _key_ids(document: Any) -> list[str]:
+        """Return the key IDs a JWKS document publishes."""
+        if not isinstance(document, dict):
+            return []
+        return [key["kid"] for key in document.get("keys", []) if isinstance(key, dict) and key.get("kid")]
+
+    def _published_key_ids(self) -> list[str] | None:
+        """Return the key IDs in the shared JWKS index, rebuilding it from the cached document."""
+        key_ids = cache.get(self._jwk_set_key_ids_cache_key)
+        if key_ids is not None:
+            return key_ids
+        document = self._cached_jwk_document()
+        if document is None:
+            return None
+        key_ids = self._key_ids(document)
+        cache.set(self._jwk_set_key_ids_cache_key, key_ids, timeout=self.cache_timeout)
+        return key_ids
+
+    def _is_published_key(self, kid: str) -> bool:
+        """Return whether the provider's current JWKS still publishes ``kid``."""
+        key_ids = self._published_key_ids()
+        return key_ids is not None and kid in key_ids
+
     def _fetch_and_cache_jwk_set(self) -> PyJWKSet:
         """Fetch, validate, and cache a JWKS document while holding the fetch lease."""
         document = super().fetch_data()
         jwk_set = self._parse_jwk_set(document)
         if self.cache_timeout > 0:
             cache.set(self._jwk_set_cache_key, document, timeout=self.cache_timeout)
+            cache.set(self._jwk_set_key_ids_cache_key, self._key_ids(document), timeout=self.cache_timeout)
         return jwk_set
 
     def _acquire_fetch_lock(self, use_locks: bool) -> str:
@@ -230,7 +267,13 @@ class CachedJWKClient(PyJWKClient):
                     return jwk_set
 
     def get_signing_key_from_jwt(self, token: str | bytes) -> PyJWK:
-        """Override PyJWT key lookup to cache a signing key by provider URI and JWT key ID across processes."""
+        """Override PyJWT key lookup to cache a signing key by provider URI and JWT key ID across processes.
+
+        A cached signing key is only served while the provider's cached JWKS still
+        publishes that key ID, so a refresh that drops a rotated or revoked key
+        stops validating tokens signed by it immediately instead of waiting for
+        the signing-key entry to expire on its own.
+        """
         kid = get_unverified_header(token).get("kid")
         if not kid:
             raise PyJWKClientError("JWT header is missing kid")
@@ -239,10 +282,12 @@ class CachedJWKClient(PyJWKClient):
         if self.cache_timeout > 0:
             cached_jwk = cache.get(cache_key)
             if cached_jwk is not None:
-                try:
-                    return PyJWK.from_dict(cached_jwk)
-                except (AttributeError, PyJWKError):
-                    cache.delete(cache_key)
+                if self._is_published_key(kid):
+                    try:
+                        return PyJWK.from_dict(cached_jwk)
+                    except (AttributeError, PyJWKError):
+                        pass
+                cache.delete(cache_key)
 
         signing_key = super().get_signing_key_from_jwt(token)
         # PyJWT exposes no public JWK serializer; cache its original JSON-safe

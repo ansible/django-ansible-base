@@ -248,6 +248,21 @@ def test_find_valid_key_does_not_fall_back_to_stale_keys_when_refresh_fails(oidc
 
 
 @pytest.mark.django_db
+def test_find_valid_key_rejects_a_key_a_refresh_removed(oidc_authenticator):
+    """A key the provider stops publishing cannot validate while its cache entry is still warm."""
+    old_key, old_jwk = _keypair("k1")
+    new_key, new_jwk = _keypair("k2")
+    plugin = _plugin(oidc_authenticator, JWKS_URL_TIMEOUT=1)
+
+    with patch(FETCH_DATA, side_effect=[{"keys": [old_jwk]}, {"keys": [new_jwk]}]) as fetch_data:
+        assert plugin.find_valid_key(_token(old_key, "k1"))["kid"] == "k1"
+        assert plugin.find_valid_key(_token(new_key, "k2"))["kid"] == "k2"
+        assert plugin.find_valid_key(_token(old_key, "k1")) is None
+
+    assert fetch_data.call_count == 2
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize("kid", ["k1", None], ids=["with-kid", "without-kid"])
 def test_find_valid_key_warns_when_the_provider_is_unavailable(oidc_authenticator, caplog, kid):
     """An unreachable JWKS endpoint is reported once, at warning, without a refresh attempt."""

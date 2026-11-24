@@ -37,6 +37,7 @@ def test_cached_jwk_client_caches_signing_key_by_uri_and_kid():
     client = CachedJWKClient("https://issuer.example.com/keys", lifespan=123)
     signing_key = Mock(_jwk_data={"kty": "RSA", "kid": "key-id"})
     cached_key = Mock()
+    cache.set(client._jwk_set_key_ids_cache_key, ["key-id"])
 
     with (
         patch(
@@ -103,7 +104,14 @@ def test_cached_jwk_client_invalidates_known_entries_for_a_cache_namespace():
         CachedJWKClient.invalidate_cache_namespace("authenticator:7:version-one")
 
     namespace = hashlib.sha256(b"authenticator:7:version-one").hexdigest()
-    delete_many.assert_called_once_with((f"jwk_set:{namespace}", f"jwks_refresh:{namespace}", f"jwks_fetch:{namespace}"))
+    delete_many.assert_called_once_with(
+        (
+            f"jwk_set:{namespace}",
+            f"jwk_set_kids:{namespace}",
+            f"jwks_refresh:{namespace}",
+            f"jwks_fetch:{namespace}",
+        )
+    )
 
 
 def test_cached_jwk_client_discards_invalid_cached_jwk_and_refetches():
@@ -112,6 +120,7 @@ def test_cached_jwk_client_discards_invalid_cached_jwk_and_refetches():
     cache_identifier = hashlib.sha256(b"key-id").hexdigest()
     cache_key = f"jwk:{client._cache_namespace}:{cache_identifier}"
     cache.set(cache_key, {"not": "a JWK"})
+    cache.set(client._jwk_set_key_ids_cache_key, ["key-id"])
     signing_key = Mock(_jwk_data={"kty": "RSA", "kid": "key-id"})
 
     with (
@@ -124,6 +133,58 @@ def test_cached_jwk_client_discards_invalid_cached_jwk_and_refetches():
         assert client.get_signing_key_from_jwt(token) is signing_key
 
     get_signing_key.assert_called_once_with(token)
+
+
+def test_cached_jwk_client_ignores_a_cached_signing_key_without_a_published_jwk_set():
+    """Key material is never served while the provider's cached JWKS is unavailable."""
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    token = _token()
+    cache.set(client._signing_key_cache_key("key-id"), {"kty": "oct", "k": "c2VjcmV0", "kid": "key-id", "alg": "HS256"})
+    signing_key = Mock(_jwk_data={"kty": "RSA", "kid": "key-id"})
+
+    with patch(
+        "ansible_base.authentication.jwk_client.PyJWKClient.get_signing_key_from_jwt",
+        return_value=signing_key,
+    ) as get_signing_key:
+        assert client.get_signing_key_from_jwt(token) is signing_key
+
+    get_signing_key.assert_called_once_with(token)
+
+
+def test_cached_jwk_client_rebuilds_the_published_key_index_from_the_cached_document():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    cache.set(client._jwk_set_cache_key, _jwk_document())
+    cache.set(client._signing_key_cache_key("key-id"), {"kty": "oct", "k": "c2VjcmV0", "kid": "key-id", "alg": "HS256"})
+
+    with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data") as fetch_data:
+        assert client.get_signing_key_from_jwt(_token()).key_id == "key-id"
+
+    fetch_data.assert_not_called()
+    assert cache.get(client._jwk_set_key_ids_cache_key) == ["key-id"]
+
+
+def test_cached_jwk_client_rejects_a_cached_signing_key_dropped_by_a_refresh():
+    """A successful refresh must stop validating tokens signed by a removed key."""
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    rotated_document = _jwk_document("rotated-key")
+
+    with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=_jwk_document()):
+        assert client.get_signing_key_from_jwt(_token()).key_id == "key-id"
+
+    with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=rotated_document):
+        assert [key.key_id for key in client.get_jwk_set(refresh=True).keys] == ["rotated-key"]
+
+    assert cache.get(client._jwk_set_key_ids_cache_key) == ["rotated-key"]
+    # Drop the forced-refresh cooldown so the lookup fails on the removed key
+    # instead of waiting out the coordination budget.
+    cache.delete(client._refresh_lock_key)
+
+    with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=rotated_document):
+        with pytest.raises(PyJWKClientError, match="Unable to find a signing key"):
+            client.get_signing_key_from_jwt(_token())
+
+    # The dropped key entry is deleted the first time it is rejected.
+    assert cache.get(client._signing_key_cache_key("key-id")) is None
 
 
 def test_cached_jwk_client_reuses_jwk_set_across_instances():
