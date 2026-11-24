@@ -1,3 +1,4 @@
+import uuid
 from unittest import mock
 
 import pytest
@@ -8,6 +9,8 @@ from ansible_base.rbac.role_sync_utils import (
     _collect_assignment_tuples,
     _is_resource_registered,
     _resolve_object_ansible_id,
+    create_local_assignment,
+    delete_local_assignment,
     get_content_object,
     get_local_assignments,
 )
@@ -425,6 +428,191 @@ def test_get_local_assignments_bounded_query_count():
 
     assert any(a.role_definition_name == 'Bulk Test Role' for a in assignments)
     assert len(ctx.captured_queries) < 15, f"Expected bounded queries but got {len(ctx.captured_queries)}. " "This suggests N+1 query regression."
+
+
+# ---------------------------------------------------------------------------
+# Natural-key recovery when the registry ansible_id has drifted (AAP-97804)
+# ---------------------------------------------------------------------------
+
+CLIENT_PATH = 'ansible_base.resource_registry.tasks.sync.create_api_client'
+
+
+def _drift(obj):
+    """Give obj's Resource a new ansible_id, simulating registry drift. Returns (old_id, resource)."""
+    resource = Resource.objects.get(object_id=str(obj.pk), content_type__model=obj._meta.model_name)
+    old_id = str(resource.ansible_id)
+    resource.ansible_id = uuid.uuid4()
+    resource.save(update_fields=['ansible_id'])
+    return old_id, resource
+
+
+def _remote(resources: dict):
+    """Fake resource-server client. ``resources`` maps ansible_id -> (resource_type, resource_data)."""
+
+    def get_resource(ansible_id):
+        resp = mock.Mock()
+        if ansible_id not in resources:
+            resp.status_code = 404
+            return resp
+        resource_type, resource_data = resources[ansible_id]
+        resp.status_code = 200
+        resp.json.return_value = {'resource_type': resource_type, 'resource_data': resource_data}
+        return resp
+
+    client = mock.Mock()
+    client.get_resource.side_effect = get_resource
+    return client
+
+
+def _team_tuple(team_ansible_id, org, rd):
+    return AssignmentTuple(actor_ansible_id=team_ansible_id, ansible_id_or_pk=str(org.pk), role_definition_name=rd.name, assignment_type='team')
+
+
+def _has_assignment(team, rd, org):
+    from ansible_base.rbac.models import RoleTeamAssignment
+
+    return RoleTeamAssignment.objects.filter(team=team, role_definition=rd, object_id=str(org.pk)).exists()
+
+
+@pytest.mark.django_db
+def test_create_local_assignment_recovers_drifted_team(team, organization, org_inv_rd):
+    old_id, resource = _drift(team)
+    org_id = str(Resource.objects.get(object_id=str(organization.pk), content_type__model='organization').ansible_id)
+    client = _remote({old_id: ('shared.team', {'name': team.name, 'organization': org_id})})
+
+    with mock.patch(CLIENT_PATH, return_value=client):
+        assert create_local_assignment(_team_tuple(old_id, organization, org_inv_rd)) is True
+
+    assert _has_assignment(team, org_inv_rd, organization)
+    resource.refresh_from_db()
+    assert str(resource.ansible_id) == old_id  # registry converged on the authoritative id
+
+
+@pytest.mark.django_db
+def test_delete_local_assignment_recovers_drifted_team(team, organization, org_inv_rd):
+    org_inv_rd.give_permission(team, organization)
+    assert _has_assignment(team, org_inv_rd, organization)
+    old_id, resource = _drift(team)
+    org_id = str(Resource.objects.get(object_id=str(organization.pk), content_type__model='organization').ansible_id)
+    client = _remote({old_id: ('shared.team', {'name': team.name, 'organization': org_id})})
+
+    with mock.patch(CLIENT_PATH, return_value=client):
+        assert delete_local_assignment(_team_tuple(old_id, organization, org_inv_rd)) is True
+
+    assert not _has_assignment(team, org_inv_rd, organization)
+    resource.refresh_from_db()
+    assert str(resource.ansible_id) == old_id
+
+
+@pytest.mark.django_db
+def test_recovers_drifted_organization_before_team(team, organization, org_inv_rd):
+    """The team's natural key needs its organization, so a drifted org is repaired first."""
+    team_old_id, team_resource = _drift(team)
+    org_old_id, org_resource = _drift(organization)
+    client = _remote(
+        {
+            team_old_id: ('shared.team', {'name': team.name, 'organization': org_old_id}),
+            org_old_id: ('shared.organization', {'name': organization.name}),
+        }
+    )
+
+    with mock.patch(CLIENT_PATH, return_value=client):
+        assert create_local_assignment(_team_tuple(team_old_id, organization, org_inv_rd)) is True
+
+    assert _has_assignment(team, org_inv_rd, organization)
+    team_resource.refresh_from_db()
+    org_resource.refresh_from_db()
+    assert str(team_resource.ansible_id) == team_old_id
+    assert str(org_resource.ansible_id) == org_old_id
+
+
+@pytest.mark.django_db
+def test_get_content_object_recovers_drifted_org_target(organization, org_inv_rd):
+    org_old_id, org_resource = _drift(organization)
+    client = _remote({org_old_id: ('shared.organization', {'name': organization.name})})
+    at = AssignmentTuple(actor_ansible_id='unused', ansible_id_or_pk=org_old_id, role_definition_name=org_inv_rd.name, assignment_type='team')
+
+    with mock.patch(CLIENT_PATH, return_value=client):
+        assert get_content_object(org_inv_rd, at) == organization
+
+    org_resource.refresh_from_db()
+    assert str(org_resource.ansible_id) == org_old_id
+
+
+@pytest.mark.django_db
+def test_recovery_gives_up_when_resource_server_does_not_know_actor(team, organization, org_inv_rd):
+    old_id, resource = _drift(team)
+    drifted_id = str(resource.ansible_id)
+
+    with mock.patch(CLIENT_PATH, return_value=_remote({})):  # 404 for everything
+        assert create_local_assignment(_team_tuple(old_id, organization, org_inv_rd)) is False
+
+    assert not _has_assignment(team, org_inv_rd, organization)
+    resource.refresh_from_db()
+    assert str(resource.ansible_id) == drifted_id  # nothing was changed
+
+
+@pytest.mark.django_db
+def test_recovery_gives_up_on_wrong_resource_type(team, organization, org_inv_rd):
+    old_id, _ = _drift(team)
+    client = _remote({old_id: ('shared.user', {'name': team.name})})
+
+    with mock.patch(CLIENT_PATH, return_value=client):
+        assert create_local_assignment(_team_tuple(old_id, organization, org_inv_rd)) is False
+    assert not _has_assignment(team, org_inv_rd, organization)
+
+
+@pytest.mark.django_db
+def test_recovery_gives_up_when_no_local_team_matches_natural_key(team, organization, org_inv_rd):
+    old_id, resource = _drift(team)
+    org_id = str(Resource.objects.get(object_id=str(organization.pk), content_type__model='organization').ansible_id)
+    client = _remote({old_id: ('shared.team', {'name': 'a-team-that-does-not-exist-locally', 'organization': org_id})})
+
+    with mock.patch(CLIENT_PATH, return_value=client):
+        assert create_local_assignment(_team_tuple(old_id, organization, org_inv_rd)) is False
+    assert not _has_assignment(team, org_inv_rd, organization)
+
+
+@pytest.mark.django_db
+def test_recovery_gives_up_when_resource_server_is_unreachable(team, organization, org_inv_rd):
+    old_id, _ = _drift(team)
+    client = mock.Mock()
+    client.get_resource.side_effect = ConnectionError('resource server down')
+
+    with mock.patch(CLIENT_PATH, return_value=client):
+        assert create_local_assignment(_team_tuple(old_id, organization, org_inv_rd)) is False
+    assert not _has_assignment(team, org_inv_rd, organization)
+
+
+@pytest.mark.django_db
+def test_no_remote_lookup_when_ansible_id_resolves(team, organization, org_inv_rd):
+    """The normal path must not pay for a resource-server round trip."""
+    team_id = str(Resource.objects.get(object_id=str(team.pk), content_type__model='team').ansible_id)
+
+    with mock.patch(CLIENT_PATH) as create_client:
+        assert create_local_assignment(_team_tuple(team_id, organization, org_inv_rd)) is True
+    create_client.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_user_actor_is_not_recovered(rando, organization, org_inv_rd):
+    """Recovery is deliberately limited to teams and organizations."""
+    at = AssignmentTuple(
+        actor_ansible_id=str(uuid.uuid4()), ansible_id_or_pk=str(organization.pk), role_definition_name=org_inv_rd.name, assignment_type='user'
+    )
+
+    with mock.patch(CLIENT_PATH) as create_client:
+        assert create_local_assignment(at) is False
+    create_client.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_primary_key_identifier_does_not_trigger_remote_lookup(organization, org_inv_rd):
+    at = AssignmentTuple(actor_ansible_id='unused', ansible_id_or_pk=str(organization.pk), role_definition_name=org_inv_rd.name, assignment_type='team')
+
+    with mock.patch(CLIENT_PATH) as create_client:
+        assert get_content_object(org_inv_rd, at) == organization
+    create_client.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
