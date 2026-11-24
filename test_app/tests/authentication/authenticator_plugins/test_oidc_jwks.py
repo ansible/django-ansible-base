@@ -20,9 +20,14 @@ JWKS_URI = "https://idp.example.com/keys"
 OIDC_LOGGER = "ansible_base.authentication.authenticator_plugins.oidc"
 
 
-def _warnings(caplog):
-    """Return the warning-or-higher messages captured during a test."""
-    return [record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING]
+def _plugin_messages(caplog):
+    """Return messages logged by the OIDC plugin, ignoring unrelated loggers."""
+    return [record.getMessage() for record in caplog.records if record.name == OIDC_LOGGER]
+
+
+def _plugin_warnings(caplog):
+    """Return warning-or-higher messages logged by the OIDC plugin."""
+    return [record.getMessage() for record in caplog.records if record.name == OIDC_LOGGER and record.levelno >= logging.WARNING]
 
 
 def _keypair(kid):
@@ -254,8 +259,8 @@ def test_find_valid_key_warns_when_the_provider_is_unavailable(oidc_authenticato
             assert plugin.find_valid_key(_token(key, kid)) is None
 
     assert fetch_data.call_count == 1
-    assert len(_warnings(caplog)) == 1
-    assert "JWKS endpoint is unavailable" in _warnings(caplog)[0]
+    assert len(_plugin_warnings(caplog)) == 1
+    assert "JWKS endpoint is unavailable" in _plugin_warnings(caplog)[0]
 
 
 @pytest.mark.django_db
@@ -272,8 +277,8 @@ def test_find_valid_key_warns_when_the_provider_is_unavailable_during_refresh(oi
             assert plugin.find_valid_key(_token(replacement_key, "k1")) is None
 
     assert fetch_data.call_count == 2
-    assert len(_warnings(caplog)) == 1
-    assert "unavailable during refresh" in _warnings(caplog)[0]
+    assert len(_plugin_warnings(caplog)) == 1
+    assert "unavailable during refresh" in _plugin_warnings(caplog)[0]
 
 
 @pytest.mark.django_db
@@ -290,8 +295,8 @@ def test_find_valid_key_logs_a_token_rejection_at_debug(oidc_authenticator, capl
             assert plugin.find_valid_key(_token(unknown_key, "k2")) is None
 
     assert fetch_data.call_count == 2
-    assert _warnings(caplog) == []
-    assert "Unable to refresh JWKS keys" in caplog.text
+    assert _plugin_warnings(caplog) == []
+    assert any("Unable to refresh JWKS keys" in message for message in _plugin_messages(caplog))
 
 
 @pytest.mark.django_db
@@ -309,8 +314,8 @@ def test_find_valid_key_logs_a_refresh_cooldown_at_debug(oidc_authenticator, cap
             assert plugin.find_valid_key(_token(unknown_key, "k2")) is None
 
     assert fetch_data.call_count == 2
-    assert _warnings(caplog) == []
-    assert "cooldown" in caplog.text
+    assert _plugin_warnings(caplog) == []
+    assert any("cooldown" in message for message in _plugin_messages(caplog))
 
 
 @pytest.mark.django_db
