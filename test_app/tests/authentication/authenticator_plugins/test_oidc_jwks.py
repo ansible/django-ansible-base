@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 import ssl
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -16,6 +17,12 @@ from ansible_base.lib.utils.response import get_relative_url
 
 FETCH_DATA = "ansible_base.authentication.jwk_client.PyJWKClient.fetch_data"
 JWKS_URI = "https://idp.example.com/keys"
+OIDC_LOGGER = "ansible_base.authentication.authenticator_plugins.oidc"
+
+
+def _warnings(caplog):
+    """Return the warning-or-higher messages captured during a test."""
+    return [record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING]
 
 
 def _keypair(kid):
@@ -233,6 +240,77 @@ def test_find_valid_key_does_not_fall_back_to_stale_keys_when_refresh_fails(oidc
         assert plugin.find_valid_key(_token(new_key, "k2")) is None
 
     assert fetch_data.call_count == 2
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("kid", ["k1", None], ids=["with-kid", "without-kid"])
+def test_find_valid_key_warns_when_the_provider_is_unavailable(oidc_authenticator, caplog, kid):
+    """An unreachable JWKS endpoint is reported once, at warning, without a refresh attempt."""
+    key, _jwk = _keypair("k1")
+    plugin = _plugin(oidc_authenticator)
+
+    with patch(FETCH_DATA, side_effect=PyJWKClientConnectionError("provider unavailable")) as fetch_data:
+        with caplog.at_level(logging.DEBUG, logger=OIDC_LOGGER):
+            assert plugin.find_valid_key(_token(key, kid)) is None
+
+    assert fetch_data.call_count == 1
+    assert len(_warnings(caplog)) == 1
+    assert "JWKS endpoint is unavailable" in _warnings(caplog)[0]
+
+
+@pytest.mark.django_db
+def test_find_valid_key_warns_when_the_provider_is_unavailable_during_refresh(oidc_authenticator, caplog):
+    """A reused kid whose key changed forces our refresh, which reports the outage."""
+    old_key, old_jwk = _keypair("k1")
+    replacement_key, _replacement_jwk = _keypair("k1")
+    plugin = _plugin(oidc_authenticator)
+
+    with patch(FETCH_DATA, side_effect=[{"keys": [old_jwk]}, PyJWKClientConnectionError("provider unavailable")]) as fetch_data:
+        assert plugin.find_valid_key(_token(old_key, "k1"))["kid"] == "k1"
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG, logger=OIDC_LOGGER):
+            assert plugin.find_valid_key(_token(replacement_key, "k1")) is None
+
+    assert fetch_data.call_count == 2
+    assert len(_warnings(caplog)) == 1
+    assert "unavailable during refresh" in _warnings(caplog)[0]
+
+
+@pytest.mark.django_db
+def test_find_valid_key_logs_a_token_rejection_at_debug(oidc_authenticator, caplog):
+    """A kid the provider does not issue is a rejected token, not a provider outage."""
+    provider_key, provider_jwk = _keypair("k1")
+    unknown_key, _unknown_jwk = _keypair("k2")
+    plugin = _plugin(oidc_authenticator, JWKS_URL_TIMEOUT=1)
+
+    with patch(FETCH_DATA, return_value={"keys": [provider_jwk]}) as fetch_data:
+        assert plugin.find_valid_key(_token(provider_key, "k1"))["kid"] == "k1"
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG, logger=OIDC_LOGGER):
+            assert plugin.find_valid_key(_token(unknown_key, "k2")) is None
+
+    assert fetch_data.call_count == 2
+    assert _warnings(caplog) == []
+    assert "Unable to refresh JWKS keys" in caplog.text
+
+
+@pytest.mark.django_db
+def test_find_valid_key_logs_a_refresh_cooldown_at_debug(oidc_authenticator, caplog):
+    """Cooldown rejections must not read like provider outages."""
+    provider_key, provider_jwk = _keypair("k1")
+    unknown_key, _unknown_jwk = _keypair("k2")
+    plugin = _plugin(oidc_authenticator, JWKS_URL_TIMEOUT=1)
+
+    with patch(FETCH_DATA, return_value={"keys": [provider_jwk]}) as fetch_data:
+        assert plugin.find_valid_key(_token(provider_key, "k1"))["kid"] == "k1"
+        assert plugin.find_valid_key(_token(unknown_key, "k2")) is None
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG, logger=OIDC_LOGGER):
+            assert plugin.find_valid_key(_token(unknown_key, "k2")) is None
+
+    assert fetch_data.call_count == 2
+    assert _warnings(caplog) == []
+    assert "cooldown" in caplog.text
 
 
 @pytest.mark.django_db

@@ -5,7 +5,7 @@ import jwt
 from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
 from jwt import PyJWK, get_unverified_header
-from jwt.exceptions import PyJWTError
+from jwt.exceptions import PyJWKClientConnectionError, PyJWTError
 from jwt.utils import base64url_decode
 from social_core.backends.open_id_connect import OpenIdConnectAuth
 
@@ -297,8 +297,11 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
         for refresh in (False, True):
             try:
                 jwk_set = jwk_client.get_jwk_set(refresh=refresh)
+            except PyJWKClientConnectionError:
+                logger.warning(f"OIDC provider JWKS endpoint is unavailable for authenticator {self.name}")
+                return None
             except PyJWTError as e:
-                logger.warning(f"Unable to retrieve JWKS keys for authenticator {self.name}: {e}")
+                logger.debug(f"Unable to retrieve JWKS keys for authenticator {self.name}: {e}")
                 return None
             for signing_key in jwk_set.keys:
                 key = self._jwk_data(signing_key)
@@ -335,6 +338,11 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
         key = None
         try:
             key = self._jwk_data(jwk_client.get_signing_key_from_jwt(id_token))
+        except PyJWKClientConnectionError:
+            # A forced refresh would only hit the same unreachable endpoint again
+            # and can leave a cooldown marker that delays recovery when it returns.
+            logger.warning(f"OIDC provider JWKS endpoint is unavailable for authenticator {self.name}")
+            return None
         except PyJWTError as e:
             logger.debug(f"No usable cached JWKS key for authenticator {self.name}: {e}")
 
@@ -343,8 +351,11 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
             # rotated keys. Force one coordinated refresh and retry validation.
             try:
                 key = self._jwk_data(jwk_client.refresh_signing_key_from_jwt(id_token))
+            except PyJWKClientConnectionError:
+                logger.warning(f"OIDC provider JWKS endpoint is unavailable during refresh for authenticator {self.name}")
+                return None
             except PyJWTError as e:
-                logger.warning(f"Unable to refresh JWKS keys for authenticator {self.name}: {e}")
+                logger.debug(f"Unable to refresh JWKS keys for authenticator {self.name}: {e}")
                 return None
 
         if self._signature_matches(id_token, key):
