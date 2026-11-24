@@ -93,6 +93,10 @@ stop-mssql:
 	echo "Stopping dab_mssql container and removing data volume"
 	$(DOCKER_COMPOSE) -f docker-compose.mssql.yml down -v
 
+## Regenerate the committed OpenAPI spec (openapi.yaml) from code
+genschema:
+	PYTHONHASHSEED=0 $(PYTHON) tools/scripts/genschema.py
+
 # Build targets
 # --------------------------------------
 
