@@ -10,6 +10,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
 from ansible_base.lib.fields import BoundedTextField
+from ansible_base.lib.mssql.bulk import MSSQLSafeManager
 
 from .service_identifier import service_id
 
@@ -71,6 +72,10 @@ class ResourceType(models.Model):
 
 
 class Resource(models.Model):
+    # bulk_create(ignore_conflicts=True) in the post-migrate backfill must stay
+    # SQL Server-safe; see ansible_base/lib/mssql/bulk.py
+    objects = MSSQLSafeManager()
+
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, related_name="resources", help_text=_("The content type for this resource."))
 
     # this has to accommodate integer and UUID object IDs

@@ -2,7 +2,7 @@ import inspect
 
 from django.db import connection
 
-from ..remote import RemoteObject
+from ..remote import RemoteObject, StandInPK
 from .content_type import DABContentType
 from .permission import DABPermission
 from .role import ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID, RoleTeamAssignment, RoleUserAssignment
@@ -21,12 +21,19 @@ __all__ = [
 
 
 def get_evaluation_model(cls):
-    if isinstance(cls, RemoteObject):
-        # For remote models, we save the pk type in the database specifically for use here
-        pk_db_type = cls.content_type.pk_field_type
-    elif inspect.isclass(cls) and issubclass(cls, RemoteObject):
-        # Weirdness when passed a remote class but not a remote object, get type first
-        pk_db_type = cls.get_ct_from_type().pk_field_type
+    if isinstance(cls, RemoteObject) or (inspect.isclass(cls) and issubclass(cls, RemoteObject)):
+        # For remote models, we save the pk type in the database specifically
+        # for use here, as a logical type string ("uuid", "integer") that may
+        # not use this database's spelling of the type. StandInPK converts a
+        # recognized type to the database-specific type for comparison; an
+        # unrecognized type is left as-is so the RuntimeError below fires
+        # instead of silently mapping to the integer evaluation model.
+        stand_in_pk = cls._meta.pk
+        logical_pk_type = str(stand_in_pk.pk_field_type).strip().lower()
+        if logical_pk_type in StandInPK.UUID_FIELD_TYPES or logical_pk_type in StandInPK.INTEGER_FIELD_TYPES:
+            pk_db_type = stand_in_pk.db_type(connection)
+        else:
+            pk_db_type = logical_pk_type
     else:
         pk_field = cls._meta.pk
         # For proxy models, including django-polymorphic, use the id field from parent table
