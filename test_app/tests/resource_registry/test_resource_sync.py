@@ -1555,6 +1555,55 @@ def test_delete_local_assignment_global():
 
 
 @pytest.mark.django_db
+def test_cleanup_orphans_skips_content_object_when_none(static_api_client, stdout):
+    """When content_object is None (model instance deleted), only the Resource entry is removed."""
+    from django.contrib.contenttypes.models import ContentType
+
+    ct = ContentType.objects.get(app_label="test_app", model="user")
+    resource = Resource.objects.create(
+        content_type=ct,
+        object_id="999999",
+        name="ghost_user",
+        service_id="57592fbc-7ecb-405f-9f5f-ebad20932d38",
+    )
+    assert resource.content_object is None
+
+    executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
+    executor.run()
+
+    assert not Resource.objects.filter(pk=resource.pk).exists()
+    assert 'Deleting 1 orphaned resources' in stdout.lines
+
+
+@pytest.mark.django_db
+def test_cleanup_orphans_preserves_content_object_with_dependents(admin_api_client, static_api_client, stdout):
+    """Orphan with role assignments must NOT cascade-delete the content object."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition, RoleTeamAssignment
+    from test_app.models import Organization, Team
+
+    org = Organization.objects.create(name="OrphanTestOrg")
+    team = Team.objects.create(name="OrphanTestTeam", organization=org)
+    team_resource = Resource.get_resource_for_object(team)
+
+    org_dab_ct = DABContentType.objects.get_for_model(Organization)
+    role_def = RoleDefinition.objects.create(name='Orphan Team Member', content_type=org_dab_ct, managed=True)
+    role_def.give_permission(team, org)
+
+    assert RoleTeamAssignment.objects.filter(team=team).exists()
+
+    team_resource.service_id = "57592fbc-7ecb-405f-9f5f-ebad20932d38"
+    team_resource.ansible_id = str(uuid4())
+    team_resource.save()
+
+    executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
+    executor._cleanup_orphans("shared.team", [])
+
+    assert not Resource.objects.filter(pk=team_resource.pk).exists()
+    assert Team.objects.filter(pk=team.pk).exists()
+    assert RoleTeamAssignment.objects.filter(team=team).exists()
+
+
+@pytest.mark.django_db
 def test_cleanup_orphans_continues_after_deletion_error(admin_api_client, static_api_client, stdout):
     """Test that _cleanup_orphans skips a failing orphan, logs it and continues deleting the rest."""
     url = get_relative_url("resource-list")
