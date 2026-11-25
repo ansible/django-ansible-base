@@ -203,7 +203,7 @@ def is_encrypted_field(model, field_name):
     return field_name in getattr(model, 'encrypted_fields', [])
 
 
-def _sanitize_value(instance, model, field_name, value, sanitize_encrypted):
+def _sanitize_value(instance, model, field_name, value):
     """Return *value* unchanged or ``ENCRYPTED_STRING`` if the field is sensitive.
 
     Extends the class-level ``is_encrypted_field`` check with two additional
@@ -218,8 +218,6 @@ def _sanitize_value(instance, model, field_name, value, sanitize_encrypted):
     2. **Value prefix** -- if the string value starts with the well-known
        ``$encrypted$`` marker, it is replaced regardless of field metadata.
     """
-    if not sanitize_encrypted:
-        return value
     if is_encrypted_field(model, field_name):
         return ENCRYPTED_STRING
     if instance is not None and field_name in getattr(instance, '_encrypted_field_names', set()):
@@ -253,7 +251,6 @@ def diff(
     include_m2m=False,
     exclude_fields=[],
     limit_fields=[],
-    sanitize_encrypted=True,
     all_values_as_strings=False,
 ):
     """
@@ -278,11 +275,9 @@ def diff(
         useful, for example, when update_fields is passed to a model's save
         method and you only want to diff the fields that were updated.
         (default: [])
-    :param sanitize_encrypted: If True, encrypted fields will be replaced with
-        a constant value (ENCRYPTED_STRING) in the diff. (default: True)
     :param all_values_as_strings: If True, all values will be converted to
         strings after diffing, using Field.value_to_string. (default: False)
-    :return: A dictionary with the following
+    :return: A ModelDiff object with the following attributes
         - added_fields: A dictionary of fields that were added between old and
           new. Importantly, if old and new are the same type of model, this
           should always be empty. An "added field" does not mean that the field
@@ -358,12 +353,12 @@ def diff(
 
     # Get any removed fields from the old_fields - new_fields
     for field in old_fields_set - new_fields_set:
-        model_diff.removed_fields[field] = _sanitize_value(old, old_model, field, fields['old'][field], sanitize_encrypted)
+        model_diff.removed_fields[field] = _sanitize_value(old, old_model, field, fields['old'][field])
 
     # Get any new fields from the new_fields - old_fields
     for field in new_fields_set - old_fields_set:
         val = fields['new'][field]
-        model_diff.added_fields[field] = _sanitize_value(new, new_model, field, val, sanitize_encrypted)
+        model_diff.added_fields[field] = _sanitize_value(new, new_model, field, val)
 
     # Find any modified fields from the union of the sets
     for field in new_fields_set & old_fields_set:
@@ -371,8 +366,8 @@ def diff(
             old_val = fields['old'][field]
             new_val = fields['new'][field]
             model_diff.changed_fields[field] = (
-                _sanitize_value(old, old_model, field, old_val, sanitize_encrypted),
-                _sanitize_value(new, new_model, field, new_val, sanitize_encrypted),
+                _sanitize_value(old, old_model, field, old_val),
+                _sanitize_value(new, new_model, field, new_val),
             )
 
     return model_diff
