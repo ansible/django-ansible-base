@@ -712,3 +712,93 @@ class TestUserClaims:
 
         assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['team_member'])
         assert not assignments.exists(), "Role assignment should have been skipped when recovery returns None"
+
+    def test_get_user_claims_missing_team_resource(self, shared_test_data):
+        """AAP-98599: get_user_claims must not crash when a team's Resource
+        entry is missing.  The team assignment should be silently excluded
+        while other valid assignments remain."""
+        from django.contrib.contenttypes.models import ContentType as CT
+
+        user = get_user_model().objects.create(username='test_missing_team_resource')
+
+        # Give user org admin on org 0 and team member on teams 0 and 1
+        org = shared_test_data.orgs[0]
+        team_good = shared_test_data.teams[0]
+        team_bad = shared_test_data.teams[1]
+
+        shared_test_data.roles['org_admin'].give_permission(user, org)
+        shared_test_data.roles['team_member'].give_permission(user, team_good)
+        shared_test_data.roles['team_member'].give_permission(user, team_bad)
+
+        # Save team_bad's ansible_id before deleting its Resource entry
+        team_bad_ansible_id = str(team_bad.resource.ansible_id)
+
+        # Delete the Resource entry for team_bad
+        team_ct = CT.objects.get_for_model(team_bad)
+        Resource.objects.filter(content_type=team_ct, object_id=team_bad.pk).delete()
+
+        # Must not crash
+        claims = get_user_claims(user)
+
+        # team_good should still be present, team_bad should be excluded
+        team_ansible_ids = {t['ansible_id'] for t in claims['objects']['team']}
+        assert str(team_good.resource.ansible_id) in team_ansible_ids
+        assert team_bad_ansible_id not in team_ansible_ids
+
+        # Org assignment should be unaffected
+        assert len(claims['objects']['organization']) >= 1
+        assert 'Organization Admin' in claims['object_roles']
+
+    def test_get_user_claims_missing_org_resource_for_team(self, shared_test_data):
+        """AAP-98599: get_user_claims must not crash when a team's
+        organization has a missing Resource entry.  The team should still
+        appear in claims but its org reference should be gracefully skipped
+        by _resolve_team_organization_references."""
+        from django.contrib.contenttypes.models import ContentType as CT
+
+        user = get_user_model().objects.create(username='test_missing_org_resource')
+
+        team = shared_test_data.teams[0]
+        org = team.organization
+
+        shared_test_data.roles['team_member'].give_permission(user, team)
+
+        # Delete the Resource entry for the team's organization
+        org_ct = CT.objects.get_for_model(org)
+        Resource.objects.filter(content_type=org_ct, object_id=org.pk).delete()
+
+        # Must not crash
+        claims = get_user_claims(user)
+
+        # The team should still appear in claims
+        assert len(claims['objects']['team']) == 1
+        assert 'Team Member' in claims['object_roles']
+
+        # The team should NOT have an 'org' key since its org Resource is missing
+        team_data = claims['objects']['team'][0]
+        assert 'org' not in team_data
+
+    def test_get_user_claims_all_resources_missing(self, shared_test_data):
+        """AAP-98599: get_user_claims returns empty claims (no crash) when
+        all of a user's assigned objects have missing Resource entries."""
+        from django.contrib.contenttypes.models import ContentType as CT
+
+        user = get_user_model().objects.create(username='test_all_resources_missing')
+
+        team = shared_test_data.teams[2]
+        org = team.organization
+
+        shared_test_data.roles['team_member'].give_permission(user, team)
+        shared_test_data.roles['org_admin'].give_permission(user, org)
+
+        # Delete Resource entries for both team and org
+        team_ct = CT.objects.get_for_model(team)
+        org_ct = CT.objects.get_for_model(org)
+        Resource.objects.filter(content_type=team_ct, object_id=team.pk).delete()
+        Resource.objects.filter(content_type=org_ct, object_id=org.pk).delete()
+
+        # Must not crash
+        claims = get_user_claims(user)
+
+        assert claims['objects'] == {'organization': [], 'team': []}
+        assert claims['object_roles'] == {}
