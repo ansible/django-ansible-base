@@ -166,10 +166,11 @@ def test_cached_jwk_client_rebuilds_the_published_key_index_from_the_cached_docu
 def test_cached_jwk_client_rejects_a_cached_signing_key_dropped_by_a_refresh():
     """A successful refresh must stop validating tokens signed by a removed key."""
     client = CachedJWKClient("https://issuer.example.com/keys")
+    token = _token()
     rotated_document = _jwk_document("rotated-key")
 
     with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=_jwk_document()):
-        assert client.get_signing_key_from_jwt(_token()).key_id == "key-id"
+        assert client.get_signing_key_from_jwt(token).key_id == "key-id"
 
     with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=rotated_document):
         assert [key.key_id for key in client.get_jwk_set(refresh=True).keys] == ["rotated-key"]
@@ -181,7 +182,7 @@ def test_cached_jwk_client_rejects_a_cached_signing_key_dropped_by_a_refresh():
 
     with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=rotated_document):
         with pytest.raises(PyJWKClientError, match="Unable to find a signing key"):
-            client.get_signing_key_from_jwt(_token())
+            client.get_signing_key_from_jwt(token)
 
     # The dropped key entry is deleted the first time it is rejected.
     assert cache.get(client._signing_key_cache_key("key-id")) is None
