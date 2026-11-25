@@ -187,7 +187,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
             if not obj:
                 raise ValidationError({'object_id': _('Object must be specified for this role assignment')})
 
-            check_content_obj_permission(requesting_user, obj)
+            check_content_obj_permission(requesting_user, obj, role_definition=rd)
 
             try:
                 with transaction.atomic():
