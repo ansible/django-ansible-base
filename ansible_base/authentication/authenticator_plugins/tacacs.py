@@ -10,10 +10,15 @@ from ansible_base.authentication.authenticator_plugins.base import AbstractAuthe
 from ansible_base.authentication.social_auth import SocialAuthMixin
 from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
 from ansible_base.authentication.utils.claims import update_user_claims
+from ansible_base.authentication.utils.fips_compat import enable_protocol_md5
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, IntegerField
 from ansible_base.lib.utils.requests import get_remote_host
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.tacacs')
+
+# TACACS+ mandates MD5 for body obfuscation (RFC 8907); allow that
+# protocol-mandated MD5 on FIPS-enabled systems.
+enable_protocol_md5()
 
 #
 # Someone created a django library for tacacs: https://github.com/mwallraf/django-auth-tacacs
