@@ -93,10 +93,19 @@ def can_change_user(
     elif target_user.is_superuser:
         return False  # target is a superuser and request user is not
 
+    # Unconditional self-edit (the default) must not depend on MANAGE_ORGANIZATION_AUTH:
+    # that setting governs org-admins managing *other* users, not a user managing themselves.
+    if request_user.pk == target_user.pk and can_self_edit:
+        return True
+
     if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
         return False
 
-    if request_user.pk == target_user.pk and (can_self_edit or get_setting(self_edit_setting, False)):
+    # Opt-in self-edit overrides (e.g. ALLOW_USER_EMAIL_SELF_EDIT, ALLOW_USER_USERNAME_SELF_EDIT,
+    # ALLOW_USER_IS_ACTIVE_SELF_EDIT) remain tied to MANAGE_ORGANIZATION_AUTH; for the
+    # CVE-hardened fields (email, username) that coupling is intentional -- not the
+    # sequencing bug being fixed here.
+    if request_user.pk == target_user.pk and get_setting(self_edit_setting, False):
         return True
 
     # If the user is not in any organizations, answer can not consider organization permissions
@@ -151,6 +160,11 @@ def check_can_remove_assignment(request_user: Model, assignment: Model):
 
     assignment_model_name = assignment._meta.model_name
     if assignment_model_name == 'roleuserassignment':
+        # can_self_edit defaults to True: a user has always been able to remove their own
+        # role assignment unconditionally (MANAGE_ORGANIZATION_AUTH's default is True, so this
+        # was never actually gated by it in practice -- see test_remove_object_assignment_yourself).
+        # The AAP-66511 fix makes that unconditional regardless of the setting's value, same as
+        # it always effectively was in the default configuration; it does not newly grant this.
         if can_change_user(request_user, assignment.user):
             return
     elif assignment_model_name == 'roleteamassignment':
