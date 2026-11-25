@@ -276,7 +276,8 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
         social-auth-core fetched JWKS documents through ``requests``, which trusts
         ``REQUESTS_CA_BUNDLE``/``CURL_CA_BUNDLE`` while verification is enabled.
         ``urlopen`` ignores those variables, so load the same bundle explicitly to
-        keep trusting identity providers signed by a configured internal CA.
+        keep trusting identity providers signed by a configured internal CA. Like
+        ``requests``, treat a directory value as an OpenSSL ``capath``.
         """
         if not self.setting("VERIFY_SSL", True):
             ssl_context = ssl.create_default_context()  # NOSONAR(S5527) -- this context must disable hostname checks for configured local self-signed IdPs.
@@ -285,6 +286,8 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
             return ssl_context
         ca_bundle = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("CURL_CA_BUNDLE")
         if ca_bundle:
+            if os.path.isdir(ca_bundle):
+                return ssl.create_default_context(capath=ca_bundle)
             return ssl.create_default_context(cafile=ca_bundle)
         return None
 

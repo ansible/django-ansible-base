@@ -228,6 +228,28 @@ def test_jwk_client_trusts_the_configured_ca_bundle(oidc_authenticator, monkeypa
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("variable", ["REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"])
+def test_jwk_client_treats_a_ca_bundle_directory_as_a_capath(oidc_authenticator, monkeypatch, tmp_path, variable):
+    """requests mapped a directory bundle to capath; the JWKS fetch must not pass it as cafile."""
+    ca_dir = tmp_path / "cas"
+    ca_dir.mkdir()
+    _write_ca_certificate(ca_dir / "internal-ca.pem")
+    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+    monkeypatch.delenv("CURL_CA_BUNDLE", raising=False)
+    monkeypatch.setenv(variable, str(ca_dir))
+    create_default_context = ssl.create_default_context
+
+    with patch(
+        "ansible_base.authentication.authenticator_plugins.oidc.ssl.create_default_context",
+        side_effect=create_default_context,
+    ) as mocked_create_default_context:
+        client = _plugin(oidc_authenticator)._jwk_client()
+
+    mocked_create_default_context.assert_called_once_with(capath=str(ca_dir))
+    assert client.ssl_context.verify_mode == ssl.CERT_REQUIRED
+
+
+@pytest.mark.django_db
 def test_jwk_client_ignores_the_ca_bundle_when_verification_is_disabled(oidc_authenticator, monkeypatch, tmp_path):
     ca_file = tmp_path / "internal-ca.pem"
     _write_ca_certificate(ca_file)
