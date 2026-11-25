@@ -1,6 +1,7 @@
 import importlib
 import logging
 
+import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
@@ -164,6 +165,24 @@ class SocialAuthMixin:
             )
 
         return super().start()
+
+    def request(self, *args, **kwargs):
+        """Log the HTTP status when a provider call fails, then re-raise.
+
+        social-auth-core 4.5.4 maps a failed token exchange to AuthCanceled for
+        HTTP 400 and to AuthForbidden for HTTP 401, and the 401 case carries no
+        response at all. By the time SocialExceptionHandlerMiddleware sees the
+        exception the status is gone, so a misconfigured provider is only
+        visible as a redirect to /?auth_failed. Log it here, where the response
+        still exists.
+        """
+        try:
+            return super().request(*args, **kwargs)
+        except requests.HTTPError as err:
+            status = getattr(getattr(err, "response", None), "status_code", None)
+            authenticator_name = getattr(self.database_instance, "name", "unknown")
+            log_auth_error(f"OAuth HTTP error for authenticator '{authenticator_name}' status={status}")
+            raise
 
     # social-core types BaseAuth.name as a writeable str; this override is intentionally
     # read-only (derived from the database instance) but never reassigned at runtime, so
