@@ -148,9 +148,12 @@ class RemoteAssignmentFetcher:
             if role_name not in self.local_role_names:
                 logger.debug(f"Skipping remote {assignment_type} assignment with unknown local role: {role_name}")
                 continue
-            object_ansible_id = assignment.get('object_ansible_id')
-            ansible_id_or_pk = object_ansible_id or assignment.get('object_id')
             role_definition = self.local_role_definitions[role_name]
+            # Remote stand-ins use the owning service's primary key, not a
+            # Resource identity that cannot be resolved in this database.
+            is_remote = role_definition.content_type is not None and role_definition.content_type.is_remote
+            object_ansible_id = None if is_remote else assignment.get('object_ansible_id')
+            ansible_id_or_pk = object_ansible_id or assignment.get('object_id')
             if not object_ansible_id and ansible_id_or_pk and role_definition.content_type:
                 # Legacy remote rows may omit object_ansible_id. Validate the
                 # object_id fallback by model type so UUID primary keys remain valid.
