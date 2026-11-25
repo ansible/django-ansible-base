@@ -11,7 +11,7 @@ COMPOSE_UP_OPTS ?=
 DOCKER_COMPOSE ?= docker compose
 
 .PHONY: PYTHON_VERSION clean build\
-	check lint check_black check_flake8 check_isort check_mypy git_hooks_config
+	check lint check_black check_flake8 check_isort check_mypy git_hooks_config postgres
 
 PYTHON_VERSION:
 	@echo "$(subst python,,$(PYTHON))"
@@ -56,11 +56,11 @@ check_mypy:
 
 ## Starts a postgres container in the background if one is not running
 # Options:
-#  -d, --detatch: run the container in background
-#  -q, --quiet: Surpress the pull output, mainly to condence output in CI
-#  --rm: automatically remove the container when it is stopped
+#  -d, --detach: run the container in background
+#  --quiet-pull: suppress pull progress, mainly to condense output in CI
+#  --wait: wait for the image's PostgreSQL health check before returning
 postgres:
-	docker start dab_postgres || $(DOCKER_COMPOSE) up -d postgres --quiet-pull
+	$(DOCKER_COMPOSE) up -d --wait --wait-timeout 60 postgres --quiet-pull
 
 ## Stops the postgres container started with 'make postgres'
 stop-postgres:
