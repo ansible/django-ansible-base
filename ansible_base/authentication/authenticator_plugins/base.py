@@ -1,16 +1,48 @@
 import logging
 
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.fields import empty
 from rest_framework.serializers import ValidationError
 
+from ansible_base.authentication.jwk_client import (
+    DEFAULT_JWKS_CACHE_TIMEOUT,
+    DEFAULT_JWKS_URL_TIMEOUT,
+    MAX_JWKS_URL_TIMEOUT,
+    MIN_JWKS_URL_TIMEOUT,
+)
 from ansible_base.authentication.models import Authenticator
-from ansible_base.lib.serializers.fields import JSONField
+from ansible_base.lib.serializers.fields import IntegerField, JSONField
 from ansible_base.lib.utils.response import get_relative_url
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.base')
+
+
+def jwks_url_timeout_field():
+    """Build the shared JWKS request timeout field so token-verifying plugins stay in sync."""
+    return IntegerField(
+        help_text=_("Timeout for JWKS URL requests in seconds."),
+        default=DEFAULT_JWKS_URL_TIMEOUT,
+        allow_null=False,
+        validators=[MinValueValidator(MIN_JWKS_URL_TIMEOUT), MaxValueValidator(MAX_JWKS_URL_TIMEOUT)],
+        ui_field_label=_("JWKS URL Timeout"),
+    )
+
+
+def jwks_cache_timeout_field():
+    """Build the shared JWKS cache lifetime field used by token-verifying plugins."""
+    return IntegerField(
+        help_text=_(
+            "How long to cache JWKS keys, in seconds. Minimum 0 (cache disabled); this makes a JWKS call for every request. "
+            "No maximum — longer TTLs are fine for stable IdPs; token validation refreshes keys on signature failure so rotation still works."
+        ),
+        default=DEFAULT_JWKS_CACHE_TIMEOUT,
+        allow_null=False,
+        validators=[MinValueValidator(0)],
+        ui_field_label=_("JWKS Cache Timeout (seconds)"),
+    )
 
 
 def _field_required(field):
