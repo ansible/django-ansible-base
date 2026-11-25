@@ -83,6 +83,39 @@ class TestSharedAssignmentsDisabled:
         )
         assert response.status_code == 201, response.data
 
+    def test_allowlisted_shared_resource_permission_is_creatable(self, admin_api_client):
+        url = get_relative_url('roledefinition-list')
+        with override_settings(
+            ALLOW_SHARED_RESOURCE_CUSTOM_ROLES=False,
+            ALLOW_SHARED_RESOURCE_CUSTOM_ROLE_PERMISSIONS={'shared.organization': ['shared.member_organization']},
+        ):
+            response = admin_api_client.post(
+                url,
+                data={
+                    'name': 'Custom Organization Member Role',
+                    'content_type': 'shared.organization',
+                    'permissions': ['shared.view_organization', 'shared.member_organization'],
+                },
+            )
+        assert response.status_code == 201, response.data
+
+    def test_unallowlisted_shared_resource_permission_is_rejected(self, admin_api_client):
+        url = get_relative_url('roledefinition-list')
+        with override_settings(
+            ALLOW_SHARED_RESOURCE_CUSTOM_ROLES=False,
+            ALLOW_SHARED_RESOURCE_CUSTOM_ROLE_PERMISSIONS={'shared.organization': ['shared.member_organization']},
+        ):
+            response = admin_api_client.post(
+                url,
+                data={
+                    'name': 'Custom Organization Change Role',
+                    'content_type': 'shared.organization',
+                    'permissions': ['shared.view_organization', 'shared.change_organization'],
+                },
+            )
+        assert response.status_code == 400, response.data
+        assert 'Local custom roles can only include view permission for shared models' in str(response.data)
+
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("method", ['delete', 'patch'])
